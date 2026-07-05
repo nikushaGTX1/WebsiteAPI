@@ -17,7 +17,7 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(
                 "http://localhost:4200",
-                "https://YOUR-FRONTEND-NAME.onrender.com"
+                "https://website-lff1.onrender.com"
             )
             .AllowAnyHeader()
             .AllowAnyMethod();
