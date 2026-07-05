@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using Website_API.Data;
@@ -16,9 +15,12 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AngularPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:4200")
-              .AllowAnyHeader()
-              .AllowAnyMethod();
+        policy.WithOrigins(
+                "http://localhost:4200",
+                "https://YOUR-FRONTEND-NAME.onrender.com"
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod();
     });
 });
 
@@ -100,16 +102,18 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
 
 using (var scope = app.Services.CreateScope())
 {
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+    var services = scope.ServiceProvider;
+
+    var context = services.GetRequiredService<AppDbContext>();
+    await context.Database.MigrateAsync();
+
+    var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
+    var userManager = services.GetRequiredService<UserManager<AppUser>>();
 
     string[] roles = ["Admin", "Agent", "User"];
 
@@ -143,7 +147,6 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-//app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseCors("AngularPolicy");
