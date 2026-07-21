@@ -11,6 +11,7 @@ using Website_API.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+builder.Services.AddHttpClient<GoogleNearbyPlacesService>();
 builder.Services.AddScoped<HomeMatchScorer>();
 
 builder.Services.AddCors(options =>
