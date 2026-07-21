@@ -52,11 +52,51 @@ public class ApartmentsController : ControllerBase
 
         var apartment = new Apartment
         {
+            // Basic information
             Title = dto.Title,
             Description = dto.Description,
             Price = dto.Price,
             Address = dto.Address,
-            ImageUrl = imageUrl
+            ImageUrl = imageUrl,
+
+            // Location
+            City = dto.City,
+            District = dto.District,
+            Latitude = dto.Latitude,
+            Longitude = dto.Longitude,
+
+            // Apartment details
+            Bedrooms = dto.Bedrooms,
+            Bathrooms = dto.Bathrooms,
+            SizeSquareMeters = dto.SizeSquareMeters,
+            Floor = dto.Floor,
+            TotalFloors = dto.TotalFloors,
+
+            // Features
+            HasElevator = dto.HasElevator,
+            HasParking = dto.HasParking,
+            HasBalcony = dto.HasBalcony,
+            HasBathtub = dto.HasBathtub,
+            HasAirConditioning = dto.HasAirConditioning,
+            HasDishwasher = dto.HasDishwasher,
+            IsPetFriendly = dto.IsPetFriendly,
+            HasHomeOfficeSpace = dto.HasHomeOfficeSpace,
+            HasLargeKitchen = dto.HasLargeKitchen,
+            HasView = dto.HasView,
+            IsFurnished = dto.IsFurnished,
+
+            // Lifestyle
+            ApartmentStyle = dto.ApartmentStyle,
+            NoiseLevel = dto.NoiseLevel,
+            Sunlight = dto.Sunlight,
+
+            // Nearby-place walking times
+            MetroDistanceMinutes = dto.MetroDistanceMinutes,
+            GymDistanceMinutes = dto.GymDistanceMinutes,
+            ParkDistanceMinutes = dto.ParkDistanceMinutes,
+            SchoolDistanceMinutes = dto.SchoolDistanceMinutes,
+            KindergartenDistanceMinutes = dto.KindergartenDistanceMinutes,
+            UniversityDistanceMinutes = dto.UniversityDistanceMinutes
         };
 
         _context.Apartments.Add(apartment);
@@ -82,6 +122,61 @@ public class ApartmentsController : ControllerBase
         apartment.Description = dto.Description ?? apartment.Description;
         apartment.Price = dto.Price ?? apartment.Price;
         apartment.Address = dto.Address ?? apartment.Address;
+        // Location
+        apartment.City = dto.City ?? apartment.City;
+        apartment.District = dto.District ?? apartment.District;
+        apartment.Latitude = dto.Latitude ?? apartment.Latitude;
+        apartment.Longitude = dto.Longitude ?? apartment.Longitude;
+
+        // Apartment details
+        apartment.Bedrooms = dto.Bedrooms ?? apartment.Bedrooms;
+        apartment.Bathrooms = dto.Bathrooms ?? apartment.Bathrooms;
+        apartment.SizeSquareMeters =
+            dto.SizeSquareMeters ?? apartment.SizeSquareMeters;
+        apartment.Floor = dto.Floor ?? apartment.Floor;
+        apartment.TotalFloors = dto.TotalFloors ?? apartment.TotalFloors;
+
+        // Features
+        apartment.HasElevator = dto.HasElevator ?? apartment.HasElevator;
+        apartment.HasParking = dto.HasParking ?? apartment.HasParking;
+        apartment.HasBalcony = dto.HasBalcony ?? apartment.HasBalcony;
+        apartment.HasBathtub = dto.HasBathtub ?? apartment.HasBathtub;
+        apartment.HasAirConditioning =
+            dto.HasAirConditioning ?? apartment.HasAirConditioning;
+        apartment.HasDishwasher =
+            dto.HasDishwasher ?? apartment.HasDishwasher;
+        apartment.IsPetFriendly =
+            dto.IsPetFriendly ?? apartment.IsPetFriendly;
+        apartment.HasHomeOfficeSpace =
+            dto.HasHomeOfficeSpace ?? apartment.HasHomeOfficeSpace;
+        apartment.HasLargeKitchen =
+            dto.HasLargeKitchen ?? apartment.HasLargeKitchen;
+        apartment.HasView = dto.HasView ?? apartment.HasView;
+        apartment.IsFurnished = dto.IsFurnished ?? apartment.IsFurnished;
+
+        // Lifestyle
+        apartment.ApartmentStyle =
+            dto.ApartmentStyle ?? apartment.ApartmentStyle;
+        apartment.NoiseLevel =
+            dto.NoiseLevel ?? apartment.NoiseLevel;
+        apartment.Sunlight =
+            dto.Sunlight ?? apartment.Sunlight;
+
+        // Nearby-place walking times
+        apartment.MetroDistanceMinutes =
+            dto.MetroDistanceMinutes ?? apartment.MetroDistanceMinutes;
+        apartment.GymDistanceMinutes =
+            dto.GymDistanceMinutes ?? apartment.GymDistanceMinutes;
+        apartment.ParkDistanceMinutes =
+            dto.ParkDistanceMinutes ?? apartment.ParkDistanceMinutes;
+        apartment.SchoolDistanceMinutes =
+            dto.SchoolDistanceMinutes ?? apartment.SchoolDistanceMinutes;
+        apartment.KindergartenDistanceMinutes =
+            dto.KindergartenDistanceMinutes ??
+            apartment.KindergartenDistanceMinutes;
+        apartment.UniversityDistanceMinutes =
+            dto.UniversityDistanceMinutes ??
+            apartment.UniversityDistanceMinutes;
 
         if (dto.Image != null)
         {
