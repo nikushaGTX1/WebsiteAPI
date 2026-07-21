@@ -190,3 +190,4 @@ C:\Users\user\source\repos\Website API\Website API\obj\Debug\net10.0\Website API
 C:\Users\user\source\repos\Website API\Website API\obj\Debug\net10.0\ref\Website API.dll
 C:\Users\user\source\repos\Website API\Website API\bin\Debug\net10.0\Website API.staticwebassets.runtime.json
 C:\Users\user\source\repos\Website API\Website API\obj\Debug\net10.0\Website API.sourcelink.json
+C:\Users\user\source\repos\Website API\Website API\obj\Debug\net10.0\staticwebassets.upToDateCheck.txt

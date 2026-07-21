@@ -6,10 +6,12 @@ using Microsoft.OpenApi.Models;
 using System.Text;
 using Website_API.Data;
 using Website_API.Models;
+using Website_API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+builder.Services.AddScoped<HomeMatchScorer>();
 
 builder.Services.AddCors(options =>
 {

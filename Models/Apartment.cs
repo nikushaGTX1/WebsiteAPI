@@ -4,7 +4,7 @@ public class Apartment
 {
     public int Id { get; set; }
 
-    // Basic information
+    // Basic informacia
     public string Title { get; set; } = string.Empty;
 
     public string Description { get; set; } = string.Empty;
@@ -28,7 +28,7 @@ public class Apartment
     public double? Longitude { get; set; }
 
 
-    // Apartment details
+    // apartamentis detalebi
     public int Bedrooms { get; set; }
 
     public int Bathrooms { get; set; }

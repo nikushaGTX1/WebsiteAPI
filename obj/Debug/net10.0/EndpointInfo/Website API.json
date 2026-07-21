@@ -170,6 +170,54 @@
         }
       }
     },
+    "/api/ai-home-match/matches": {
+      "post": {
+        "tags": [
+          "AiHomeMatch"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HomeMatchProfileRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HomeMatchProfileRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/HomeMatchProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeMatchResponseDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeMatchResponseDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeMatchResponseDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/Apartments": {
       "get": {
         "tags": [
@@ -207,6 +255,106 @@
                   "Image": {
                     "type": "string",
                     "format": "binary"
+                  },
+                  "City": {
+                    "type": "string"
+                  },
+                  "District": {
+                    "type": "string"
+                  },
+                  "Latitude": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "Longitude": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "Bedrooms": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "Bathrooms": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "SizeSquareMeters": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "Floor": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "TotalFloors": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "HasElevator": {
+                    "type": "boolean"
+                  },
+                  "HasParking": {
+                    "type": "boolean"
+                  },
+                  "HasBalcony": {
+                    "type": "boolean"
+                  },
+                  "HasBathtub": {
+                    "type": "boolean"
+                  },
+                  "HasAirConditioning": {
+                    "type": "boolean"
+                  },
+                  "HasDishwasher": {
+                    "type": "boolean"
+                  },
+                  "IsPetFriendly": {
+                    "type": "boolean"
+                  },
+                  "HasHomeOfficeSpace": {
+                    "type": "boolean"
+                  },
+                  "HasLargeKitchen": {
+                    "type": "boolean"
+                  },
+                  "HasView": {
+                    "type": "boolean"
+                  },
+                  "IsFurnished": {
+                    "type": "boolean"
+                  },
+                  "ApartmentStyle": {
+                    "type": "string"
+                  },
+                  "NoiseLevel": {
+                    "type": "string"
+                  },
+                  "Sunlight": {
+                    "type": "string"
+                  },
+                  "MetroDistanceMinutes": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "GymDistanceMinutes": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "ParkDistanceMinutes": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "SchoolDistanceMinutes": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "KindergartenDistanceMinutes": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "UniversityDistanceMinutes": {
+                    "type": "integer",
+                    "format": "int32"
                   }
                 }
               },
@@ -224,6 +372,93 @@
                   "style": "form"
                 },
                 "Image": {
+                  "style": "form"
+                },
+                "City": {
+                  "style": "form"
+                },
+                "District": {
+                  "style": "form"
+                },
+                "Latitude": {
+                  "style": "form"
+                },
+                "Longitude": {
+                  "style": "form"
+                },
+                "Bedrooms": {
+                  "style": "form"
+                },
+                "Bathrooms": {
+                  "style": "form"
+                },
+                "SizeSquareMeters": {
+                  "style": "form"
+                },
+                "Floor": {
+                  "style": "form"
+                },
+                "TotalFloors": {
+                  "style": "form"
+                },
+                "HasElevator": {
+                  "style": "form"
+                },
+                "HasParking": {
+                  "style": "form"
+                },
+                "HasBalcony": {
+                  "style": "form"
+                },
+                "HasBathtub": {
+                  "style": "form"
+                },
+                "HasAirConditioning": {
+                  "style": "form"
+                },
+                "HasDishwasher": {
+                  "style": "form"
+                },
+                "IsPetFriendly": {
+                  "style": "form"
+                },
+                "HasHomeOfficeSpace": {
+                  "style": "form"
+                },
+                "HasLargeKitchen": {
+                  "style": "form"
+                },
+                "HasView": {
+                  "style": "form"
+                },
+                "IsFurnished": {
+                  "style": "form"
+                },
+                "ApartmentStyle": {
+                  "style": "form"
+                },
+                "NoiseLevel": {
+                  "style": "form"
+                },
+                "Sunlight": {
+                  "style": "form"
+                },
+                "MetroDistanceMinutes": {
+                  "style": "form"
+                },
+                "GymDistanceMinutes": {
+                  "style": "form"
+                },
+                "ParkDistanceMinutes": {
+                  "style": "form"
+                },
+                "SchoolDistanceMinutes": {
+                  "style": "form"
+                },
+                "KindergartenDistanceMinutes": {
+                  "style": "form"
+                },
+                "UniversityDistanceMinutes": {
                   "style": "form"
                 }
               }
@@ -296,6 +531,106 @@
                   "Image": {
                     "type": "string",
                     "format": "binary"
+                  },
+                  "City": {
+                    "type": "string"
+                  },
+                  "District": {
+                    "type": "string"
+                  },
+                  "Latitude": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "Longitude": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "Bedrooms": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "Bathrooms": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "SizeSquareMeters": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "Floor": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "TotalFloors": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "HasElevator": {
+                    "type": "boolean"
+                  },
+                  "HasParking": {
+                    "type": "boolean"
+                  },
+                  "HasBalcony": {
+                    "type": "boolean"
+                  },
+                  "HasBathtub": {
+                    "type": "boolean"
+                  },
+                  "HasAirConditioning": {
+                    "type": "boolean"
+                  },
+                  "HasDishwasher": {
+                    "type": "boolean"
+                  },
+                  "IsPetFriendly": {
+                    "type": "boolean"
+                  },
+                  "HasHomeOfficeSpace": {
+                    "type": "boolean"
+                  },
+                  "HasLargeKitchen": {
+                    "type": "boolean"
+                  },
+                  "HasView": {
+                    "type": "boolean"
+                  },
+                  "IsFurnished": {
+                    "type": "boolean"
+                  },
+                  "ApartmentStyle": {
+                    "type": "string"
+                  },
+                  "NoiseLevel": {
+                    "type": "string"
+                  },
+                  "Sunlight": {
+                    "type": "string"
+                  },
+                  "MetroDistanceMinutes": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "GymDistanceMinutes": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "ParkDistanceMinutes": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "SchoolDistanceMinutes": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "KindergartenDistanceMinutes": {
+                    "type": "integer",
+                    "format": "int32"
+                  },
+                  "UniversityDistanceMinutes": {
+                    "type": "integer",
+                    "format": "int32"
                   }
                 }
               },
@@ -313,6 +648,93 @@
                   "style": "form"
                 },
                 "Image": {
+                  "style": "form"
+                },
+                "City": {
+                  "style": "form"
+                },
+                "District": {
+                  "style": "form"
+                },
+                "Latitude": {
+                  "style": "form"
+                },
+                "Longitude": {
+                  "style": "form"
+                },
+                "Bedrooms": {
+                  "style": "form"
+                },
+                "Bathrooms": {
+                  "style": "form"
+                },
+                "SizeSquareMeters": {
+                  "style": "form"
+                },
+                "Floor": {
+                  "style": "form"
+                },
+                "TotalFloors": {
+                  "style": "form"
+                },
+                "HasElevator": {
+                  "style": "form"
+                },
+                "HasParking": {
+                  "style": "form"
+                },
+                "HasBalcony": {
+                  "style": "form"
+                },
+                "HasBathtub": {
+                  "style": "form"
+                },
+                "HasAirConditioning": {
+                  "style": "form"
+                },
+                "HasDishwasher": {
+                  "style": "form"
+                },
+                "IsPetFriendly": {
+                  "style": "form"
+                },
+                "HasHomeOfficeSpace": {
+                  "style": "form"
+                },
+                "HasLargeKitchen": {
+                  "style": "form"
+                },
+                "HasView": {
+                  "style": "form"
+                },
+                "IsFurnished": {
+                  "style": "form"
+                },
+                "ApartmentStyle": {
+                  "style": "form"
+                },
+                "NoiseLevel": {
+                  "style": "form"
+                },
+                "Sunlight": {
+                  "style": "form"
+                },
+                "MetroDistanceMinutes": {
+                  "style": "form"
+                },
+                "GymDistanceMinutes": {
+                  "style": "form"
+                },
+                "ParkDistanceMinutes": {
+                  "style": "form"
+                },
+                "SchoolDistanceMinutes": {
+                  "style": "form"
+                },
+                "KindergartenDistanceMinutes": {
+                  "style": "form"
+                },
+                "UniversityDistanceMinutes": {
                   "style": "form"
                 }
               }
@@ -631,6 +1053,423 @@
   },
   "components": {
     "schemas": {
+      "Apartment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "price": {
+            "type": "number",
+            "format": "double"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "district": {
+            "type": "string",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "bedrooms": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bathrooms": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sizeSquareMeters": {
+            "type": "number",
+            "format": "double"
+          },
+          "floor": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalFloors": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasElevator": {
+            "type": "boolean"
+          },
+          "hasParking": {
+            "type": "boolean"
+          },
+          "hasBalcony": {
+            "type": "boolean"
+          },
+          "hasBathtub": {
+            "type": "boolean"
+          },
+          "hasAirConditioning": {
+            "type": "boolean"
+          },
+          "hasDishwasher": {
+            "type": "boolean"
+          },
+          "isPetFriendly": {
+            "type": "boolean"
+          },
+          "hasHomeOfficeSpace": {
+            "type": "boolean"
+          },
+          "hasLargeKitchen": {
+            "type": "boolean"
+          },
+          "hasView": {
+            "type": "boolean"
+          },
+          "isFurnished": {
+            "type": "boolean"
+          },
+          "apartmentStyle": {
+            "type": "string",
+            "nullable": true
+          },
+          "noiseLevel": {
+            "type": "string",
+            "nullable": true
+          },
+          "sunlight": {
+            "type": "string",
+            "nullable": true
+          },
+          "metroDistanceMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "gymDistanceMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "parkDistanceMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "schoolDistanceMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "kindergartenDistanceMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "universityDistanceMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HomeMatchProfileRequest": {
+        "type": "object",
+        "properties": {
+          "propertyGoal": {
+            "type": "string",
+            "nullable": true
+          },
+          "districts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "locationFlexible": {
+            "type": "boolean"
+          },
+          "proximityTarget": {
+            "type": "string",
+            "nullable": true
+          },
+          "proximityAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "proximityLatitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "proximityLongitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "budgetMin": {
+            "type": "number",
+            "format": "double"
+          },
+          "budgetMax": {
+            "type": "number",
+            "format": "double"
+          },
+          "currency": {
+            "type": "string",
+            "nullable": true
+          },
+          "includesUtilities": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "householdType": {
+            "type": "string",
+            "nullable": true
+          },
+          "adults": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "children": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "childrenAgeGroups": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "bedrooms": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "additionalRoom": {
+            "type": "string",
+            "nullable": true
+          },
+          "rentalDuration": {
+            "type": "string",
+            "nullable": true
+          },
+          "moveInTiming": {
+            "type": "string",
+            "nullable": true
+          },
+          "moveInDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "purchaseTiming": {
+            "type": "string",
+            "nullable": true
+          },
+          "transportation": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "metroDistanceMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "parkingAutomaticallyPrioritized": {
+            "type": "boolean"
+          },
+          "lifestyles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "hasPet": {
+            "type": "boolean"
+          },
+          "mainPreferences": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "additionalRequirements": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "additionalNotes": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HomeMatchReasonDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "pointsEarned": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pointsAvailable": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HomeMatchResponseDto": {
+        "type": "object",
+        "properties": {
+          "totalMatches": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeMatchResultDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HomeMatchResultDto": {
+        "type": "object",
+        "properties": {
+          "apartment": {
+            "$ref": "#/components/schemas/Apartment"
+          },
+          "matchScore": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "matchLabel": {
+            "type": "string",
+            "nullable": true
+          },
+          "recommendationCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeMatchReasonDto"
+            },
+            "nullable": true
+          },
+          "tradeOffs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeMatchTradeOffDto"
+            },
+            "nullable": true
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "scoreBreakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeMatchScoreBreakdownDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HomeMatchScoreBreakdownDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "nullable": true
+          },
+          "pointsEarned": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pointsAvailable": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HomeMatchTradeOffDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "severity": {
+            "type": "string",
+            "nullable": true
+          },
+          "pointsLost": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "LoginDto": {
         "type": "object",
         "properties": {
