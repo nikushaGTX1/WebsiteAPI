@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Website_API.Data;
 using Website_API.DTO;
 using Website_API.Models;
+using Website_API.Services;
 
 namespace Website_API.Controllers;
 
@@ -14,13 +15,16 @@ public class ApartmentsController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly IWebHostEnvironment _environment;
+    private readonly GoogleNearbyPlacesService _nearbyPlacesService;
 
     public ApartmentsController(
         AppDbContext context,
-        IWebHostEnvironment environment)
+        IWebHostEnvironment environment,
+        GoogleNearbyPlacesService nearbyPlacesService)
     {
         _context = context;
         _environment = environment;
+        _nearbyPlacesService = nearbyPlacesService;
     }
 
     [HttpGet]
@@ -102,6 +106,9 @@ public class ApartmentsController : ControllerBase
         _context.Apartments.Add(apartment);
         await _context.SaveChangesAsync();
 
+        await _nearbyPlacesService.EnrichApartmentAsync(apartment);
+        await _context.SaveChangesAsync();
+
         return Ok(new
         {
             message = "Apartment created successfully",
@@ -117,6 +124,13 @@ public class ApartmentsController : ControllerBase
 
         if (apartment == null)
             return NotFound(new { message = "Apartment not found" });
+
+        var locationChanged =
+            dto.Address != null ||
+            dto.City != null ||
+            dto.District != null ||
+            dto.Latitude.HasValue ||
+            dto.Longitude.HasValue;
 
         apartment.Title = dto.Title ?? apartment.Title;
         apartment.Description = dto.Description ?? apartment.Description;
@@ -186,9 +200,34 @@ public class ApartmentsController : ControllerBase
 
         await _context.SaveChangesAsync();
 
+        if (locationChanged)
+        {
+            await _nearbyPlacesService.EnrichApartmentAsync(apartment);
+            await _context.SaveChangesAsync();
+        }
+
         return Ok(new
         {
             message = "Apartment updated successfully",
+            apartment
+        });
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("{id}/refresh-nearby-places")]
+    public async Task<IActionResult> RefreshNearbyPlaces(int id)
+    {
+        var apartment = await _context.Apartments.FindAsync(id);
+
+        if (apartment == null)
+            return NotFound(new { message = "Apartment not found" });
+
+        await _nearbyPlacesService.EnrichApartmentAsync(apartment);
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            message = "Nearby-place walking times refreshed successfully",
             apartment
         });
     }
