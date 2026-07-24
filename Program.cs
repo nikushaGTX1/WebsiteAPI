@@ -26,9 +26,8 @@ builder.Services.AddCors(options =>
         policy
             .WithOrigins(
                 "http://localhost:4200",
-                "https://website-lff1.onrender.com"
-            // Add your Railway frontend URL here later:
-            // "https://your-frontend.up.railway.app"
+                "https://website-lff1.onrender.com",
+                "https://website-production-ab09.up.railway.app"
             )
             .AllowAnyHeader()
             .AllowAnyMethod();
