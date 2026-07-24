@@ -30,7 +30,8 @@ builder.Services.AddCors(options =>
                 "https://website-lff1.onrender.com",
                 "https://website-production-ab09.up.railway.app",
                 "http://192.168.56.1:3000/",
-                "http://192.168.56.1"
+                "http://192.168.56.1",
+                "http://localhost:4200/"
             )
             .AllowAnyHeader()
             .AllowAnyMethod();
