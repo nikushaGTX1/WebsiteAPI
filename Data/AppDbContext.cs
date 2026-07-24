@@ -13,6 +13,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
     public DbSet<AgentRating> AgentRatings => Set<AgentRating>();
     public DbSet<Apartment> Apartments => Set<Apartment>();
+    public DbSet<ApartmentImage> ApartmentImages => Set<ApartmentImage>();
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -21,6 +22,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<Apartment>()
             .HasIndex(apartment => apartment.CreatedAt);
+
+        builder.Entity<ApartmentImage>()
+            .ToTable("ApartmentImage");
 
         builder.Entity<BlogPost>()
             .HasIndex(post => post.CreatedAt);

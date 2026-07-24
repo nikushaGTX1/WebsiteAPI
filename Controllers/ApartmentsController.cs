@@ -67,6 +67,7 @@ public class ApartmentsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var apartment = await _context.Apartments
+            .Include(apartment => apartment.Images)
             .AsNoTracking()
             .FirstOrDefaultAsync(
                 apartment => apartment.Id == id,
@@ -80,13 +81,10 @@ public class ApartmentsController : ControllerBase
             });
         }
 
-        apartment.ImageUrl =
-            await _storageService.CreateSignedUrlAsync(
-                apartment.ImageUrl,
-                3600,
-                cancellationToken);
-
-        return Ok(apartment);
+        return Ok(await ToResponseAsync(
+            apartment,
+            includeGallery: true,
+            cancellationToken));
     }
 
     [Authorize(Roles = "Admin")]
@@ -95,14 +93,13 @@ public class ApartmentsController : ControllerBase
         [FromForm] CreateApartmentDto dto,
         CancellationToken cancellationToken)
     {
-        string? storedImagePath = null;
+        List<string> storedImagePaths = [];
 
         try
         {
-            storedImagePath =
-                await _storageService.UploadImageAsync(
-                    dto.Image,
-                    cancellationToken);
+            storedImagePaths = await UploadImagesAsync(
+                dto.Images,
+                cancellationToken);
 
             var apartment = new Apartment
             {
@@ -111,7 +108,15 @@ public class ApartmentsController : ControllerBase
                 Description = dto.Description,
                 Price = dto.Price,
                 Address = dto.Address,
-                ImageUrl = storedImagePath,
+                ImageUrl = storedImagePaths.FirstOrDefault(),
+                Images = storedImagePaths
+                    .Select((path, index) => new ApartmentImage
+                    {
+                        StoragePath = path,
+                        SortOrder = index,
+                        IsCover = index == 0
+                    })
+                    .ToList(),
 
                 // Location
                 City = dto.City,
@@ -164,23 +169,18 @@ public class ApartmentsController : ControllerBase
 
             await _context.SaveChangesAsync(cancellationToken);
 
-            var signedImageUrl =
-                await _storageService.CreateSignedUrlAsync(
-                    apartment.ImageUrl,
-                    3600,
-                    cancellationToken);
-
             return Ok(new
             {
                 message = "Apartment created successfully",
-                apartment = ToResponse(apartment, signedImageUrl)
+                apartment = await ToResponseAsync(
+                    apartment,
+                    includeGallery: true,
+                    cancellationToken)
             });
         }
         catch
         {
-            // If Supabase upload worked but database creation failed,
-            // remove the orphaned image.
-            if (!string.IsNullOrWhiteSpace(storedImagePath))
+            foreach (var storedImagePath in storedImagePaths)
             {
                 await _storageService.DeleteImageAsync(
                     storedImagePath,
@@ -199,6 +199,7 @@ public class ApartmentsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var apartment = await _context.Apartments
+            .Include(apartment => apartment.Images)
             .FirstOrDefaultAsync(
                 apartment => apartment.Id == id,
                 cancellationToken);
@@ -333,59 +334,110 @@ public class ApartmentsController : ControllerBase
             dto.UniversityDistanceMinutes ??
             apartment.UniversityDistanceMinutes;
 
-        string? oldImagePath = null;
-        string? newImagePath = null;
+        List<string> newImagePaths = [];
+        List<string> removedImagePaths = [];
+        ApartmentImage? requestedCover = null;
+
+        if (dto.CoverImageId.HasValue)
+        {
+            requestedCover = apartment.Images.FirstOrDefault(
+                image =>
+                    image.Id == dto.CoverImageId.Value &&
+                    !dto.RemovedImageIds.Contains(image.Id));
+
+            if (requestedCover is null)
+            {
+                return BadRequest(new
+                {
+                    message = "The selected cover image does not belong to this apartment or is being removed."
+                });
+            }
+        }
 
         try
         {
-            if (dto.Image is { Length: > 0 })
+            var imagesToRemove = apartment.Images
+                .Where(image => dto.RemovedImageIds.Contains(image.Id))
+                .ToList();
+
+            if (imagesToRemove.Count > 0)
             {
-                oldImagePath = apartment.ImageUrl;
-
-                newImagePath =
-                    await _storageService.UploadImageAsync(
-                        dto.Image,
-                        cancellationToken);
-
-                apartment.ImageUrl = newImagePath;
+                removedImagePaths.AddRange(
+                    imagesToRemove.Select(image => image.StoragePath));
+                _context.ApartmentImages.RemoveRange(imagesToRemove);
+                foreach (var image in imagesToRemove)
+                {
+                    apartment.Images.Remove(image);
+                }
             }
 
-            await _context.SaveChangesAsync(cancellationToken);
+            newImagePaths = await UploadImagesAsync(
+                dto.Images,
+                cancellationToken);
+
+            var nextSortOrder = apartment.Images.Count == 0
+                ? 0
+                : apartment.Images.Max(image => image.SortOrder) + 1;
+
+            foreach (var path in newImagePaths)
+            {
+                apartment.Images.Add(new ApartmentImage
+                {
+                    StoragePath = path,
+                    SortOrder = nextSortOrder++,
+                    IsCover = false
+                });
+            }
+
+            if (requestedCover is not null)
+            {
+                foreach (var image in apartment.Images)
+                {
+                    image.IsCover = image == requestedCover;
+                }
+            }
+
+            if (apartment.Images.Count > 0 &&
+                apartment.Images.All(image => !image.IsCover))
+            {
+                apartment.Images
+                    .OrderBy(image => image.SortOrder)
+                    .First()
+                    .IsCover = true;
+            }
+
+            var coverImage = apartment.Images
+                .FirstOrDefault(image => image.IsCover);
+            apartment.ImageUrl = coverImage?.StoragePath;
 
             if (locationChanged)
             {
                 await _nearbyPlacesService.EnrichApartmentAsync(
                     apartment,
                     cancellationToken);
-
-                await _context.SaveChangesAsync(cancellationToken);
             }
 
-            // Delete the old image only after database update succeeds.
-            if (!string.IsNullOrWhiteSpace(oldImagePath) &&
-                !string.IsNullOrWhiteSpace(newImagePath))
+            await _context.SaveChangesAsync(cancellationToken);
+
+            foreach (var removedImagePath in removedImagePaths)
             {
                 await _storageService.DeleteImageAsync(
-                    oldImagePath,
+                    removedImagePath,
                     cancellationToken);
             }
-
-            var signedImageUrl =
-                await _storageService.CreateSignedUrlAsync(
-                    apartment.ImageUrl,
-                    3600,
-                    cancellationToken);
 
             return Ok(new
             {
                 message = "Apartment updated successfully",
-                apartment = ToResponse(apartment, signedImageUrl)
+                apartment = await ToResponseAsync(
+                    apartment,
+                    includeGallery: true,
+                    cancellationToken)
             });
         }
         catch
         {
-            // Delete the newly uploaded file if the database update failed.
-            if (!string.IsNullOrWhiteSpace(newImagePath))
+            foreach (var newImagePath in newImagePaths)
             {
                 await _storageService.DeleteImageAsync(
                     newImagePath,
@@ -403,6 +455,7 @@ public class ApartmentsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var apartment = await _context.Apartments
+            .Include(apartment => apartment.Images)
             .FirstOrDefaultAsync(
                 apartment => apartment.Id == id,
                 cancellationToken);
@@ -421,16 +474,13 @@ public class ApartmentsController : ControllerBase
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        var signedImageUrl =
-            await _storageService.CreateSignedUrlAsync(
-                apartment.ImageUrl,
-                3600,
-                cancellationToken);
-
         return Ok(new
         {
             message = "Nearby-place walking times refreshed successfully",
-            apartment = ToResponse(apartment, signedImageUrl)
+            apartment = await ToResponseAsync(
+                apartment,
+                includeGallery: true,
+                cancellationToken)
         });
     }
 
@@ -441,6 +491,7 @@ public class ApartmentsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var apartment = await _context.Apartments
+            .Include(apartment => apartment.Images)
             .FirstOrDefaultAsync(
                 apartment => apartment.Id == id,
                 cancellationToken);
@@ -453,15 +504,27 @@ public class ApartmentsController : ControllerBase
             });
         }
 
-        var storedImagePath = apartment.ImageUrl;
+        var storedImagePaths = apartment.Images
+            .Select(image => image.StoragePath)
+            .Append(apartment.ImageUrl)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         _context.Apartments.Remove(apartment);
         await _context.SaveChangesAsync(cancellationToken);
 
         // Delete the file only after the database record was deleted.
-        await _storageService.DeleteImageAsync(
-            storedImagePath,
-            cancellationToken);
+        await Parallel.ForEachAsync(
+            storedImagePaths,
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = 4,
+                CancellationToken = cancellationToken
+            },
+            async (path, token) =>
+                await _storageService.DeleteImageAsync(path, token));
 
         return Ok(new
         {
@@ -469,10 +532,43 @@ public class ApartmentsController : ControllerBase
         });
     }
 
-    private static object ToResponse(
+    private async Task<object> ToResponseAsync(
         Apartment apartment,
-        string? signedImageUrl)
+        bool includeGallery,
+        CancellationToken cancellationToken)
     {
+        var orderedImages = apartment.Images
+            .OrderBy(image => image.SortOrder)
+            .ThenBy(image => image.Id)
+            .ToList();
+
+        var coverPath = orderedImages
+            .FirstOrDefault(image => image.IsCover)?
+            .StoragePath ?? apartment.ImageUrl;
+
+        var signedImageUrl =
+            await _storageService.CreateSignedUrlAsync(
+                coverPath,
+                3600,
+                cancellationToken);
+
+        object[] images = [];
+
+        if (includeGallery && orderedImages.Count > 0)
+        {
+            images = await Task.WhenAll(
+                orderedImages.Select(async image => (object)new
+                {
+                    image.Id,
+                    image.SortOrder,
+                    image.IsCover,
+                    Url = await _storageService.CreateSignedUrlAsync(
+                        image.StoragePath,
+                        3600,
+                        cancellationToken)
+                }));
+        }
+
         return new
         {
             apartment.Id,
@@ -483,6 +579,7 @@ public class ApartmentsController : ControllerBase
 
             // Return a temporary signed URL, not the stored object path.
             ImageUrl = signedImageUrl,
+            Images = images,
 
             apartment.CreatedAt,
 
@@ -520,5 +617,57 @@ public class ApartmentsController : ControllerBase
             apartment.KindergartenDistanceMinutes,
             apartment.UniversityDistanceMinutes
         };
+    }
+
+    private async Task<List<string>> UploadImagesAsync(
+        IReadOnlyList<IFormFile> images,
+        CancellationToken cancellationToken)
+    {
+        var uploads = images
+            .Where(image => image.Length > 0)
+            .ToList();
+
+        if (uploads.Count > 15)
+        {
+            throw new InvalidOperationException(
+                "A maximum of 15 apartment images can be uploaded.");
+        }
+
+        var paths = new string?[uploads.Count];
+
+        try
+        {
+            await Parallel.ForEachAsync(
+                Enumerable.Range(0, uploads.Count),
+                new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = 4,
+                    CancellationToken = cancellationToken
+                },
+                async (index, token) =>
+                {
+                    paths[index] =
+                        await _storageService.UploadImageAsync(
+                            uploads[index],
+                            token);
+                });
+        }
+        catch
+        {
+            foreach (var path in paths.Where(
+                         path => !string.IsNullOrWhiteSpace(path)))
+            {
+                await _storageService.DeleteImageAsync(
+                    path,
+                    CancellationToken.None);
+            }
+
+            throw;
+        }
+
+        return paths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path!)
+            .ToList();
     }
 }
