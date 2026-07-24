@@ -1,5 +1,4 @@
 ﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Website_API.Data;
@@ -14,237 +13,441 @@ namespace Website_API.Controllers;
 public class ApartmentsController : ControllerBase
 {
     private readonly AppDbContext _context;
-    private readonly IWebHostEnvironment _environment;
+    private readonly SupabaseStorageService _storageService;
     private readonly GoogleNearbyPlacesService _nearbyPlacesService;
 
     public ApartmentsController(
         AppDbContext context,
-        IWebHostEnvironment environment,
-        GoogleNearbyPlacesService nearbyPlacesService)
+        GoogleNearbyPlacesService nearbyPlacesService,
+        SupabaseStorageService storageService)
     {
         _context = context;
-        _environment = environment;
         _nearbyPlacesService = nearbyPlacesService;
+        _storageService = storageService;
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetApartments()
+    public async Task<IActionResult> GetApartments(
+        CancellationToken cancellationToken)
     {
         var apartments = await _context.Apartments
-            .OrderByDescending(a => a.CreatedAt)
-            .ToListAsync();
+            .AsNoTracking()
+            .OrderByDescending(apartment => apartment.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        foreach (var apartment in apartments)
+        {
+            apartment.ImageUrl =
+                await _storageService.CreateSignedUrlAsync(
+                    apartment.ImageUrl,
+                    3600,
+                    cancellationToken);
+        }
 
         return Ok(apartments);
     }
 
-    [HttpGet("{id}")]
-    public async Task<IActionResult> GetApartment(int id)
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetApartment(
+        int id,
+        CancellationToken cancellationToken)
     {
-        var apartment = await _context.Apartments.FindAsync(id);
+        var apartment = await _context.Apartments
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                apartment => apartment.Id == id,
+                cancellationToken);
 
-        if (apartment == null)
-            return NotFound(new { message = "Apartment not found" });
+        if (apartment is null)
+        {
+            return NotFound(new
+            {
+                message = "Apartment not found"
+            });
+        }
+
+        apartment.ImageUrl =
+            await _storageService.CreateSignedUrlAsync(
+                apartment.ImageUrl,
+                3600,
+                cancellationToken);
 
         return Ok(apartment);
     }
 
     [Authorize(Roles = "Admin")]
     [HttpPost]
-    public async Task<IActionResult> CreateApartment([FromForm] CreateApartmentDto dto)
+    public async Task<IActionResult> CreateApartment(
+        [FromForm] CreateApartmentDto dto,
+        CancellationToken cancellationToken)
     {
-        string? imageUrl = await SaveImage(dto.Image);
+        string? storedImagePath = null;
 
-        var apartment = new Apartment
+        try
         {
-            // Basic information
-            Title = dto.Title,
-            Description = dto.Description,
-            Price = dto.Price,
-            Address = dto.Address,
-            ImageUrl = imageUrl,
+            storedImagePath =
+                await _storageService.UploadImageAsync(
+                    dto.Image,
+                    cancellationToken);
 
-            // Location
-            City = dto.City,
-            District = dto.District,
-            Latitude = dto.Latitude,
-            Longitude = dto.Longitude,
+            var apartment = new Apartment
+            {
+                // Basic information
+                Title = dto.Title,
+                Description = dto.Description,
+                Price = dto.Price,
+                Address = dto.Address,
+                ImageUrl = storedImagePath,
 
-            // Apartment details
-            Bedrooms = dto.Bedrooms,
-            Bathrooms = dto.Bathrooms,
-            SizeSquareMeters = dto.SizeSquareMeters,
-            Floor = dto.Floor,
-            TotalFloors = dto.TotalFloors,
+                // Location
+                City = dto.City,
+                District = dto.District,
+                Latitude = dto.Latitude,
+                Longitude = dto.Longitude,
 
-            // Features
-            HasElevator = dto.HasElevator,
-            HasParking = dto.HasParking,
-            HasBalcony = dto.HasBalcony,
-            HasBathtub = dto.HasBathtub,
-            HasAirConditioning = dto.HasAirConditioning,
-            HasDishwasher = dto.HasDishwasher,
-            IsPetFriendly = dto.IsPetFriendly,
-            HasHomeOfficeSpace = dto.HasHomeOfficeSpace,
-            HasLargeKitchen = dto.HasLargeKitchen,
-            HasView = dto.HasView,
-            IsFurnished = dto.IsFurnished,
+                // Apartment details
+                Bedrooms = dto.Bedrooms,
+                Bathrooms = dto.Bathrooms,
+                SizeSquareMeters = dto.SizeSquareMeters,
+                Floor = dto.Floor,
+                TotalFloors = dto.TotalFloors,
 
-            // Lifestyle
-            ApartmentStyle = dto.ApartmentStyle,
-            NoiseLevel = dto.NoiseLevel,
-            Sunlight = dto.Sunlight,
+                // Features
+                HasElevator = dto.HasElevator,
+                HasParking = dto.HasParking,
+                HasBalcony = dto.HasBalcony,
+                HasBathtub = dto.HasBathtub,
+                HasAirConditioning = dto.HasAirConditioning,
+                HasDishwasher = dto.HasDishwasher,
+                IsPetFriendly = dto.IsPetFriendly,
+                HasHomeOfficeSpace = dto.HasHomeOfficeSpace,
+                HasLargeKitchen = dto.HasLargeKitchen,
+                HasView = dto.HasView,
+                IsFurnished = dto.IsFurnished,
 
-            // Nearby-place walking times
-            MetroDistanceMinutes = dto.MetroDistanceMinutes,
-            GymDistanceMinutes = dto.GymDistanceMinutes,
-            ParkDistanceMinutes = dto.ParkDistanceMinutes,
-            SchoolDistanceMinutes = dto.SchoolDistanceMinutes,
-            KindergartenDistanceMinutes = dto.KindergartenDistanceMinutes,
-            UniversityDistanceMinutes = dto.UniversityDistanceMinutes
-        };
+                // Lifestyle
+                ApartmentStyle = dto.ApartmentStyle,
+                NoiseLevel = dto.NoiseLevel,
+                Sunlight = dto.Sunlight,
 
-        _context.Apartments.Add(apartment);
-        await _context.SaveChangesAsync();
+                // Nearby-place walking times
+                MetroDistanceMinutes = dto.MetroDistanceMinutes,
+                GymDistanceMinutes = dto.GymDistanceMinutes,
+                ParkDistanceMinutes = dto.ParkDistanceMinutes,
+                SchoolDistanceMinutes = dto.SchoolDistanceMinutes,
+                KindergartenDistanceMinutes =
+                    dto.KindergartenDistanceMinutes,
+                UniversityDistanceMinutes =
+                    dto.UniversityDistanceMinutes
+            };
 
-        await _nearbyPlacesService.EnrichApartmentAsync(apartment);
-        await _context.SaveChangesAsync();
+            _context.Apartments.Add(apartment);
+            await _context.SaveChangesAsync(cancellationToken);
 
-        return Ok(new
+            await _nearbyPlacesService.EnrichApartmentAsync(
+                apartment,
+                cancellationToken);
+
+            await _context.SaveChangesAsync(cancellationToken);
+
+            var signedImageUrl =
+                await _storageService.CreateSignedUrlAsync(
+                    apartment.ImageUrl,
+                    3600,
+                    cancellationToken);
+
+            return Ok(new
+            {
+                message = "Apartment created successfully",
+                apartment = ToResponse(apartment, signedImageUrl)
+            });
+        }
+        catch
         {
-            message = "Apartment created successfully",
-            apartment
-        });
+            // If Supabase upload worked but database creation failed,
+            // remove the orphaned image.
+            if (!string.IsNullOrWhiteSpace(storedImagePath))
+            {
+                await _storageService.DeleteImageAsync(
+                    storedImagePath,
+                    CancellationToken.None);
+            }
+
+            throw;
+        }
     }
 
     [Authorize(Roles = "Admin")]
-    [HttpPut("{id}")]
-    public async Task<IActionResult> UpdateApartment(int id, [FromForm] UpdateApartmentDto dto)
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> UpdateApartment(
+        int id,
+        [FromForm] UpdateApartmentDto dto,
+        CancellationToken cancellationToken)
     {
-        var apartment = await _context.Apartments.FindAsync(id);
+        var apartment = await _context.Apartments
+            .FirstOrDefaultAsync(
+                apartment => apartment.Id == id,
+                cancellationToken);
 
-        if (apartment == null)
-            return NotFound(new { message = "Apartment not found" });
+        if (apartment is null)
+        {
+            return NotFound(new
+            {
+                message = "Apartment not found"
+            });
+        }
 
         var locationChanged =
-            dto.Address != null ||
-            dto.City != null ||
-            dto.District != null ||
+            dto.Address is not null ||
+            dto.City is not null ||
+            dto.District is not null ||
             dto.Latitude.HasValue ||
             dto.Longitude.HasValue;
 
-        apartment.Title = dto.Title ?? apartment.Title;
-        apartment.Description = dto.Description ?? apartment.Description;
-        apartment.Price = dto.Price ?? apartment.Price;
-        apartment.Address = dto.Address ?? apartment.Address;
+        apartment.Title =
+            dto.Title ?? apartment.Title;
+
+        apartment.Description =
+            dto.Description ?? apartment.Description;
+
+        apartment.Price =
+            dto.Price ?? apartment.Price;
+
+        apartment.Address =
+            dto.Address ?? apartment.Address;
+
         // Location
-        apartment.City = dto.City ?? apartment.City;
-        apartment.District = dto.District ?? apartment.District;
-        apartment.Latitude = dto.Latitude ?? apartment.Latitude;
-        apartment.Longitude = dto.Longitude ?? apartment.Longitude;
+        apartment.City =
+            dto.City ?? apartment.City;
+
+        apartment.District =
+            dto.District ?? apartment.District;
+
+        apartment.Latitude =
+            dto.Latitude ?? apartment.Latitude;
+
+        apartment.Longitude =
+            dto.Longitude ?? apartment.Longitude;
 
         // Apartment details
-        apartment.Bedrooms = dto.Bedrooms ?? apartment.Bedrooms;
-        apartment.Bathrooms = dto.Bathrooms ?? apartment.Bathrooms;
+        apartment.Bedrooms =
+            dto.Bedrooms ?? apartment.Bedrooms;
+
+        apartment.Bathrooms =
+            dto.Bathrooms ?? apartment.Bathrooms;
+
         apartment.SizeSquareMeters =
             dto.SizeSquareMeters ?? apartment.SizeSquareMeters;
-        apartment.Floor = dto.Floor ?? apartment.Floor;
-        apartment.TotalFloors = dto.TotalFloors ?? apartment.TotalFloors;
+
+        apartment.Floor =
+            dto.Floor ?? apartment.Floor;
+
+        apartment.TotalFloors =
+            dto.TotalFloors ?? apartment.TotalFloors;
 
         // Features
-        apartment.HasElevator = dto.HasElevator ?? apartment.HasElevator;
-        apartment.HasParking = dto.HasParking ?? apartment.HasParking;
-        apartment.HasBalcony = dto.HasBalcony ?? apartment.HasBalcony;
-        apartment.HasBathtub = dto.HasBathtub ?? apartment.HasBathtub;
+        apartment.HasElevator =
+            dto.HasElevator ?? apartment.HasElevator;
+
+        apartment.HasParking =
+            dto.HasParking ?? apartment.HasParking;
+
+        apartment.HasBalcony =
+            dto.HasBalcony ?? apartment.HasBalcony;
+
+        apartment.HasBathtub =
+            dto.HasBathtub ?? apartment.HasBathtub;
+
         apartment.HasAirConditioning =
-            dto.HasAirConditioning ?? apartment.HasAirConditioning;
+            dto.HasAirConditioning ??
+            apartment.HasAirConditioning;
+
         apartment.HasDishwasher =
-            dto.HasDishwasher ?? apartment.HasDishwasher;
+            dto.HasDishwasher ??
+            apartment.HasDishwasher;
+
         apartment.IsPetFriendly =
-            dto.IsPetFriendly ?? apartment.IsPetFriendly;
+            dto.IsPetFriendly ??
+            apartment.IsPetFriendly;
+
         apartment.HasHomeOfficeSpace =
-            dto.HasHomeOfficeSpace ?? apartment.HasHomeOfficeSpace;
+            dto.HasHomeOfficeSpace ??
+            apartment.HasHomeOfficeSpace;
+
         apartment.HasLargeKitchen =
-            dto.HasLargeKitchen ?? apartment.HasLargeKitchen;
-        apartment.HasView = dto.HasView ?? apartment.HasView;
-        apartment.IsFurnished = dto.IsFurnished ?? apartment.IsFurnished;
+            dto.HasLargeKitchen ??
+            apartment.HasLargeKitchen;
+
+        apartment.HasView =
+            dto.HasView ?? apartment.HasView;
+
+        apartment.IsFurnished =
+            dto.IsFurnished ?? apartment.IsFurnished;
 
         // Lifestyle
         apartment.ApartmentStyle =
             dto.ApartmentStyle ?? apartment.ApartmentStyle;
+
         apartment.NoiseLevel =
             dto.NoiseLevel ?? apartment.NoiseLevel;
+
         apartment.Sunlight =
             dto.Sunlight ?? apartment.Sunlight;
 
         // Nearby-place walking times
         apartment.MetroDistanceMinutes =
-            dto.MetroDistanceMinutes ?? apartment.MetroDistanceMinutes;
+            dto.MetroDistanceMinutes ??
+            apartment.MetroDistanceMinutes;
+
         apartment.GymDistanceMinutes =
-            dto.GymDistanceMinutes ?? apartment.GymDistanceMinutes;
+            dto.GymDistanceMinutes ??
+            apartment.GymDistanceMinutes;
+
         apartment.ParkDistanceMinutes =
-            dto.ParkDistanceMinutes ?? apartment.ParkDistanceMinutes;
+            dto.ParkDistanceMinutes ??
+            apartment.ParkDistanceMinutes;
+
         apartment.SchoolDistanceMinutes =
-            dto.SchoolDistanceMinutes ?? apartment.SchoolDistanceMinutes;
+            dto.SchoolDistanceMinutes ??
+            apartment.SchoolDistanceMinutes;
+
         apartment.KindergartenDistanceMinutes =
             dto.KindergartenDistanceMinutes ??
             apartment.KindergartenDistanceMinutes;
+
         apartment.UniversityDistanceMinutes =
             dto.UniversityDistanceMinutes ??
             apartment.UniversityDistanceMinutes;
 
-        if (dto.Image != null)
+        string? oldImagePath = null;
+        string? newImagePath = null;
+
+        try
         {
-            DeleteOldImage(apartment.ImageUrl);
-            apartment.ImageUrl = await SaveImage(dto.Image);
+            if (dto.Image is { Length: > 0 })
+            {
+                oldImagePath = apartment.ImageUrl;
+
+                newImagePath =
+                    await _storageService.UploadImageAsync(
+                        dto.Image,
+                        cancellationToken);
+
+                apartment.ImageUrl = newImagePath;
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+
+            if (locationChanged)
+            {
+                await _nearbyPlacesService.EnrichApartmentAsync(
+                    apartment,
+                    cancellationToken);
+
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+
+            // Delete the old image only after database update succeeds.
+            if (!string.IsNullOrWhiteSpace(oldImagePath) &&
+                !string.IsNullOrWhiteSpace(newImagePath))
+            {
+                await _storageService.DeleteImageAsync(
+                    oldImagePath,
+                    cancellationToken);
+            }
+
+            var signedImageUrl =
+                await _storageService.CreateSignedUrlAsync(
+                    apartment.ImageUrl,
+                    3600,
+                    cancellationToken);
+
+            return Ok(new
+            {
+                message = "Apartment updated successfully",
+                apartment = ToResponse(apartment, signedImageUrl)
+            });
         }
-
-        await _context.SaveChangesAsync();
-
-        if (locationChanged)
+        catch
         {
-            await _nearbyPlacesService.EnrichApartmentAsync(apartment);
-            await _context.SaveChangesAsync();
+            // Delete the newly uploaded file if the database update failed.
+            if (!string.IsNullOrWhiteSpace(newImagePath))
+            {
+                await _storageService.DeleteImageAsync(
+                    newImagePath,
+                    CancellationToken.None);
+            }
+
+            throw;
         }
-
-        return Ok(new
-        {
-            message = "Apartment updated successfully",
-            apartment
-        });
     }
 
     [Authorize(Roles = "Admin")]
-    [HttpPost("{id}/refresh-nearby-places")]
-    public async Task<IActionResult> RefreshNearbyPlaces(int id)
+    [HttpPost("{id:int}/refresh-nearby-places")]
+    public async Task<IActionResult> RefreshNearbyPlaces(
+        int id,
+        CancellationToken cancellationToken)
     {
-        var apartment = await _context.Apartments.FindAsync(id);
+        var apartment = await _context.Apartments
+            .FirstOrDefaultAsync(
+                apartment => apartment.Id == id,
+                cancellationToken);
 
-        if (apartment == null)
-            return NotFound(new { message = "Apartment not found" });
+        if (apartment is null)
+        {
+            return NotFound(new
+            {
+                message = "Apartment not found"
+            });
+        }
 
-        await _nearbyPlacesService.EnrichApartmentAsync(apartment);
-        await _context.SaveChangesAsync();
+        await _nearbyPlacesService.EnrichApartmentAsync(
+            apartment,
+            cancellationToken);
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var signedImageUrl =
+            await _storageService.CreateSignedUrlAsync(
+                apartment.ImageUrl,
+                3600,
+                cancellationToken);
 
         return Ok(new
         {
             message = "Nearby-place walking times refreshed successfully",
-            apartment
+            apartment = ToResponse(apartment, signedImageUrl)
         });
     }
 
     [Authorize(Roles = "Admin")]
-    [HttpDelete("{id}")]
-    public async Task<IActionResult> DeleteApartment(int id)
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> DeleteApartment(
+        int id,
+        CancellationToken cancellationToken)
     {
-        var apartment = await _context.Apartments.FindAsync(id);
+        var apartment = await _context.Apartments
+            .FirstOrDefaultAsync(
+                apartment => apartment.Id == id,
+                cancellationToken);
 
-        if (apartment == null)
-            return NotFound(new { message = "Apartment not found" });
+        if (apartment is null)
+        {
+            return NotFound(new
+            {
+                message = "Apartment not found"
+            });
+        }
 
-        DeleteOldImage(apartment.ImageUrl);
+        var storedImagePath = apartment.ImageUrl;
 
         _context.Apartments.Remove(apartment);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
+
+        // Delete the file only after the database record was deleted.
+        await _storageService.DeleteImageAsync(
+            storedImagePath,
+            cancellationToken);
 
         return Ok(new
         {
@@ -252,44 +455,56 @@ public class ApartmentsController : ControllerBase
         });
     }
 
-    private async Task<string?> SaveImage(IFormFile? image)
+    private static object ToResponse(
+        Apartment apartment,
+        string? signedImageUrl)
     {
-        if (image == null)
-            return null;
+        return new
+        {
+            apartment.Id,
+            apartment.Title,
+            apartment.Description,
+            apartment.Price,
+            apartment.Address,
 
-        var webRootPath = _environment.WebRootPath;
+            // Return a temporary signed URL, not the stored object path.
+            ImageUrl = signedImageUrl,
 
-        if (string.IsNullOrWhiteSpace(webRootPath))
-            webRootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+            apartment.CreatedAt,
 
-        var uploadsFolder = Path.Combine(webRootPath, "uploads", "apartments");
+            apartment.City,
+            apartment.District,
+            apartment.Latitude,
+            apartment.Longitude,
 
-        if (!Directory.Exists(uploadsFolder))
-            Directory.CreateDirectory(uploadsFolder);
+            apartment.Bedrooms,
+            apartment.Bathrooms,
+            apartment.SizeSquareMeters,
+            apartment.Floor,
+            apartment.TotalFloors,
 
-        var fileName = $"{Guid.NewGuid()}{Path.GetExtension(image.FileName)}";
-        var filePath = Path.Combine(uploadsFolder, fileName);
+            apartment.HasElevator,
+            apartment.HasParking,
+            apartment.HasBalcony,
+            apartment.HasBathtub,
+            apartment.HasAirConditioning,
+            apartment.HasDishwasher,
+            apartment.IsPetFriendly,
+            apartment.HasHomeOfficeSpace,
+            apartment.HasLargeKitchen,
+            apartment.HasView,
+            apartment.IsFurnished,
 
-        await using var stream = new FileStream(filePath, FileMode.Create);
-        await image.CopyToAsync(stream);
+            apartment.ApartmentStyle,
+            apartment.NoiseLevel,
+            apartment.Sunlight,
 
-        return $"uploads/apartments/{fileName}";
-    }
-
-    private void DeleteOldImage(string? imageUrl)
-    {
-        if (string.IsNullOrWhiteSpace(imageUrl))
-            return;
-
-        var webRootPath = _environment.WebRootPath;
-
-        if (string.IsNullOrWhiteSpace(webRootPath))
-            webRootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-
-        var cleanPath = imageUrl.Replace("/", Path.DirectorySeparatorChar.ToString());
-        var filePath = Path.Combine(webRootPath, cleanPath);
-
-        if (System.IO.File.Exists(filePath))
-            System.IO.File.Delete(filePath);
+            apartment.MetroDistanceMinutes,
+            apartment.GymDistanceMinutes,
+            apartment.ParkDistanceMinutes,
+            apartment.SchoolDistanceMinutes,
+            apartment.KindergartenDistanceMinutes,
+            apartment.UniversityDistanceMinutes
+        };
     }
 }

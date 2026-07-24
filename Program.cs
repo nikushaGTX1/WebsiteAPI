@@ -13,6 +13,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
 builder.Services.AddHttpClient<GoogleNearbyPlacesService>();
+builder.Services.AddHttpClient<SupabaseStorageService>();
 builder.Services.AddScoped<HomeMatchScorer>();
 
 // =========================
