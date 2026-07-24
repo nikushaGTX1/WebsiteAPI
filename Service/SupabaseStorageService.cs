@@ -21,15 +21,18 @@ public sealed class SupabaseStorageService
         _httpClient = httpClient;
         _logger = logger;
 
-        _supabaseUrl = configuration["Supabase:Url"]
+        _supabaseUrl =
+            configuration["Supabase:Url"]?.TrimEnd('/')
             ?? throw new InvalidOperationException(
                 "Supabase:Url is missing.");
 
-        _secretKey = configuration["Supabase:SecretKey"]
+        _secretKey =
+            configuration["Supabase:SecretKey"]
             ?? throw new InvalidOperationException(
                 "Supabase:SecretKey is missing.");
 
-        _bucket = configuration["Supabase:Bucket"]
+        _bucket =
+            configuration["Supabase:Bucket"]
             ?? throw new InvalidOperationException(
                 "Supabase:Bucket is missing.");
     }
@@ -40,6 +43,9 @@ public sealed class SupabaseStorageService
     {
         if (image is null || image.Length == 0)
         {
+            _logger.LogWarning(
+                "Supabase upload skipped because no image was received.");
+
             return null;
         }
 
@@ -47,17 +53,24 @@ public sealed class SupabaseStorageService
 
         var extension = GetExtension(image.ContentType);
 
-        // This object path is stored in PostgreSQL.
+        // Bucket is already called "apartments",
+        // so do not add another "apartments/" folder.
         var objectPath =
-            $"apartments/{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}{extension}";
+            $"{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}{extension}";
 
+        var encodedBucket = Uri.EscapeDataString(_bucket);
         var encodedPath = EncodeObjectPath(objectPath);
 
         var requestUrl =
-            $"{_supabaseUrl.TrimEnd('/')}/storage/v1/object/{_bucket}/{encodedPath}";
+            $"{_supabaseUrl}/storage/v1/object/" +
+            $"{encodedBucket}/{encodedPath}";
+
+        _logger.LogInformation(
+            "Uploading image {FileName} to Supabase path {ObjectPath}.",
+            image.FileName,
+            objectPath);
 
         await using var imageStream = image.OpenReadStream();
-
         using var content = new StreamContent(imageStream);
 
         content.Headers.ContentType =
@@ -66,40 +79,40 @@ public sealed class SupabaseStorageService
         using var request =
             new HttpRequestMessage(HttpMethod.Post, requestUrl);
 
-        // New sb_secret keys should be sent using the apikey header.
+        // Correct for the new sb_secret_... key.
         request.Headers.TryAddWithoutValidation(
             "apikey",
-            _secretKey
-        );
+            _secretKey);
 
         request.Headers.TryAddWithoutValidation(
             "x-upsert",
-            "false"
-        );
+            "false");
 
         request.Content = content;
 
         using var response = await _httpClient.SendAsync(
             request,
-            cancellationToken
-        );
+            cancellationToken);
 
-        var responseText = await response.Content.ReadAsStringAsync(
-            cancellationToken
-        );
+        var responseText =
+            await response.Content.ReadAsStringAsync(
+                cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogError(
                 "Supabase upload failed. Status: {Status}. Response: {Response}",
                 response.StatusCode,
-                responseText
-            );
+                responseText);
 
             throw new InvalidOperationException(
-                $"Could not upload image to Supabase. Status: {(int)response.StatusCode}"
-            );
+                $"Supabase upload failed with status " +
+                $"{(int)response.StatusCode}: {responseText}");
         }
+
+        _logger.LogInformation(
+            "Supabase upload succeeded. Stored path: {ObjectPath}",
+            objectPath);
 
         return objectPath;
     }
@@ -114,7 +127,7 @@ public sealed class SupabaseStorageService
             return null;
         }
 
-        // Support old Railway image values without crashing.
+        // Old Railway-local files cannot be signed by Supabase.
         if (objectPath.StartsWith(
                 "uploads/",
                 StringComparison.OrdinalIgnoreCase))
@@ -125,15 +138,17 @@ public sealed class SupabaseStorageService
         if (Uri.TryCreate(
                 objectPath,
                 UriKind.Absolute,
-                out var existingUrl))
+                out var absoluteUrl))
         {
-            return existingUrl.ToString();
+            return absoluteUrl.ToString();
         }
 
+        var encodedBucket = Uri.EscapeDataString(_bucket);
         var encodedPath = EncodeObjectPath(objectPath);
 
         var requestUrl =
-            $"{_supabaseUrl.TrimEnd('/')}/storage/v1/object/sign/{_bucket}/{encodedPath}";
+            $"{_supabaseUrl}/storage/v1/object/sign/" +
+            $"{encodedBucket}/{encodedPath}";
 
         var json = JsonSerializer.Serialize(new
         {
@@ -145,31 +160,27 @@ public sealed class SupabaseStorageService
 
         request.Headers.TryAddWithoutValidation(
             "apikey",
-            _secretKey
-        );
+            _secretKey);
 
         request.Content = new StringContent(
             json,
             Encoding.UTF8,
-            "application/json"
-        );
+            "application/json");
 
         using var response = await _httpClient.SendAsync(
             request,
-            cancellationToken
-        );
+            cancellationToken);
 
-        var responseText = await response.Content.ReadAsStringAsync(
-            cancellationToken
-        );
+        var responseText =
+            await response.Content.ReadAsStringAsync(
+                cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning(
                 "Supabase signed URL failed. Status: {Status}. Response: {Response}",
                 response.StatusCode,
-                responseText
-            );
+                responseText);
 
             return null;
         }
@@ -183,6 +194,10 @@ public sealed class SupabaseStorageService
                 "signedUrl",
                 out signedUrlElement))
         {
+            _logger.LogWarning(
+                "Supabase response did not contain a signed URL. Response: {Response}",
+                responseText);
+
             return null;
         }
 
@@ -193,28 +208,61 @@ public sealed class SupabaseStorageService
             return null;
         }
 
-        if (signedUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        if (signedUrl.StartsWith(
+                "http",
+                StringComparison.OrdinalIgnoreCase))
         {
             return signedUrl;
         }
 
-        return $"{_supabaseUrl.TrimEnd('/')}{signedUrl}";
+        // Supabase commonly returns /object/sign/...,
+        // so /storage/v1 must be included.
+        if (signedUrl.StartsWith(
+                "/object/",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{_supabaseUrl}/storage/v1{signedUrl}";
+        }
+
+        if (!signedUrl.StartsWith('/'))
+        {
+            signedUrl = $"/{signedUrl}";
+        }
+
+        return $"{_supabaseUrl}{signedUrl}";
     }
 
     public async Task DeleteImageAsync(
         string? objectPath,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(objectPath) ||
-            objectPath.StartsWith(
+        if (string.IsNullOrWhiteSpace(objectPath))
+        {
+            return;
+        }
+
+        if (objectPath.StartsWith(
                 "uploads/",
                 StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
+        if (Uri.TryCreate(
+                objectPath,
+                UriKind.Absolute,
+                out _))
+        {
+            _logger.LogWarning(
+                "Supabase deletion skipped because ImageUrl is an absolute URL.");
+
+            return;
+        }
+
+        var encodedBucket = Uri.EscapeDataString(_bucket);
+
         var requestUrl =
-            $"{_supabaseUrl.TrimEnd('/')}/storage/v1/object/{_bucket}";
+            $"{_supabaseUrl}/storage/v1/object/{encodedBucket}";
 
         var json = JsonSerializer.Serialize(new
         {
@@ -226,33 +274,34 @@ public sealed class SupabaseStorageService
 
         request.Headers.TryAddWithoutValidation(
             "apikey",
-            _secretKey
-        );
+            _secretKey);
 
         request.Content = new StringContent(
             json,
             Encoding.UTF8,
-            "application/json"
-        );
+            "application/json");
 
         using var response = await _httpClient.SendAsync(
             request,
-            cancellationToken
-        );
+            cancellationToken);
+
+        var responseText =
+            await response.Content.ReadAsStringAsync(
+                cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
-            var responseText =
-                await response.Content.ReadAsStringAsync(
-                    cancellationToken
-                );
-
             _logger.LogWarning(
-                "Supabase delete failed. Status: {Status}. Response: {Response}",
+                "Supabase deletion failed. Status: {Status}. Response: {Response}",
                 response.StatusCode,
-                responseText
-            );
+                responseText);
+
+            return;
         }
+
+        _logger.LogInformation(
+            "Deleted Supabase object {ObjectPath}.",
+            objectPath);
     }
 
     private static void ValidateImage(IFormFile image)
@@ -277,6 +326,7 @@ public sealed class SupabaseStorageService
                 StringComparer.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
+                $"Unsupported image type: {image.ContentType}. " +
                 "Only JPG, PNG and WebP images are allowed.");
         }
     }
@@ -288,8 +338,9 @@ public sealed class SupabaseStorageService
             "image/jpeg" => ".jpg",
             "image/png" => ".png",
             "image/webp" => ".webp",
+
             _ => throw new InvalidOperationException(
-                "Unsupported image type.")
+                $"Unsupported image content type: {contentType}")
         };
     }
 
@@ -298,8 +349,9 @@ public sealed class SupabaseStorageService
         return string.Join(
             "/",
             objectPath
-                .Split('/', StringSplitOptions.RemoveEmptyEntries)
-                .Select(Uri.EscapeDataString)
-        );
+                .Split(
+                    '/',
+                    StringSplitOptions.RemoveEmptyEntries)
+                .Select(Uri.EscapeDataString));
     }
 }
