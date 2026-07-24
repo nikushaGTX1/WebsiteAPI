@@ -11,61 +11,123 @@ using Website_API.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+
 builder.Services.AddHttpClient<GoogleNearbyPlacesService>();
 builder.Services.AddScoped<HomeMatchScorer>();
+
+// =========================
+// CORS
+// =========================
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AngularPolicy", policy =>
     {
-        policy.WithOrigins(
+        policy
+            .WithOrigins(
                 "http://localhost:4200",
                 "https://website-lff1.onrender.com"
+            // Add your Railway frontend URL here later:
+            // "https://your-frontend.up.railway.app"
             )
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
 
+// =========================
+// POSTGRESQL DATABASE
+// =========================
+
+var connectionString =
+    builder.Configuration.GetConnectionString("Default");
+
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "Connection string 'Default' was not found.");
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
+    options.UseNpgsql(connectionString));
 
-builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
-{
-    options.Password.RequireDigit = false;
-    options.Password.RequireLowercase = false;
-    options.Password.RequireUppercase = false;
-    options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequiredLength = 6;
-})
-.AddEntityFrameworkStores<AppDbContext>()
-.AddDefaultTokenProviders();
+// =========================
+// IDENTITY
+// =========================
 
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    var key = builder.Configuration["Jwt:Key"];
-
-    options.TokenValidationParameters = new TokenValidationParameters
+builder.Services
+    .AddIdentity<AppUser, IdentityRole>(options =>
     {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
+        options.Password.RequireDigit = false;
+        options.Password.RequireLowercase = false;
+        options.Password.RequireUppercase = false;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequiredLength = 6;
+    })
+    .AddEntityFrameworkStores<AppDbContext>()
+    .AddDefaultTokenProviders();
 
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
-        ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(key!)
-        )
-    };
-});
+// =========================
+// JWT AUTHENTICATION
+// =========================
+
+var jwtKey = builder.Configuration["Jwt:Key"];
+var jwtIssuer = builder.Configuration["Jwt:Issuer"];
+var jwtAudience = builder.Configuration["Jwt:Audience"];
+
+if (string.IsNullOrWhiteSpace(jwtKey))
+{
+    throw new InvalidOperationException(
+        "JWT configuration value 'Jwt:Key' is missing.");
+}
+
+if (string.IsNullOrWhiteSpace(jwtIssuer))
+{
+    throw new InvalidOperationException(
+        "JWT configuration value 'Jwt:Issuer' is missing.");
+}
+
+if (string.IsNullOrWhiteSpace(jwtAudience))
+{
+    throw new InvalidOperationException(
+        "JWT configuration value 'Jwt:Audience' is missing.");
+}
+
+builder.Services
+    .AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme =
+            JwtBearerDefaults.AuthenticationScheme;
+
+        options.DefaultChallengeScheme =
+            JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters =
+            new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+
+                ValidIssuer = jwtIssuer,
+                ValidAudience = jwtAudience,
+
+                IssuerSigningKey = new SymmetricSecurityKey(
+                    Encoding.UTF8.GetBytes(jwtKey)
+                ),
+
+                ClockSkew = TimeSpan.Zero
+            };
+    });
 
 builder.Services.AddAuthorization();
+
+// =========================
+// SWAGGER
+// =========================
 
 builder.Services.AddEndpointsApiExplorer();
 
@@ -77,78 +139,163 @@ builder.Services.AddSwaggerGen(options =>
         Version = "v1"
     });
 
-    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        Type = SecuritySchemeType.ApiKey,
-        In = ParameterLocation.Header,
-        Description = "Type: Bearer YOUR_TOKEN"
-    });
-
-    options.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
+    options.AddSecurityDefinition(
+        "Bearer",
+        new OpenApiSecurityScheme
         {
-            new OpenApiSecurityScheme
+            Name = "Authorization",
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            In = ParameterLocation.Header,
+            Description = "Enter your JWT token."
+        });
+
+    options.AddSecurityRequirement(
+        new OpenApiSecurityRequirement
+        {
             {
-                Name = "Bearer",
-                In = ParameterLocation.Header,
-                Reference = new OpenApiReference
+                new OpenApiSecurityScheme
                 {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            new List<string>()
-        }
-    });
+                    Reference = new OpenApiReference
+                    {
+                        Type = ReferenceType.SecurityScheme,
+                        Id = "Bearer"
+                    }
+                },
+                Array.Empty<string>()
+            }
+        });
 });
 
 var app = builder.Build();
 
+// =========================
+// SWAGGER
+// =========================
+
 app.UseSwagger();
 app.UseSwaggerUI();
+
+// =========================
+// DATABASE MIGRATION + SEED
+// =========================
 
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
 
-    var context = services.GetRequiredService<AppDbContext>();
-    await context.Database.MigrateAsync();
-
-    var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
-    var userManager = services.GetRequiredService<UserManager<AppUser>>();
-
-    string[] roles = ["Admin", "Agent", "User"];
-
-    foreach (var role in roles)
+    try
     {
-        if (!await roleManager.RoleExistsAsync(role))
+        var context =
+            services.GetRequiredService<AppDbContext>();
+
+        await context.Database.MigrateAsync();
+
+        var roleManager =
+            services.GetRequiredService<
+                RoleManager<IdentityRole>>();
+
+        var userManager =
+            services.GetRequiredService<
+                UserManager<AppUser>>();
+
+        string[] roles =
+        [
+            "Admin",
+            "Agent",
+            "User"
+        ];
+
+        foreach (var role in roles)
         {
-            await roleManager.CreateAsync(new IdentityRole(role));
+            if (!await roleManager.RoleExistsAsync(role))
+            {
+                var roleResult =
+                    await roleManager.CreateAsync(
+                        new IdentityRole(role));
+
+                if (!roleResult.Succeeded)
+                {
+                    var errors = string.Join(
+                        ", ",
+                        roleResult.Errors.Select(
+                            error => error.Description));
+
+                    throw new InvalidOperationException(
+                        $"Could not create role '{role}': {errors}");
+                }
+            }
+        }
+
+        var adminEmail =
+            builder.Configuration["Admin:Email"]
+            ?? "admin@whitetower.com";
+
+        var adminPassword =
+            builder.Configuration["Admin:Password"];
+
+        var admin =
+            await userManager.FindByEmailAsync(adminEmail);
+
+        if (admin == null)
+        {
+            if (string.IsNullOrWhiteSpace(adminPassword))
+            {
+                throw new InvalidOperationException(
+                    "Admin password is missing. Add Admin__Password in Railway.");
+            }
+
+            admin = new AppUser
+            {
+                UserName = "admin",
+                Email = adminEmail,
+                FullName = "Administrator",
+                EmailConfirmed = true
+            };
+
+            var createAdminResult =
+                await userManager.CreateAsync(
+                    admin,
+                    adminPassword);
+
+            if (!createAdminResult.Succeeded)
+            {
+                var errors = string.Join(
+                    ", ",
+                    createAdminResult.Errors.Select(
+                        error => error.Description));
+
+                throw new InvalidOperationException(
+                    $"Could not create admin: {errors}");
+            }
+
+            await userManager.AddToRoleAsync(
+                admin,
+                "Admin");
+        }
+        else if (!await userManager.IsInRoleAsync(
+                     admin,
+                     "Admin"))
+        {
+            await userManager.AddToRoleAsync(
+                admin,
+                "Admin");
         }
     }
-
-    var adminEmail = "admin@whitetower.com";
-    var admin = await userManager.FindByEmailAsync(adminEmail);
-
-    if (admin == null)
+    catch (Exception exception)
     {
-        admin = new AppUser
-        {
-            UserName = "admin",
-            Email = adminEmail,
-            FullName = "Administrator",
-            EmailConfirmed = true
-        };
+        app.Logger.LogCritical(
+            exception,
+            "Database migration or initial data creation failed.");
 
-        var result = await userManager.CreateAsync(admin, "Admin123!");
-
-        if (result.Succeeded)
-        {
-            await userManager.AddToRoleAsync(admin, "Admin");
-        }
+        throw;
     }
 }
+
+// =========================
+// HTTP PIPELINE
+// =========================
 
 app.UseStaticFiles();
 
