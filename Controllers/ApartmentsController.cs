@@ -28,21 +28,35 @@ public class ApartmentsController : ControllerBase
 
     [HttpGet]
     public async Task<IActionResult> GetApartments(
-        CancellationToken cancellationToken)
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken cancellationToken = default)
     {
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
         var apartments = await _context.Apartments
             .AsNoTracking()
             .OrderByDescending(apartment => apartment.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        foreach (var apartment in apartments)
-        {
-            apartment.ImageUrl =
-                await _storageService.CreateSignedUrlAsync(
-                    apartment.ImageUrl,
-                    3600,
-                    cancellationToken);
-        }
+        await Parallel.ForEachAsync(
+            apartments,
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = 8,
+                CancellationToken = cancellationToken
+            },
+            async (apartment, token) =>
+            {
+                apartment.ImageUrl =
+                    await _storageService.CreateSignedUrlAsync(
+                        apartment.ImageUrl,
+                        3600,
+                        token);
+            });
 
         return Ok(apartments);
     }

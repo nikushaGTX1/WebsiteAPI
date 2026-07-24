@@ -23,8 +23,12 @@ public class AiHomeMatchController : ControllerBase
 
     [HttpPost("matches")]
     public async Task<ActionResult<HomeMatchResponseDto>> FindMatches(
-        [FromBody] HomeMatchProfileRequest request)
+        [FromBody] HomeMatchProfileRequest request,
+        [FromQuery] int maxResults = 50,
+        CancellationToken cancellationToken = default)
     {
+        maxResults = Math.Clamp(maxResults, 1, 100);
+
         if (request.BudgetMin < 0)
         {
             return BadRequest(new
@@ -51,16 +55,18 @@ public class AiHomeMatchController : ControllerBase
 
         var apartments = await _context.Apartments
             .AsNoTracking()
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
-        var matches = apartments
+        var allMatches = apartments
             .Select(apartment => _scorer.Score(apartment, request))
             .OrderByDescending(match => match.MatchScore)
             .ToList();
 
+        var matches = allMatches.Take(maxResults).ToList();
+
         return Ok(new HomeMatchResponseDto
         {
-            TotalMatches = matches.Count,
+            TotalMatches = allMatches.Count,
             Matches = matches
         });
     }

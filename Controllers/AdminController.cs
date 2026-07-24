@@ -24,15 +24,34 @@ public class AdminController : ControllerBase
     [HttpGet("users")]
     public async Task<IActionResult> GetAllUsers()
     {
-        var users = await _context.Users.ToListAsync();
+        var users = await _context.Users
+            .AsNoTracking()
+            .ToListAsync();
 
-        var result = new List<object>();
+        var roleRows = await (
+            from userRole in _context.UserRoles.AsNoTracking()
+            join role in _context.Roles.AsNoTracking()
+                on userRole.RoleId equals role.Id
+            select new
+            {
+                userRole.UserId,
+                RoleName = role.Name!
+            })
+            .ToListAsync();
 
-        foreach (var user in users)
+        var rolesByUser = roleRows
+            .GroupBy(row => row.UserId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)group
+                    .Select(row => row.RoleName)
+                    .ToList());
+
+        var result = users.Select(user =>
         {
-            var roles = await _userManager.GetRolesAsync(user);
+            rolesByUser.TryGetValue(user.Id, out var roles);
 
-            result.Add(new
+            return new
             {
                 user.Id,
                 user.UserName,
@@ -41,9 +60,9 @@ public class AdminController : ControllerBase
                 user.ProfilePicture,
                 user.Bio,
                 user.IsAgent,
-                Roles = roles
-            });
-        }
+                Roles = roles ?? []
+            };
+        });
 
         return Ok(result);
     }

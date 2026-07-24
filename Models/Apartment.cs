@@ -29,6 +29,8 @@ public class Apartment
 
 
     // apartamentis detalebi
+
+    public List<ApartmentImage> Images { get; set; } = [];
     public int Bedrooms { get; set; }
 
     public int Bathrooms { get; set; }

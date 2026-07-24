@@ -67,47 +67,33 @@ public class GoogleNearbyPlacesService
             apartment.Longitude.Value
         );
 
-        apartment.SchoolDistanceMinutes =
-            await FindWalkingMinutesAsync(
-                origin,
-                "school",
-                cancellationToken
-            );
+        var schoolTask = FindWalkingMinutesAsync(
+            origin, "school", cancellationToken);
+        var kindergartenTask = FindWalkingMinutesAsync(
+            origin, "preschool", cancellationToken);
+        var gymTask = FindWalkingMinutesAsync(
+            origin, "gym", cancellationToken);
+        var parkTask = FindWalkingMinutesAsync(
+            origin, "park", cancellationToken);
+        var metroTask = FindWalkingMinutesAsync(
+            origin, "subway_station", cancellationToken);
+        var universityTask = FindWalkingMinutesAsync(
+            origin, "university", cancellationToken);
 
-        apartment.KindergartenDistanceMinutes =
-            await FindWalkingMinutesAsync(
-                origin,
-                "preschool",
-                cancellationToken
-            );
+        await Task.WhenAll(
+            schoolTask,
+            kindergartenTask,
+            gymTask,
+            parkTask,
+            metroTask,
+            universityTask);
 
-        apartment.GymDistanceMinutes =
-            await FindWalkingMinutesAsync(
-                origin,
-                "gym",
-                cancellationToken
-            );
-
-        apartment.ParkDistanceMinutes =
-            await FindWalkingMinutesAsync(
-                origin,
-                "park",
-                cancellationToken
-            );
-
-        apartment.MetroDistanceMinutes =
-            await FindWalkingMinutesAsync(
-                origin,
-                "subway_station",
-                cancellationToken
-            );
-
-        apartment.UniversityDistanceMinutes =
-            await FindWalkingMinutesAsync(
-                origin,
-                "university",
-                cancellationToken
-            );
+        apartment.SchoolDistanceMinutes = await schoolTask;
+        apartment.KindergartenDistanceMinutes = await kindergartenTask;
+        apartment.GymDistanceMinutes = await gymTask;
+        apartment.ParkDistanceMinutes = await parkTask;
+        apartment.MetroDistanceMinutes = await metroTask;
+        apartment.UniversityDistanceMinutes = await universityTask;
 
         _logger.LogInformation(
             "Nearby-place information updated for apartment {ApartmentId}. " +
