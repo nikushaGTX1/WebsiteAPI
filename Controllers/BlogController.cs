@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Website_API.Data;
 using Website_API.DTO;
 using Website_API.Models;
+using Website_API.Services;
 
 namespace Website_API.Controllers;
 
@@ -12,12 +13,14 @@ namespace Website_API.Controllers;
 public class BlogController : ControllerBase
 {
     private readonly AppDbContext _context;
-    private readonly IWebHostEnvironment _environment;
+    private readonly SupabaseStorageService _storageService;
 
-    public BlogController(AppDbContext context, IWebHostEnvironment environment)
+    public BlogController(
+        AppDbContext context,
+        SupabaseStorageService storageService)
     {
         _context = context;
-        _environment = environment;
+        _storageService = storageService;
     }
 
     [HttpGet]
@@ -35,25 +38,33 @@ public class BlogController : ControllerBase
             .Take(pageSize)
             .ToListAsync();
 
-        return Ok(posts);
+        return Ok(await Task.WhenAll(
+            posts.Select(post => ToResponseAsync(post))));
     }
 
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var post = await _context.BlogPosts.FindAsync(id);
+        var post = await _context.BlogPosts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == id);
 
         if (post == null)
             return NotFound();
 
-        return Ok(post);
+        return Ok(await ToResponseAsync(post));
     }
 
     [Authorize(Roles = "Admin")]
     [HttpPost]
-    public async Task<IActionResult> Create([FromForm] CreateBlogPostDto dto)
+    public async Task<IActionResult> Create(
+        [FromForm] CreateBlogPostDto dto,
+        CancellationToken cancellationToken)
     {
-        var imageUrl = await SaveImage(dto.Image);
+        var imageUrl = await _storageService.UploadImageAsync(
+            dto.Image,
+            "blogs",
+            cancellationToken);
 
         var post = new BlogPost
         {
@@ -65,14 +76,20 @@ public class BlogController : ControllerBase
         };
 
         _context.BlogPosts.Add(post);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return Ok(post);
+        return CreatedAtAction(
+            nameof(GetById),
+            new { id = post.Id },
+            await ToResponseAsync(post, cancellationToken));
     }
 
     [Authorize(Roles = "Admin")]
     [HttpPut("{id:int}")]
-    public async Task<IActionResult> Update(int id, [FromForm] UpdateBlogPostDto dto)
+    public async Task<IActionResult> Update(
+        int id,
+        [FromForm] UpdateBlogPostDto dto,
+        CancellationToken cancellationToken)
     {
         var post = await _context.BlogPosts.FindAsync(id);
 
@@ -90,70 +107,63 @@ public class BlogController : ControllerBase
 
         if (dto.Image != null)
         {
-            DeleteOldImage(post.ImageUrl);
-            post.ImageUrl = await SaveImage(dto.Image);
+            var oldImageUrl = post.ImageUrl;
+            post.ImageUrl = await _storageService.UploadImageAsync(
+                dto.Image,
+                "blogs",
+                cancellationToken);
+
+            await _context.SaveChangesAsync(cancellationToken);
+
+            await _storageService.DeleteImageAsync(
+                oldImageUrl,
+                cancellationToken);
+
+            return Ok(await ToResponseAsync(post, cancellationToken));
         }
 
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return Ok(post);
+        return Ok(await ToResponseAsync(post, cancellationToken));
     }
 
     [Authorize(Roles = "Admin")]
     [HttpDelete("{id:int}")]
-    public async Task<IActionResult> Delete(int id)
+    public async Task<IActionResult> Delete(
+        int id,
+        CancellationToken cancellationToken)
     {
         var post = await _context.BlogPosts.FindAsync(id);
 
         if (post == null)
             return NotFound();
 
-        DeleteOldImage(post.ImageUrl);
-
         _context.BlogPosts.Remove(post);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
+
+        await _storageService.DeleteImageAsync(
+            post.ImageUrl,
+            cancellationToken);
 
         return Ok(new { message = "Blog post deleted" });
     }
 
-    private async Task<string?> SaveImage(IFormFile? image)
+    private async Task<BlogPostResponseDto> ToResponseAsync(
+        BlogPost post,
+        CancellationToken cancellationToken = default)
     {
-        if (image == null)
-            return null;
+        var imageUrl = await _storageService.CreateSignedUrlAsync(
+            post.ImageUrl,
+            cancellationToken: cancellationToken);
 
-        var webRootPath = _environment.WebRootPath;
-
-        if (string.IsNullOrWhiteSpace(webRootPath))
-            webRootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-
-        var uploadsFolder = Path.Combine(webRootPath, "uploads", "blogs");
-
-        if (!Directory.Exists(uploadsFolder))
-            Directory.CreateDirectory(uploadsFolder);
-
-        var fileName = $"{Guid.NewGuid()}{Path.GetExtension(image.FileName)}";
-        var filePath = Path.Combine(uploadsFolder, fileName);
-
-        await using var stream = new FileStream(filePath, FileMode.Create);
-        await image.CopyToAsync(stream);
-
-        return $"uploads/blogs/{fileName}";
-    }
-
-    private void DeleteOldImage(string? imageUrl)
-    {
-        if (string.IsNullOrWhiteSpace(imageUrl))
-            return;
-
-        var webRootPath = _environment.WebRootPath;
-
-        if (string.IsNullOrWhiteSpace(webRootPath))
-            webRootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-
-        var cleanPath = imageUrl.Replace("/", Path.DirectorySeparatorChar.ToString());
-        var filePath = Path.Combine(webRootPath, cleanPath);
-
-        if (System.IO.File.Exists(filePath))
-            System.IO.File.Delete(filePath);
+        return new BlogPostResponseDto
+        {
+            Id = post.Id,
+            Title = post.Title,
+            Summary = post.Summary,
+            Content = post.Content,
+            ImageUrl = imageUrl,
+            CreatedAt = post.CreatedAt
+        };
     }
 }

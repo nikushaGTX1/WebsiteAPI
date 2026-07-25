@@ -164,4 +164,3 @@ C:\Users\user\source\repos\Website API\Website API\bin\Debug\net10.0\Website API
 C:\Users\user\source\repos\Website API\Website API\obj\Debug\net10.0\Website API.sourcelink.json
 C:\Users\user\source\repos\Website API\Website API\bin\Debug\net10.0\Npgsql.dll
 C:\Users\user\source\repos\Website API\Website API\bin\Debug\net10.0\Npgsql.EntityFrameworkCore.PostgreSQL.dll
-C:\Users\user\source\repos\Website API\Website API\obj\Debug\net10.0\staticwebassets.upToDateCheck.txt

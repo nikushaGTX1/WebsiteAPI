@@ -39,6 +39,7 @@ public sealed class SupabaseStorageService
 
     public async Task<string?> UploadImageAsync(
         IFormFile? image,
+        string? folder = null,
         CancellationToken cancellationToken = default)
     {
         if (image is null || image.Length == 0)
@@ -53,10 +54,13 @@ public sealed class SupabaseStorageService
 
         var extension = GetExtension(image.ContentType);
 
-        // Bucket is already called "apartments",
-        // so do not add another "apartments/" folder.
+        var normalizedFolder = string.IsNullOrWhiteSpace(folder)
+            ? string.Empty
+            : $"{folder.Trim().Trim('/')}/";
+
         var objectPath =
-            $"{DateTime.UtcNow:yyyy/MM}/{Guid.NewGuid():N}{extension}";
+            $"{normalizedFolder}{DateTime.UtcNow:yyyy/MM}/" +
+            $"{Guid.NewGuid():N}{extension}";
 
         var encodedBucket = Uri.EscapeDataString(_bucket);
         var encodedPath = EncodeObjectPath(objectPath);

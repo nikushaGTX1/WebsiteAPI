@@ -649,7 +649,7 @@ public class ApartmentsController : ControllerBase
                     paths[index] =
                         await _storageService.UploadImageAsync(
                             uploads[index],
-                            token);
+                            cancellationToken: token);
                 });
         }
         catch
