@@ -15,6 +15,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<Apartment> Apartments => Set<Apartment>();
     public DbSet<ApartmentImage> ApartmentImages => Set<ApartmentImage>();
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
+    public DbSet<FavoriteApartment> FavoriteApartments =>
+        Set<FavoriteApartment>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -31,5 +33,30 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<AgentRating>()
             .HasIndex(rating => new { rating.AgentId, rating.CreatedAt });
+
+        builder.Entity<FavoriteApartment>(favorite =>
+        {
+            favorite.HasKey(item => new
+            {
+                item.UserId,
+                item.ApartmentId
+            });
+
+            favorite.HasOne(item => item.User)
+                .WithMany(user => user.FavoriteApartments)
+                .HasForeignKey(item => item.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            favorite.HasOne(item => item.Apartment)
+                .WithMany(apartment => apartment.FavoritedBy)
+                .HasForeignKey(item => item.ApartmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            favorite.HasIndex(item => new
+            {
+                item.UserId,
+                item.CreatedAt
+            });
+        });
     }
 }

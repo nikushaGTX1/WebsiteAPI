@@ -11,4 +11,6 @@ public class AppUser : IdentityUser
     public bool IsAgent { get; set; }
 
     public string? Bio { get; set; }
+
+    public List<FavoriteApartment> FavoriteApartments { get; set; } = [];
 }

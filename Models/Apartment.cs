@@ -1,5 +1,7 @@
 ﻿namespace Website_API.Models;
 
+using System.Text.Json.Serialization;
+
 public class Apartment
 {
     public int Id { get; set; }
@@ -88,4 +90,7 @@ public class Apartment
     public int? KindergartenDistanceMinutes { get; set; }
 
     public int? UniversityDistanceMinutes { get; set; }
+
+    [JsonIgnore]
+    public List<FavoriteApartment> FavoritedBy { get; set; } = [];
 }
