@@ -41,6 +41,7 @@ public class ProfileController : ControllerBase
             user.Email,
             user.FullName,
             user.Bio,
+            user.PhoneNumber,
             user.ProfilePicture,
             user.IsAgent,
             roles
@@ -59,6 +60,13 @@ public class ProfileController : ControllerBase
             user.FullName = dto.FullName;
 
         user.Bio = dto.Bio;
+
+        if (dto.PhoneNumber is not null)
+        {
+            user.PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber)
+                ? null
+                : dto.PhoneNumber.Trim();
+        }
 
         if (dto.ProfilePicture != null)
         {
@@ -105,7 +113,8 @@ public class ProfileController : ControllerBase
         return Ok(new
         {
             message = "Profile updated successfully",
-            profilePicture = user.ProfilePicture
+            profilePicture = user.ProfilePicture,
+            phoneNumber = user.PhoneNumber
         });
     }
 

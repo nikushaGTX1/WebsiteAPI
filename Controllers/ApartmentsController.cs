@@ -108,6 +108,9 @@ public class ApartmentsController : ControllerBase
                 Description = dto.Description,
                 Price = dto.Price,
                 Address = dto.Address,
+                PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber)
+                    ? null
+                    : dto.PhoneNumber.Trim(),
                 ImageUrl = storedImagePaths.FirstOrDefault(),
                 Images = storedImagePaths
                     .Select((path, index) => new ApartmentImage
@@ -230,6 +233,13 @@ public class ApartmentsController : ControllerBase
 
         apartment.Address =
             dto.Address ?? apartment.Address;
+
+        if (dto.PhoneNumber is not null)
+        {
+            apartment.PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber)
+                ? null
+                : dto.PhoneNumber.Trim();
+        }
 
         // Location
         apartment.City =
@@ -576,6 +586,7 @@ public class ApartmentsController : ControllerBase
             apartment.Description,
             apartment.Price,
             apartment.Address,
+            apartment.PhoneNumber,
 
             // Return a temporary signed URL, not the stored object path.
             ImageUrl = signedImageUrl,

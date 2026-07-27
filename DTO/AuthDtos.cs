@@ -1,5 +1,7 @@
 ﻿using Microsoft.AspNetCore.Http;
 
+using System.ComponentModel.DataAnnotations;
+
 namespace Website_API.DTO;
 
 public class RegisterDto
@@ -8,6 +10,9 @@ public class RegisterDto
     public string Email { get; set; } = "";
     public string Password { get; set; } = "";
     public string? FullName { get; set; }
+
+    [Phone]
+    public string? PhoneNumber { get; set; }
 }
 
 public class LoginDto
@@ -21,6 +26,9 @@ public class UpdateProfileDto
     public string? FullName { get; set; }
 
     public string? Bio { get; set; }
+
+    [Phone]
+    public string? PhoneNumber { get; set; }
 
     // Uploaded image
     public IFormFile? ProfilePicture { get; set; }

@@ -34,7 +34,10 @@ public class AuthController : ControllerBase
         {
             UserName = dto.UserName,
             Email = dto.Email,
-            FullName = dto.FullName
+            FullName = dto.FullName,
+            PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber)
+                ? null
+                : dto.PhoneNumber.Trim()
         };
 
         var result = await _userManager.CreateAsync(user, dto.Password);
@@ -72,6 +75,7 @@ public class AuthController : ControllerBase
                 user.UserName,
                 user.Email,
                 user.FullName,
+                user.PhoneNumber,
                 user.ProfilePicture,
                 user.Bio,
                 user.IsAgent,

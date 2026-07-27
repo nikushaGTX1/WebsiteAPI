@@ -17,6 +17,9 @@ public class CreateApartmentDto
 
     public string? Address { get; set; }
 
+    [Phone]
+    public string? PhoneNumber { get; set; }
+
     // Upload up to 15 apartment images.
     public List<IFormFile> Images { get; set; } = [];
 
@@ -86,6 +89,9 @@ public class UpdateApartmentDto
     public decimal? Price { get; set; }
 
     public string? Address { get; set; }
+
+    [Phone]
+    public string? PhoneNumber { get; set; }
 
     // New images that will be added to the existing gallery.
     public List<IFormFile> Images { get; set; } = [];

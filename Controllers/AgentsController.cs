@@ -30,6 +30,7 @@ public class AgentsController : ControllerBase
                 u.UserName,
                 u.FullName,
                 u.Bio,
+                u.PhoneNumber,
                 u.ProfilePicture,
                 AverageRating = _context.AgentRatings
                     .Where(r => r.AgentId == u.Id)
@@ -53,6 +54,7 @@ public class AgentsController : ControllerBase
                 u.UserName,
                 u.FullName,
                 u.Bio,
+                u.PhoneNumber,
                 u.ProfilePicture,
                 AverageRating = _context.AgentRatings
                     .Where(r => r.AgentId == u.Id)
