@@ -30,13 +30,99 @@ public class ApartmentsController : ControllerBase
     public async Task<IActionResult> GetApartments(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
+        [FromQuery] string? city = null,
+        [FromQuery] string? region = null,
+        [FromQuery] string? district = null,
+        [FromQuery] string? street = null,
+        [FromQuery] string? search = null,
+        [FromQuery] decimal? minPrice = null,
+        [FromQuery] decimal? maxPrice = null,
+        [FromQuery] int? minBedrooms = null,
+        [FromQuery] int? minBathrooms = null,
+        [FromQuery] double? minSize = null,
+        [FromQuery] double? maxSize = null,
+        [FromQuery] bool? hasElevator = null,
+        [FromQuery] bool? hasParking = null,
+        [FromQuery] bool? hasBalcony = null,
+        [FromQuery] bool? hasAirConditioning = null,
+        [FromQuery] bool? isPetFriendly = null,
+        [FromQuery] bool? isFurnished = null,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var apartments = await _context.Apartments
-            .AsNoTracking()
+        if (minPrice.HasValue && maxPrice.HasValue &&
+            minPrice.Value > maxPrice.Value)
+        {
+            return BadRequest(new
+            {
+                message = "minPrice cannot be greater than maxPrice."
+            });
+        }
+
+        if (minSize.HasValue && maxSize.HasValue &&
+            minSize.Value > maxSize.Value)
+        {
+            return BadRequest(new
+            {
+                message = "minSize cannot be greater than maxSize."
+            });
+        }
+
+        var query = _context.Apartments.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(city))
+            query = query.Where(a => EF.Functions.ILike(a.City, city.Trim()));
+        if (!string.IsNullOrWhiteSpace(region))
+            query = query.Where(a => EF.Functions.ILike(a.Region, region.Trim()));
+        if (!string.IsNullOrWhiteSpace(district))
+            query = query.Where(a => EF.Functions.ILike(a.District, district.Trim()));
+        if (!string.IsNullOrWhiteSpace(street))
+        {
+            var pattern = $"%{street.Trim()}%";
+            query = query.Where(a =>
+                EF.Functions.ILike(a.Street, pattern) ||
+                (a.Address != null && EF.Functions.ILike(a.Address, pattern)));
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = $"%{search.Trim()}%";
+            query = query.Where(a =>
+                EF.Functions.ILike(a.Title, pattern) ||
+                EF.Functions.ILike(a.Description, pattern) ||
+                EF.Functions.ILike(a.City, pattern) ||
+                EF.Functions.ILike(a.Region, pattern) ||
+                EF.Functions.ILike(a.District, pattern) ||
+                EF.Functions.ILike(a.Street, pattern) ||
+                (a.Address != null && EF.Functions.ILike(a.Address, pattern)));
+        }
+        if (minPrice.HasValue)
+            query = query.Where(a => a.Price >= minPrice.Value);
+        if (maxPrice.HasValue)
+            query = query.Where(a => a.Price <= maxPrice.Value);
+        if (minBedrooms.HasValue)
+            query = query.Where(a => a.Bedrooms >= minBedrooms.Value);
+        if (minBathrooms.HasValue)
+            query = query.Where(a => a.Bathrooms >= minBathrooms.Value);
+        if (minSize.HasValue)
+            query = query.Where(a => a.SizeSquareMeters >= minSize.Value);
+        if (maxSize.HasValue)
+            query = query.Where(a => a.SizeSquareMeters <= maxSize.Value);
+        if (hasElevator.HasValue)
+            query = query.Where(a => a.HasElevator == hasElevator.Value);
+        if (hasParking.HasValue)
+            query = query.Where(a => a.HasParking == hasParking.Value);
+        if (hasBalcony.HasValue)
+            query = query.Where(a => a.HasBalcony == hasBalcony.Value);
+        if (hasAirConditioning.HasValue)
+            query = query.Where(a => a.HasAirConditioning == hasAirConditioning.Value);
+        if (isPetFriendly.HasValue)
+            query = query.Where(a => a.IsPetFriendly == isPetFriendly.Value);
+        if (isFurnished.HasValue)
+            query = query.Where(a => a.IsFurnished == isFurnished.Value);
+
+        var apartments = await query
             .OrderByDescending(apartment => apartment.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -123,7 +209,9 @@ public class ApartmentsController : ControllerBase
 
                 // Location
                 City = dto.City,
+                Region = dto.Region,
                 District = dto.District,
+                Street = dto.Street,
                 Latitude = dto.Latitude,
                 Longitude = dto.Longitude,
 
@@ -218,7 +306,9 @@ public class ApartmentsController : ControllerBase
         var locationChanged =
             dto.Address is not null ||
             dto.City is not null ||
+            dto.Region is not null ||
             dto.District is not null ||
+            dto.Street is not null ||
             dto.Latitude.HasValue ||
             dto.Longitude.HasValue;
 
@@ -245,8 +335,14 @@ public class ApartmentsController : ControllerBase
         apartment.City =
             dto.City ?? apartment.City;
 
+        apartment.Region =
+            dto.Region ?? apartment.Region;
+
         apartment.District =
             dto.District ?? apartment.District;
+
+        apartment.Street =
+            dto.Street ?? apartment.Street;
 
         apartment.Latitude =
             dto.Latitude ?? apartment.Latitude;
@@ -595,7 +691,9 @@ public class ApartmentsController : ControllerBase
             apartment.CreatedAt,
 
             apartment.City,
+            apartment.Region,
             apartment.District,
+            apartment.Street,
             apartment.Latitude,
             apartment.Longitude,
 

@@ -31,8 +31,12 @@ public class CreateApartmentDto
     [Required]
     public string City { get; set; } = "Tbilisi";
 
+    public string Region { get; set; } = string.Empty;
+
     [Required]
     public string District { get; set; } = string.Empty;
+
+    public string Street { get; set; } = string.Empty;
 
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
@@ -109,7 +113,9 @@ public class UpdateApartmentDto
 
     // Location
     public string? City { get; set; }
+    public string? Region { get; set; }
     public string? District { get; set; }
+    public string? Street { get; set; }
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
 

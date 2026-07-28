@@ -42,14 +42,7 @@ builder.Services.AddCors(options =>
 // POSTGRESQL DATABASE
 // =========================
 
-var connectionString =
-    builder.Configuration.GetConnectionString("Default");
-
-if (string.IsNullOrWhiteSpace(connectionString))
-{
-    throw new InvalidOperationException(
-        "Connection string 'Default' was not found.");
-}
+var connectionString = DatabaseConnection.Resolve(builder.Configuration);
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));

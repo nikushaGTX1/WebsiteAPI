@@ -8,16 +8,23 @@ public class AppDbContextFactory
 {
     public AppDbContext CreateDbContext(string[] args)
     {
+        var environment =
+            Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ??
+            "Development";
+
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile("appsettings.json", optional: true)
+            .AddJsonFile(
+                $"appsettings.{environment}.json",
+                optional: true)
+            .AddEnvironmentVariables()
+            .Build();
+
         var optionsBuilder =
             new DbContextOptionsBuilder<AppDbContext>();
 
-        optionsBuilder.UseNpgsql(
-            "Host=localhost;" +
-            "Port=5432;" +
-            "Database=WebsiteApiDesignTime;" +
-            "Username=postgres;" +
-            "Password=design-time-password"
-        );
+        optionsBuilder.UseNpgsql(DatabaseConnection.Resolve(configuration));
 
         return new AppDbContext(optionsBuilder.Options);
     }

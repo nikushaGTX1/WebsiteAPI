@@ -25,6 +25,15 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Apartment>()
             .HasIndex(apartment => apartment.CreatedAt);
 
+        builder.Entity<Apartment>()
+            .HasIndex(apartment => new
+            {
+                apartment.City,
+                apartment.Region,
+                apartment.District,
+                apartment.Street
+            });
+
         builder.Entity<ApartmentImage>()
             .ToTable("ApartmentImage");
 

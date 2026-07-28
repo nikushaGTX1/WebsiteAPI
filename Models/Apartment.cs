@@ -25,7 +25,11 @@ public class Apartment
     // Location
     public string City { get; set; } = "Tbilisi";
 
+    public string Region { get; set; } = string.Empty;
+
     public string District { get; set; } = string.Empty;
+
+    public string Street { get; set; } = string.Empty;
 
     public double? Latitude { get; set; }
 
