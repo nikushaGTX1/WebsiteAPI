@@ -18,7 +18,18 @@ public class LocationsController : ControllerBase
             "X-Location-Data-Attribution",
             "(c) OpenStreetMap contributors");
 
-        var query = StreetData.StreetsList.AsEnumerable();
+        var allLocations = StreetData.StreetsList.Append(new()
+        {
+            Id = 0,
+            City = "Tbilisi",
+            Region = "Tbilisi",
+            District = "All Tbilisi",
+            StreetNames = TbilisiStreetData.Names
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+        });
+
+        var query = allLocations.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(city))
         {

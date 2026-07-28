@@ -9,7 +9,9 @@ public static class GeorgianStreetOverrides
     private static readonly Dictionary<string, string> Values =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["Mcxeta st."] = "მცხეთის ქუჩა"
+            ["Mcxeta st."] = "მცხეთის ქუჩა",
+            ["Mckheta st."] = "მცხეთის ქუჩა",
+            ["m. aleksidze st."] = "ალექსიძე მერაბის ქუჩა"
         };
 
     public static string? Find(string englishName) =>

@@ -843,12 +843,14 @@ public static partial class GeorgianStreetTranslations
 
     public static string? Find(string englishName) =>
         GeorgianStreetOverrides.Find(englishName) ??
+        TbilisiStreetData.Find(englishName) ??
         (Verified.TryGetValue(englishName.Trim(), out var georgian)
             ? georgian
             : null);
 
     public static string? FindEnglish(string georgianName) =>
         GeorgianStreetOverrides.FindEnglish(georgianName) ??
+        TbilisiStreetData.FindEnglish(georgianName) ??
         Verified.FirstOrDefault(item =>
             item.Value.Equals(
                 georgianName.Trim(),
