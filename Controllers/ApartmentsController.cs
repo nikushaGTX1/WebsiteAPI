@@ -195,6 +195,19 @@ public class ApartmentsController : ControllerBase
         [FromForm] CreateApartmentDto dto,
         CancellationToken cancellationToken)
     {
+        if (!ApartmentLocationResolver.TryResolve(
+                dto.District,
+                dto.Street,
+                out var resolvedLocation))
+        {
+            return BadRequest(new
+            {
+                message =
+                    "Select a valid district from the Locations API. " +
+                    "The city name cannot be used as the district."
+            });
+        }
+
         List<string> storedImagePaths = [];
 
         try
@@ -224,10 +237,10 @@ public class ApartmentsController : ControllerBase
                     .ToList(),
 
                 // Location
-                City = dto.City,
-                Region = dto.Region,
-                District = dto.District,
-                Street = dto.Street,
+                City = resolvedLocation.City,
+                Region = resolvedLocation.Region,
+                District = resolvedLocation.District,
+                Street = resolvedLocation.Street,
                 Latitude = dto.Latitude,
                 Longitude = dto.Longitude,
 
@@ -319,6 +332,23 @@ public class ApartmentsController : ControllerBase
             });
         }
 
+        ResolvedApartmentLocation? resolvedLocation = null;
+        if (dto.District is not null || dto.Street is not null)
+        {
+            if (!ApartmentLocationResolver.TryResolve(
+                    dto.District ?? apartment.District,
+                    dto.Street ?? apartment.Street,
+                    out resolvedLocation))
+            {
+                return BadRequest(new
+                {
+                    message =
+                        "Select a valid district from the Locations API. " +
+                        "The city name cannot be used as the district."
+                });
+            }
+        }
+
         var locationChanged =
             dto.Address is not null ||
             dto.City is not null ||
@@ -349,16 +379,16 @@ public class ApartmentsController : ControllerBase
 
         // Location
         apartment.City =
-            dto.City ?? apartment.City;
+            resolvedLocation?.City ?? dto.City ?? apartment.City;
 
         apartment.Region =
-            dto.Region ?? apartment.Region;
+            resolvedLocation?.Region ?? dto.Region ?? apartment.Region;
 
         apartment.District =
-            dto.District ?? apartment.District;
+            resolvedLocation?.District ?? apartment.District;
 
         apartment.Street =
-            dto.Street ?? apartment.Street;
+            resolvedLocation?.Street ?? apartment.Street;
 
         apartment.Latitude =
             dto.Latitude ?? apartment.Latitude;
