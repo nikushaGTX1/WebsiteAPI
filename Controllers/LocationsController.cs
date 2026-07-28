@@ -16,7 +16,7 @@ public class LocationsController : ControllerBase
     {
         Response.Headers.Append(
             "X-Location-Data-Attribution",
-            "© OpenStreetMap contributors");
+            "(c) OpenStreetMap contributors");
 
         var query = StreetData.StreetsList.AsEnumerable();
 
