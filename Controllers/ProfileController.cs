@@ -1,10 +1,10 @@
 ﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using Website_API.DTO;
 using Website_API.Models;
+using Website_API.Services;
 
 namespace Website_API.Controllers;
 
@@ -14,18 +14,19 @@ namespace Website_API.Controllers;
 public class ProfileController : ControllerBase
 {
     private readonly UserManager<AppUser> _userManager;
-    private readonly IWebHostEnvironment _environment;
+    private readonly SupabaseStorageService _storageService;
 
     public ProfileController(
         UserManager<AppUser> userManager,
-        IWebHostEnvironment environment)
+        SupabaseStorageService storageService)
     {
         _userManager = userManager;
-        _environment = environment;
+        _storageService = storageService;
     }
 
     [HttpGet("me")]
-    public async Task<IActionResult> Me()
+    public async Task<IActionResult> Me(
+        CancellationToken cancellationToken)
     {
         var user = await GetCurrentUser();
 
@@ -33,6 +34,11 @@ public class ProfileController : ControllerBase
             return Unauthorized();
 
         var roles = await _userManager.GetRolesAsync(user);
+        var profilePicture =
+            await _storageService.CreateSignedUrlAsync(
+                user.ProfilePicture,
+                3600,
+                cancellationToken);
 
         return Ok(new
         {
@@ -42,14 +48,16 @@ public class ProfileController : ControllerBase
             user.FullName,
             user.Bio,
             user.PhoneNumber,
-            user.ProfilePicture,
+            ProfilePicture = profilePicture,
             user.IsAgent,
             roles
         });
     }
 
     [HttpPut("settings")]
-    public async Task<IActionResult> UpdateSettings([FromForm] UpdateProfileDto dto)
+    public async Task<IActionResult> UpdateSettings(
+        [FromForm] UpdateProfileDto dto,
+        CancellationToken cancellationToken)
     {
         var user = await GetCurrentUser();
 
@@ -68,54 +76,76 @@ public class ProfileController : ControllerBase
                 : dto.PhoneNumber.Trim();
         }
 
-        if (dto.ProfilePicture != null)
+        var oldProfilePicture = user.ProfilePicture;
+        string? uploadedProfilePicture = null;
+        var profileSaved = false;
+
+        try
         {
-            var webRootPath = _environment.WebRootPath;
-
-            if (string.IsNullOrWhiteSpace(webRootPath))
+            if (dto.ProfilePicture is not null &&
+                dto.ProfilePicture.Length > 0)
             {
-                webRootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+                uploadedProfilePicture =
+                    await _storageService.UploadImageAsync(
+                        dto.ProfilePicture,
+                        $"profiles/{user.Id}",
+                        cancellationToken);
+
+                user.ProfilePicture = uploadedProfilePicture;
             }
 
-            var uploadsFolder = Path.Combine(
-                webRootPath,
-                "uploads",
-                "profiles"
-            );
+            var result = await _userManager.UpdateAsync(user);
 
-            if (!Directory.Exists(uploadsFolder))
-                Directory.CreateDirectory(uploadsFolder);
-
-            if (!string.IsNullOrEmpty(user.ProfilePicture))
+            if (!result.Succeeded)
             {
-                var oldFile = Path.Combine(uploadsFolder, user.ProfilePicture);
+                user.ProfilePicture = oldProfilePicture;
 
-                if (System.IO.File.Exists(oldFile))
-                    System.IO.File.Delete(oldFile);
+                if (uploadedProfilePicture is not null)
+                {
+                    await _storageService.DeleteImageAsync(
+                        uploadedProfilePicture,
+                        CancellationToken.None);
+                }
+
+                return BadRequest(result.Errors);
             }
 
-            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(dto.ProfilePicture.FileName)}";
-            var filePath = Path.Combine(uploadsFolder, fileName);
+            profileSaved = true;
 
-            await using (var stream = new FileStream(filePath, FileMode.Create))
+            if (uploadedProfilePicture is not null &&
+                !string.IsNullOrWhiteSpace(oldProfilePicture) &&
+                oldProfilePicture.Contains('/'))
             {
-                await dto.ProfilePicture.CopyToAsync(stream);
+                await _storageService.DeleteImageAsync(
+                    oldProfilePicture,
+                    cancellationToken);
             }
 
-            user.ProfilePicture = fileName;
+            var profilePicture =
+                await _storageService.CreateSignedUrlAsync(
+                    user.ProfilePicture,
+                    3600,
+                    cancellationToken);
+
+            return Ok(new
+            {
+                message = "Profile updated successfully",
+                profilePicture,
+                phoneNumber = user.PhoneNumber
+            });
         }
-
-        var result = await _userManager.UpdateAsync(user);
-
-        if (!result.Succeeded)
-            return BadRequest(result.Errors);
-
-        return Ok(new
+        catch
         {
-            message = "Profile updated successfully",
-            profilePicture = user.ProfilePicture,
-            phoneNumber = user.PhoneNumber
-        });
+            if (uploadedProfilePicture is not null &&
+                !profileSaved)
+            {
+                await _storageService.DeleteImageAsync(
+                    uploadedProfilePicture,
+                    CancellationToken.None);
+            }
+
+            throw;
+        }
     }
 
     private async Task<AppUser?> GetCurrentUser()

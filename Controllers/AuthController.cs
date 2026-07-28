@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Text;
 using Website_API.DTO;
 using Website_API.Models;
+using Website_API.Services;
 
 namespace Website_API.Controllers;
 
@@ -15,11 +16,16 @@ public class AuthController : ControllerBase
 {
     private readonly UserManager<AppUser> _userManager;
     private readonly IConfiguration _config;
+    private readonly SupabaseStorageService _storageService;
 
-    public AuthController(UserManager<AppUser> userManager, IConfiguration config)
+    public AuthController(
+        UserManager<AppUser> userManager,
+        IConfiguration config,
+        SupabaseStorageService storageService)
     {
         _userManager = userManager;
         _config = config;
+        _storageService = storageService;
     }
 
     [HttpPost("register")]
@@ -51,7 +57,9 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
-    public async Task<IActionResult> Login(LoginDto dto)
+    public async Task<IActionResult> Login(
+        LoginDto dto,
+        CancellationToken cancellationToken)
     {
         var user = await _userManager.FindByEmailAsync(dto.Email);
 
@@ -65,6 +73,11 @@ public class AuthController : ControllerBase
 
         var roles = await _userManager.GetRolesAsync(user);
         var token = GenerateToken(user, roles);
+        var profilePicture =
+            await _storageService.CreateSignedUrlAsync(
+                user.ProfilePicture,
+                3600,
+                cancellationToken);
 
         return Ok(new
         {
@@ -76,7 +89,7 @@ public class AuthController : ControllerBase
                 user.Email,
                 user.FullName,
                 user.PhoneNumber,
-                user.ProfilePicture,
+                ProfilePicture = profilePicture,
                 user.Bio,
                 user.IsAgent,
                 roles
