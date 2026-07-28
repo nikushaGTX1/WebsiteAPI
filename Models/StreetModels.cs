@@ -17,6 +17,15 @@
         public string? DistrictGeorgian =>
             Data.GeorgianLocationTranslations.FindDistrict(District);
 
+        public string CityDisplay =>
+            CityGeorgian ?? City;
+
+        public string RegionDisplay =>
+            RegionGeorgian ?? Region;
+
+        public string DistrictDisplay =>
+            DistrictGeorgian ?? District;
+
         public List<string?> StreetNamesGeorgian =>
             StreetNames
                 .Select(Data.GeorgianStreetTranslations.Find)
@@ -37,5 +46,8 @@
     {
         public string English { get; set; } = string.Empty;
         public string? Georgian { get; set; }
+
+        public string Display =>
+            Georgian ?? English;
     }
 }

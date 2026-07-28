@@ -842,11 +842,13 @@ public static partial class GeorgianStreetTranslations
         };
 
     public static string? Find(string englishName) =>
-        Verified.TryGetValue(englishName.Trim(), out var georgian)
+        GeorgianStreetOverrides.Find(englishName) ??
+        (Verified.TryGetValue(englishName.Trim(), out var georgian)
             ? georgian
-            : null;
+            : null);
 
     public static string? FindEnglish(string georgianName) =>
+        GeorgianStreetOverrides.FindEnglish(georgianName) ??
         Verified.FirstOrDefault(item =>
             item.Value.Equals(
                 georgianName.Trim(),
