@@ -34,6 +34,12 @@ public class UpdateProfileDto
     public IFormFile? ProfilePicture { get; set; }
 }
 
+public class ProfilePictureDto
+{
+    [Required]
+    public IFormFile ProfilePicture { get; set; } = null!;
+}
+
 public class RatingDto
 {
     public int Stars { get; set; }

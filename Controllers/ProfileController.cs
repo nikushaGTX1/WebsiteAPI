@@ -13,6 +13,8 @@ namespace Website_API.Controllers;
 [Authorize]
 public class ProfileController : ControllerBase
 {
+    private const int ProfilePictureUrlLifetimeSeconds = 604800;
+
     private readonly UserManager<AppUser> _userManager;
     private readonly SupabaseStorageService _storageService;
 
@@ -37,7 +39,7 @@ public class ProfileController : ControllerBase
         var profilePicture =
             await _storageService.CreateSignedUrlAsync(
                 user.ProfilePicture,
-                3600,
+                ProfilePictureUrlLifetimeSeconds,
                 cancellationToken);
 
         return Ok(new
@@ -49,12 +51,14 @@ public class ProfileController : ControllerBase
             user.Bio,
             user.PhoneNumber,
             ProfilePicture = profilePicture,
+            ProfilePicturePath = user.ProfilePicture,
             user.IsAgent,
             roles
         });
     }
 
     [HttpPut("settings")]
+    [Consumes("multipart/form-data")]
     public async Task<IActionResult> UpdateSettings(
         [FromForm] UpdateProfileDto dto,
         CancellationToken cancellationToken)
@@ -124,13 +128,14 @@ public class ProfileController : ControllerBase
             var profilePicture =
                 await _storageService.CreateSignedUrlAsync(
                     user.ProfilePicture,
-                    3600,
+                    ProfilePictureUrlLifetimeSeconds,
                     cancellationToken);
 
             return Ok(new
             {
                 message = "Profile updated successfully",
                 profilePicture,
+                profilePicturePath = user.ProfilePicture,
                 phoneNumber = user.PhoneNumber
             });
         }
@@ -146,6 +151,26 @@ public class ProfileController : ControllerBase
 
             throw;
         }
+    }
+
+    [HttpPut("picture")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UpdatePicture(
+        [FromForm] ProfilePictureDto dto,
+        CancellationToken cancellationToken)
+    {
+        var user = await GetCurrentUser();
+
+        if (user == null)
+            return Unauthorized();
+
+        return await UpdateSettings(
+            new UpdateProfileDto
+            {
+                Bio = user.Bio,
+                ProfilePicture = dto.ProfilePicture
+            },
+            cancellationToken);
     }
 
     private async Task<AppUser?> GetCurrentUser()

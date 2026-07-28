@@ -14,6 +14,8 @@ namespace Website_API.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
+    private const int ProfilePictureUrlLifetimeSeconds = 604800;
+
     private readonly UserManager<AppUser> _userManager;
     private readonly IConfiguration _config;
     private readonly SupabaseStorageService _storageService;
@@ -76,7 +78,7 @@ public class AuthController : ControllerBase
         var profilePicture =
             await _storageService.CreateSignedUrlAsync(
                 user.ProfilePicture,
-                3600,
+                ProfilePictureUrlLifetimeSeconds,
                 cancellationToken);
 
         return Ok(new
@@ -90,6 +92,7 @@ public class AuthController : ControllerBase
                 user.FullName,
                 user.PhoneNumber,
                 ProfilePicture = profilePicture,
+                ProfilePicturePath = user.ProfilePicture,
                 user.Bio,
                 user.IsAgent,
                 roles
