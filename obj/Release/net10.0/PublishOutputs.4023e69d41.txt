@@ -1,0 +1,56 @@
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Website API.exe
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\appsettings.Development.json
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\appsettings.json
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Website API.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Website API.runtimeconfig.json
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Website API.pdb
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Azure.Core.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Azure.Identity.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.AspNetCore.Authentication.JwtBearer.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.AspNetCore.Identity.EntityFrameworkCore.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.Bcl.AsyncInterfaces.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.Bcl.Cryptography.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.Data.SqlClient.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.EntityFrameworkCore.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.EntityFrameworkCore.Abstractions.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.EntityFrameworkCore.Relational.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.EntityFrameworkCore.SqlServer.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.Identity.Client.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.Identity.Client.Extensions.Msal.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.IdentityModel.Abstractions.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.IdentityModel.JsonWebTokens.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.IdentityModel.Logging.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.IdentityModel.Protocols.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.IdentityModel.Protocols.OpenIdConnect.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.IdentityModel.Tokens.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.OpenApi.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Microsoft.SqlServer.Server.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Npgsql.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Npgsql.EntityFrameworkCore.PostgreSQL.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Swashbuckle.AspNetCore.Swagger.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Swashbuckle.AspNetCore.SwaggerGen.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Swashbuckle.AspNetCore.SwaggerUI.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\System.ClientModel.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\System.Configuration.ConfigurationManager.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\System.IdentityModel.Tokens.Jwt.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\System.Memory.Data.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\System.Security.Cryptography.ProtectedData.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\cs\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\de\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\es\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\fr\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\it\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\ja\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\ko\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\pl\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\pt-BR\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\ru\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\tr\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\zh-Hans\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\zh-Hant\Microsoft.Data.SqlClient.resources.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\runtimes\unix\lib\net9.0\Microsoft.Data.SqlClient.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\runtimes\win\lib\net9.0\Microsoft.Data.SqlClient.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\runtimes\win-arm64\native\Microsoft.Data.SqlClient.SNI.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\runtimes\win-x64\native\Microsoft.Data.SqlClient.SNI.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\runtimes\win-x86\native\Microsoft.Data.SqlClient.SNI.dll
+C:\Users\user\source\repos\Website API\Website API\obj\RailwayPublishCheck\Website API.deps.json
