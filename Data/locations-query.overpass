@@ -1,0 +1,7 @@
+[out:json][timeout:300];
+area["ISO3166-1"="GE"]->.georgia;
+(
+  nwr["place"]["name:en"]["name:ka"](area.georgia);
+  nwr["boundary"="administrative"]["name:en"]["name:ka"](area.georgia);
+);
+out tags;

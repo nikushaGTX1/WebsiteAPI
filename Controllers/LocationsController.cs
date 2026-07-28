@@ -14,29 +14,61 @@ public class LocationsController : ControllerBase
         [FromQuery] string? district = null,
         [FromQuery] string? search = null)
     {
+        Response.Headers.Append(
+            "X-Location-Data-Attribution",
+            "© OpenStreetMap contributors");
+
         var query = StreetData.StreetsList.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(city))
+        {
+            var cityTerm =
+                GeorgianLocationTranslations.FindEnglishCity(city) ?? city.Trim();
             query = query.Where(item =>
-                item.City.Equals(city.Trim(), StringComparison.OrdinalIgnoreCase));
+                item.City.Equals(cityTerm, StringComparison.OrdinalIgnoreCase));
+        }
 
         if (!string.IsNullOrWhiteSpace(region))
+        {
+            var regionTerm =
+                GeorgianLocationTranslations.FindEnglishRegion(region) ?? region.Trim();
             query = query.Where(item =>
-                item.Region.Equals(region.Trim(), StringComparison.OrdinalIgnoreCase));
+                item.Region.Equals(regionTerm, StringComparison.OrdinalIgnoreCase));
+        }
 
         if (!string.IsNullOrWhiteSpace(district))
+        {
+            var districtTerm =
+                GeorgianLocationTranslations.FindEnglishDistrict(district) ??
+                district.Trim();
             query = query.Where(item =>
-                item.District.Equals(district.Trim(), StringComparison.OrdinalIgnoreCase));
+                item.District.Equals(
+                    districtTerm,
+                    StringComparison.OrdinalIgnoreCase));
+        }
 
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
             query = query.Where(item =>
                 item.City.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                (item.CityGeorgian?.Contains(
+                    term,
+                    StringComparison.OrdinalIgnoreCase) ?? false) ||
                 item.Region.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                (item.RegionGeorgian?.Contains(
+                    term,
+                    StringComparison.OrdinalIgnoreCase) ?? false) ||
                 item.District.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                (item.DistrictGeorgian?.Contains(
+                    term,
+                    StringComparison.OrdinalIgnoreCase) ?? false) ||
                 item.StreetNames.Any(street =>
-                    street.Contains(term, StringComparison.OrdinalIgnoreCase)));
+                    street.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                item.StreetNamesGeorgian.Any(street =>
+                    street?.Contains(
+                        term,
+                        StringComparison.OrdinalIgnoreCase) ?? false));
         }
 
         return Ok(query
@@ -52,4 +84,16 @@ public class LocationsController : ControllerBase
             .Select(item => item.City)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(city => city));
+
+    [HttpGet("cities/bilingual")]
+    public IActionResult GetBilingualCities() =>
+        Ok(StreetData.StreetsList
+            .Select(item => item.City)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(city => city)
+            .Select(city => new
+            {
+                English = city,
+                Georgian = GeorgianLocationTranslations.FindCity(city)
+            }));
 }

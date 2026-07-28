@@ -73,14 +73,30 @@ public class ApartmentsController : ControllerBase
         var query = _context.Apartments.AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(city))
-            query = query.Where(a => EF.Functions.ILike(a.City, city.Trim()));
+        {
+            var value =
+                GeorgianLocationTranslations.FindEnglishCity(city) ?? city.Trim();
+            query = query.Where(a => EF.Functions.ILike(a.City, value));
+        }
         if (!string.IsNullOrWhiteSpace(region))
-            query = query.Where(a => EF.Functions.ILike(a.Region, region.Trim()));
+        {
+            var value =
+                GeorgianLocationTranslations.FindEnglishRegion(region) ??
+                region.Trim();
+            query = query.Where(a => EF.Functions.ILike(a.Region, value));
+        }
         if (!string.IsNullOrWhiteSpace(district))
-            query = query.Where(a => EF.Functions.ILike(a.District, district.Trim()));
+        {
+            var value =
+                GeorgianLocationTranslations.FindEnglishDistrict(district) ??
+                district.Trim();
+            query = query.Where(a => EF.Functions.ILike(a.District, value));
+        }
         if (!string.IsNullOrWhiteSpace(street))
         {
-            var pattern = $"%{street.Trim()}%";
+            var value =
+                GeorgianStreetTranslations.FindEnglish(street) ?? street.Trim();
+            var pattern = $"%{value}%";
             query = query.Where(a =>
                 EF.Functions.ILike(a.Street, pattern) ||
                 (a.Address != null && EF.Functions.ILike(a.Address, pattern)));
