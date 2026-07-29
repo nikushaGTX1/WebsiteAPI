@@ -15,14 +15,35 @@ public static class ApartmentLocationResolver
     {
         location = null!;
 
-        if (string.IsNullOrWhiteSpace(district))
+        var streetValue = street?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(streetValue))
         {
-            return false;
+            streetValue =
+                GeorgianStreetTranslations.FindEnglish(streetValue) ??
+                streetValue;
         }
 
-        var districtValue =
-            GeorgianLocationTranslations.FindEnglishDistrict(district) ??
-            district.Trim();
+        var districtValue = string.IsNullOrWhiteSpace(district)
+            ? null
+            : GeorgianLocationTranslations.FindEnglishDistrict(district) ??
+              district.Trim();
+
+        if (districtValue is null)
+        {
+            var matches = StreetDistrictResolver.Find(street);
+            if (matches.Count != 1)
+            {
+                return false;
+            }
+
+            var match = matches[0];
+            location = new ResolvedApartmentLocation(
+                match.City,
+                match.Region,
+                match.District,
+                streetValue);
+            return true;
+        }
 
         if (districtValue.Equals("All Tbilisi", StringComparison.OrdinalIgnoreCase) ||
             districtValue.Equals("Tbilisi", StringComparison.OrdinalIgnoreCase))
@@ -38,14 +59,6 @@ public static class ApartmentLocationResolver
         if (area is null)
         {
             return false;
-        }
-
-        var streetValue = street?.Trim() ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(streetValue))
-        {
-            streetValue =
-                GeorgianStreetTranslations.FindEnglish(streetValue) ??
-                streetValue;
         }
 
         location = new ResolvedApartmentLocation(

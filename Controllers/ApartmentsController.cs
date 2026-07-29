@@ -203,8 +203,9 @@ public class ApartmentsController : ControllerBase
             return BadRequest(new
             {
                 message =
-                    "Select a valid district from the Locations API. " +
-                    "The city name cannot be used as the district."
+                    "Select a valid district from the Locations API, or provide " +
+                    "a street that belongs to exactly one district. The city " +
+                    "name cannot be used as the district."
             });
         }
 
@@ -343,7 +344,8 @@ public class ApartmentsController : ControllerBase
                 return BadRequest(new
                 {
                     message =
-                        "Select a valid district from the Locations API. " +
+                        "Select a valid district from the Locations API, or " +
+                        "provide a street that belongs to exactly one district. " +
                         "The city name cannot be used as the district."
                 });
             }

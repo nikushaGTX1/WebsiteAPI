@@ -107,4 +107,26 @@ public class LocationsController : ControllerBase
                 English = city,
                 Georgian = GeorgianLocationTranslations.FindCity(city)
             }));
+
+    [HttpGet("resolve-street")]
+    public IActionResult ResolveStreet([FromQuery] string? street)
+    {
+        if (string.IsNullOrWhiteSpace(street))
+        {
+            return BadRequest(new
+            {
+                message = "The street query parameter is required."
+            });
+        }
+
+        var matches = StreetDistrictResolver.Find(street);
+
+        return Ok(new
+        {
+            street = street.Trim(),
+            resolved = matches.Count == 1,
+            ambiguous = matches.Count > 1,
+            matches
+        });
+    }
 }
