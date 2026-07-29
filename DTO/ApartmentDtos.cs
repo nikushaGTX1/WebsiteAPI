@@ -33,8 +33,8 @@ public class CreateApartmentDto
 
     public string Region { get; set; } = string.Empty;
 
-    // Optional when Street uniquely identifies a district.
-    public string? District { get; set; }
+    [Required]
+    public string District { get; set; } = string.Empty;
 
     [Required]
     public string Street { get; set; } = string.Empty;

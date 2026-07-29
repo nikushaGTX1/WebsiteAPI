@@ -223,8 +223,8 @@ public class ApartmentsController : ControllerBase
             return BadRequest(new
             {
                 message =
-                    "Select a valid street from the Locations API. Its city, " +
-                    "region, and district are assigned automatically."
+                    "Select a valid district and then select one of its streets " +
+                    "from the Locations API."
             });
         }
 
@@ -363,8 +363,8 @@ public class ApartmentsController : ControllerBase
                 return BadRequest(new
                 {
                     message =
-                        "Select a valid street from the Locations API. Its city, " +
-                        "region, and district are assigned automatically."
+                        "Select a valid district and then select one of its " +
+                        "streets from the Locations API."
                 });
             }
         }

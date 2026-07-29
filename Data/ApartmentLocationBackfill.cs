@@ -15,26 +15,29 @@ public static class ApartmentLocationBackfill
 
         foreach (var apartment in apartments)
         {
-            if (!ApartmentLocationResolver.TryResolve(
-                    null,
-                    apartment.Street,
-                    out var resolved))
+            var matches = StreetDistrictResolver.Find(apartment.Street);
+            if (matches.Count != 1)
             {
                 continue;
             }
 
-            if (apartment.City == resolved.City &&
-                apartment.Region == resolved.Region &&
-                apartment.District == resolved.District &&
-                apartment.Street == resolved.Street)
+            var match = matches[0];
+            var canonicalStreet =
+                GeorgianStreetTranslations.FindEnglish(apartment.Street) ??
+                apartment.Street.Trim();
+
+            if (apartment.City == match.City &&
+                apartment.Region == match.Region &&
+                apartment.District == match.District &&
+                apartment.Street == canonicalStreet)
             {
                 continue;
             }
 
-            apartment.City = resolved.City;
-            apartment.Region = resolved.Region;
-            apartment.District = resolved.District;
-            apartment.Street = resolved.Street;
+            apartment.City = match.City;
+            apartment.Region = match.Region;
+            apartment.District = match.District;
+            apartment.Street = canonicalStreet;
             repaired++;
         }
 

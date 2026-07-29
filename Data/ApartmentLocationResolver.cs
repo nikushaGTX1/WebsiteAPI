@@ -28,46 +28,13 @@ public static class ApartmentLocationResolver
             : GeorgianLocationTranslations.FindEnglishDistrict(district) ??
               district.Trim();
 
-        var streetMatches = StreetDistrictResolver.Find(street);
-        if (streetMatches.Count > 0)
-        {
-            var streetArea = districtValue is null
-                ? streetMatches.Count == 1 ? streetMatches[0] : null
-                : streetMatches.FirstOrDefault(match =>
-                    match.District.Equals(
-                        districtValue,
-                        StringComparison.OrdinalIgnoreCase));
-
-            if (streetArea is null && streetMatches.Count == 1)
-            {
-                streetArea = streetMatches[0];
-            }
-
-            if (streetArea is null)
-            {
-                return false;
-            }
-
-            location = new ResolvedApartmentLocation(
-                streetArea.City,
-                streetArea.Region,
-                streetArea.District,
-                streetValue);
-            return true;
-        }
-
-        if (!string.IsNullOrWhiteSpace(streetValue))
-        {
-            return false;
-        }
-
-        if (districtValue is null)
-        {
-            return false;
-        }
-
-        if (districtValue.Equals("All Tbilisi", StringComparison.OrdinalIgnoreCase) ||
-            districtValue.Equals("Tbilisi", StringComparison.OrdinalIgnoreCase))
+        if (districtValue is null ||
+            districtValue.Equals(
+                "All Tbilisi",
+                StringComparison.OrdinalIgnoreCase) ||
+            districtValue.Equals(
+                "Tbilisi",
+                StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -76,8 +43,14 @@ public static class ApartmentLocationResolver
             item.District.Equals(
                 districtValue,
                 StringComparison.OrdinalIgnoreCase));
+        if (area is null || string.IsNullOrWhiteSpace(streetValue))
+        {
+            return false;
+        }
 
-        if (area is null)
+        var streetMatches = StreetDistrictResolver.Find(street);
+        if (!streetMatches.Any(match =>
+                match.Id == area.Id))
         {
             return false;
         }
