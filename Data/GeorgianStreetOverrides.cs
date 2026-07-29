@@ -12,7 +12,9 @@ public static class GeorgianStreetOverrides
             ["Mcxeta st."] = "მცხეთის ქუჩა",
             ["Mckheta st."] = "მცხეთის ქუჩა",
             ["m. aleksidze st."] = "ალექსიძე მერაბის ქუჩა",
-            ["shartava st."] = "ჟიული შარტავას ქუჩა"
+            ["shartava st."] = "ჟიული შარტავას ქუჩა",
+            ["Kazbegi avenue"] = "ალექსანდრე ყაზბეგის გამზირი",
+            ["Kazbegi st."] = "ალექსანდრე ყაზბეგის ქუჩა"
         };
 
     public static string? Find(string englishName) =>

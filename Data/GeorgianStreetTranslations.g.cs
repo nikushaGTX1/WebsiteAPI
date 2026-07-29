@@ -846,7 +846,8 @@ public static partial class GeorgianStreetTranslations
         TbilisiStreetData.Find(englishName) ??
         (Verified.TryGetValue(englishName.Trim(), out var georgian)
             ? georgian
-            : GeorgianStreetTransliterator.Transliterate(englishName));
+            : TbilisiStreetData.FindAlias(englishName) ??
+              GeorgianStreetTransliterator.Transliterate(englishName));
 
     public static string? FindEnglish(string georgianName) =>
         GeorgianStreetOverrides.FindEnglish(georgianName) ??

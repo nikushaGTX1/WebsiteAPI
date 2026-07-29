@@ -42,7 +42,7 @@ $lines.Add("// Run Tools/GenerateTbilisiStreetData.ps1 after refreshing the Over
 $lines.Add("#nullable enable")
 $lines.Add("namespace Website_API.Data;")
 $lines.Add("")
-$lines.Add("public static class TbilisiStreetData")
+$lines.Add("public static partial class TbilisiStreetData")
 $lines.Add("{")
 $lines.Add("    private static readonly Dictionary<string, string?> Values =")
 $lines.Add("        new(StringComparer.OrdinalIgnoreCase)")

@@ -3,7 +3,7 @@
 #nullable enable
 namespace Website_API.Data;
 
-public static class TbilisiStreetData
+public static partial class TbilisiStreetData
 {
     private static readonly Dictionary<string, string?> Values =
         new(StringComparer.OrdinalIgnoreCase)
