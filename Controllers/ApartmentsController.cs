@@ -104,6 +104,17 @@ public class ApartmentsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(search))
         {
             var pattern = $"%{search.Trim()}%";
+            var translatedDistrict =
+                GeorgianLocationTranslations.FindEnglishDistrict(search);
+            var translatedStreet =
+                GeorgianStreetTranslations.FindEnglish(search);
+            var districtPattern = translatedDistrict is null
+                ? null
+                : $"%{translatedDistrict}%";
+            var streetPattern = translatedStreet is null
+                ? null
+                : $"%{translatedStreet}%";
+
             query = query.Where(a =>
                 EF.Functions.ILike(a.Title, pattern) ||
                 EF.Functions.ILike(a.Description, pattern) ||
@@ -111,7 +122,13 @@ public class ApartmentsController : ControllerBase
                 EF.Functions.ILike(a.Region, pattern) ||
                 EF.Functions.ILike(a.District, pattern) ||
                 EF.Functions.ILike(a.Street, pattern) ||
-                (a.Address != null && EF.Functions.ILike(a.Address, pattern)));
+                (a.Address != null && EF.Functions.ILike(a.Address, pattern)) ||
+                (districtPattern != null &&
+                    EF.Functions.ILike(a.District, districtPattern)) ||
+                (streetPattern != null &&
+                    (EF.Functions.ILike(a.Street, streetPattern) ||
+                     (a.Address != null &&
+                        EF.Functions.ILike(a.Address, streetPattern)))));
         }
         if (minPrice.HasValue)
             query = query.Where(a => a.Price >= minPrice.Value);
