@@ -846,7 +846,7 @@ public static partial class GeorgianStreetTranslations
         TbilisiStreetData.Find(englishName) ??
         (Verified.TryGetValue(englishName.Trim(), out var georgian)
             ? georgian
-            : null);
+            : GeorgianStreetTransliterator.Transliterate(englishName));
 
     public static string? FindEnglish(string georgianName) =>
         GeorgianStreetOverrides.FindEnglish(georgianName) ??
@@ -855,4 +855,25 @@ public static partial class GeorgianStreetTranslations
             item.Value.Equals(
                 georgianName.Trim(),
                 StringComparison.OrdinalIgnoreCase)).Key;
+
+    public static string? FindEnglishPartial(string georgianName)
+    {
+        var term = georgianName.Trim();
+        if (term.Length < 2)
+        {
+            return null;
+        }
+
+        var matches = StreetData.StreetsList
+            .SelectMany(area => area.StreetNames)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(english =>
+                Find(english)?.Contains(
+                    term,
+                    StringComparison.OrdinalIgnoreCase) == true)
+            .Take(2)
+            .ToList();
+
+        return matches.Count == 1 ? matches[0] : null;
+    }
 }

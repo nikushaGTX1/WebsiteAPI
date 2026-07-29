@@ -95,7 +95,9 @@ public class ApartmentsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(street))
         {
             var value =
-                GeorgianStreetTranslations.FindEnglish(street) ?? street.Trim();
+                GeorgianStreetTranslations.FindEnglish(street) ??
+                GeorgianStreetTranslations.FindEnglishPartial(street) ??
+                street.Trim();
             var pattern = $"%{value}%";
             query = query.Where(a =>
                 EF.Functions.ILike(a.Street, pattern) ||
@@ -107,7 +109,8 @@ public class ApartmentsController : ControllerBase
             var translatedDistrict =
                 GeorgianLocationTranslations.FindEnglishDistrict(search);
             var translatedStreet =
-                GeorgianStreetTranslations.FindEnglish(search);
+                GeorgianStreetTranslations.FindEnglish(search) ??
+                GeorgianStreetTranslations.FindEnglishPartial(search);
             var districtPattern = translatedDistrict is null
                 ? null
                 : $"%{translatedDistrict}%";
