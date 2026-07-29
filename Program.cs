@@ -188,6 +188,15 @@ using (var scope = app.Services.CreateScope())
 
         await context.Database.MigrateAsync();
 
+        var repairedLocations =
+            await ApartmentLocationBackfill.RepairAsync(context);
+        if (repairedLocations > 0)
+        {
+            app.Logger.LogInformation(
+                "Automatically repaired the locations of {ApartmentCount} apartments.",
+                repairedLocations);
+        }
+
         var roleManager =
             services.GetRequiredService<
                 RoleManager<IdentityRole>>();

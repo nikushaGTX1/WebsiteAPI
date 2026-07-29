@@ -28,21 +28,42 @@ public static class ApartmentLocationResolver
             : GeorgianLocationTranslations.FindEnglishDistrict(district) ??
               district.Trim();
 
-        if (districtValue is null)
+        var streetMatches = StreetDistrictResolver.Find(street);
+        if (streetMatches.Count > 0)
         {
-            var matches = StreetDistrictResolver.Find(street);
-            if (matches.Count != 1)
+            var streetArea = districtValue is null
+                ? streetMatches.Count == 1 ? streetMatches[0] : null
+                : streetMatches.FirstOrDefault(match =>
+                    match.District.Equals(
+                        districtValue,
+                        StringComparison.OrdinalIgnoreCase));
+
+            if (streetArea is null && streetMatches.Count == 1)
+            {
+                streetArea = streetMatches[0];
+            }
+
+            if (streetArea is null)
             {
                 return false;
             }
 
-            var match = matches[0];
             location = new ResolvedApartmentLocation(
-                match.City,
-                match.Region,
-                match.District,
+                streetArea.City,
+                streetArea.Region,
+                streetArea.District,
                 streetValue);
             return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(streetValue))
+        {
+            return false;
+        }
+
+        if (districtValue is null)
+        {
+            return false;
         }
 
         if (districtValue.Equals("All Tbilisi", StringComparison.OrdinalIgnoreCase) ||

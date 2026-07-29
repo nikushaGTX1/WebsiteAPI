@@ -36,6 +36,7 @@ public class CreateApartmentDto
     // Optional when Street uniquely identifies a district.
     public string? District { get; set; }
 
+    [Required]
     public string Street { get; set; } = string.Empty;
 
     public double? Latitude { get; set; }

@@ -220,9 +220,8 @@ public class ApartmentsController : ControllerBase
             return BadRequest(new
             {
                 message =
-                    "Select a valid district from the Locations API, or provide " +
-                    "a street that belongs to exactly one district. The city " +
-                    "name cannot be used as the district."
+                    "Select a valid street from the Locations API. Its city, " +
+                    "region, and district are assigned automatically."
             });
         }
 
@@ -361,9 +360,8 @@ public class ApartmentsController : ControllerBase
                 return BadRequest(new
                 {
                     message =
-                        "Select a valid district from the Locations API, or " +
-                        "provide a street that belongs to exactly one district. " +
-                        "The city name cannot be used as the district."
+                        "Select a valid street from the Locations API. Its city, " +
+                        "region, and district are assigned automatically."
                 });
             }
         }
