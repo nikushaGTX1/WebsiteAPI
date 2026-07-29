@@ -20,18 +20,15 @@ public class LocationsController : ControllerBase
             "X-Location-Data-Attribution",
             "(c) OpenStreetMap contributors");
 
-        var allLocations = StreetData.StreetsList.Append(new()
-        {
-            Id = 0,
-            City = "Tbilisi",
-            Region = "Tbilisi",
-            District = "All Tbilisi",
-            StreetNames = TbilisiStreetData.Names
-                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                .ToList()
-        });
-
-        var query = allLocations.AsEnumerable();
+        var query = StreetData.StreetsList
+            .Where(item =>
+                !item.Region.Equals(
+                    "Municipalities",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !item.District.EndsWith(
+                    "Municipality",
+                    StringComparison.OrdinalIgnoreCase))
+            .AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(city))
         {
