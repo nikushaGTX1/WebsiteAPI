@@ -49,8 +49,13 @@ public static class ApartmentLocationResolver
         }
 
         var streetMatches = StreetDistrictResolver.Find(street);
-        if (!streetMatches.Any(match =>
-                match.Id == area.Id))
+        var belongsToSelectedDistrict = streetMatches.Any(match =>
+            match.Id == area.Id);
+        var existsInTbilisiCatalog = TbilisiStreetData.Names.Contains(
+            streetValue,
+            StringComparer.OrdinalIgnoreCase);
+
+        if (!belongsToSelectedDistrict && !existsInTbilisiCatalog)
         {
             return false;
         }
