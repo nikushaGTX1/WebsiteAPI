@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Website_API.Data;
 using Website_API.Models;
+using Website_API.Services;
 
 namespace Website_API.Controllers;
 
@@ -14,11 +15,16 @@ public class AdminController : ControllerBase
 {
     private readonly UserManager<AppUser> _userManager;
     private readonly AppDbContext _context;
+    private readonly SupabaseStorageService _storageService;
 
-    public AdminController(UserManager<AppUser> userManager, AppDbContext context)
+    public AdminController(
+        UserManager<AppUser> userManager,
+        AppDbContext context,
+        SupabaseStorageService storageService)
     {
         _userManager = userManager;
         _context = context;
+        _storageService = storageService;
     }
 
     [HttpGet("users")]
@@ -47,9 +53,14 @@ public class AdminController : ControllerBase
                     .Select(row => row.RoleName)
                     .ToList());
 
-        var result = users.Select(user =>
+        var result = await Task.WhenAll(users.Select(async user =>
         {
             rolesByUser.TryGetValue(user.Id, out var roles);
+            var profilePicture =
+                await _storageService.CreateSignedUrlAsync(
+                    user.ProfilePicture,
+                    604800,
+                    HttpContext.RequestAborted);
 
             return new
             {
@@ -57,12 +68,14 @@ public class AdminController : ControllerBase
                 user.UserName,
                 user.Email,
                 user.FullName,
-                user.ProfilePicture,
+                ProfilePicture = profilePicture,
+                ProfilePictureUrl = profilePicture,
+                ProfilePicturePath = user.ProfilePicture,
                 user.Bio,
                 user.IsAgent,
                 Roles = roles ?? []
             };
-        });
+        }));
 
         return Ok(result);
     }
@@ -86,6 +99,11 @@ public class AdminController : ControllerBase
             return NotFound(new { message = "User not found" });
 
         var roles = await _userManager.GetRolesAsync(user);
+        var profilePicture =
+            await _storageService.CreateSignedUrlAsync(
+                user.ProfilePicture,
+                604800,
+                HttpContext.RequestAborted);
 
         return Ok(new
         {
@@ -93,7 +111,9 @@ public class AdminController : ControllerBase
             user.UserName,
             user.Email,
             user.FullName,
-            user.ProfilePicture,
+            ProfilePicture = profilePicture,
+            ProfilePictureUrl = profilePicture,
+            ProfilePicturePath = user.ProfilePicture,
             user.Bio,
             user.IsAgent,
             Roles = roles

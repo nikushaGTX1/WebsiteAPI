@@ -22,19 +22,24 @@ public sealed class SupabaseStorageService
         _logger = logger;
 
         _supabaseUrl =
-            configuration["Supabase:Url"]?.TrimEnd('/')
+            (configuration["Supabase:Url"] ??
+             configuration["SUPABASE_URL"])?.TrimEnd('/')
             ?? throw new InvalidOperationException(
-                "Supabase:Url is missing.");
+                "Supabase URL is missing. Set Supabase__Url or SUPABASE_URL.");
 
         _secretKey =
-            configuration["Supabase:SecretKey"]
+            configuration["Supabase:SecretKey"] ??
+            configuration["SUPABASE_SECRET_KEY"]
             ?? throw new InvalidOperationException(
-                "Supabase:SecretKey is missing.");
+                "Supabase secret key is missing. Set Supabase__SecretKey " +
+                "or SUPABASE_SECRET_KEY.");
 
         _bucket =
-            configuration["Supabase:Bucket"]
+            configuration["Supabase:Bucket"] ??
+            configuration["SUPABASE_BUCKET"]
             ?? throw new InvalidOperationException(
-                "Supabase:Bucket is missing.");
+                "Supabase bucket is missing. Set Supabase__Bucket " +
+                "or SUPABASE_BUCKET.");
     }
 
     public async Task<string?> UploadImageAsync(
@@ -83,10 +88,7 @@ public sealed class SupabaseStorageService
         using var request =
             new HttpRequestMessage(HttpMethod.Post, requestUrl);
 
-        // Correct for the new sb_secret_... key.
-        request.Headers.TryAddWithoutValidation(
-            "apikey",
-            _secretKey);
+        ApplyAuthentication(request);
 
         request.Headers.TryAddWithoutValidation(
             "x-upsert",
@@ -162,9 +164,7 @@ public sealed class SupabaseStorageService
         using var request =
             new HttpRequestMessage(HttpMethod.Post, requestUrl);
 
-        request.Headers.TryAddWithoutValidation(
-            "apikey",
-            _secretKey);
+        ApplyAuthentication(request);
 
         request.Content = new StringContent(
             json,
@@ -276,9 +276,7 @@ public sealed class SupabaseStorageService
         using var request =
             new HttpRequestMessage(HttpMethod.Delete, requestUrl);
 
-        request.Headers.TryAddWithoutValidation(
-            "apikey",
-            _secretKey);
+        ApplyAuthentication(request);
 
         request.Content = new StringContent(
             json,
@@ -357,5 +355,12 @@ public sealed class SupabaseStorageService
                     '/',
                     StringSplitOptions.RemoveEmptyEntries)
                 .Select(Uri.EscapeDataString));
+    }
+
+    private void ApplyAuthentication(HttpRequestMessage request)
+    {
+        request.Headers.TryAddWithoutValidation("apikey", _secretKey);
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", _secretKey);
     }
 }

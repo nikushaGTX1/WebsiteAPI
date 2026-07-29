@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Website_API.Data;
 using Website_API.DTO;
 using Website_API.Models;
+using Website_API.Services;
 
 namespace Website_API.Controllers;
 
@@ -13,10 +14,14 @@ namespace Website_API.Controllers;
 public class AgentsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly SupabaseStorageService _storageService;
 
-    public AgentsController(AppDbContext context)
+    public AgentsController(
+        AppDbContext context,
+        SupabaseStorageService storageService)
     {
         _context = context;
+        _storageService = storageService;
     }
 
     [HttpGet]
@@ -31,7 +36,7 @@ public class AgentsController : ControllerBase
                 u.FullName,
                 u.Bio,
                 u.PhoneNumber,
-                u.ProfilePicture,
+                ProfilePicturePath = u.ProfilePicture,
                 AverageRating = _context.AgentRatings
                     .Where(r => r.AgentId == u.Id)
                     .Average(r => (double?)r.Stars) ?? 0,
@@ -40,7 +45,29 @@ public class AgentsController : ControllerBase
             })
             .ToListAsync();
 
-        return Ok(agents);
+        var response = await Task.WhenAll(agents.Select(async agent =>
+        {
+            var profilePicture = await _storageService.CreateSignedUrlAsync(
+                agent.ProfilePicturePath,
+                604800,
+                HttpContext.RequestAborted);
+
+            return new
+            {
+                agent.Id,
+                agent.UserName,
+                agent.FullName,
+                agent.Bio,
+                agent.PhoneNumber,
+                ProfilePicture = profilePicture,
+                ProfilePictureUrl = profilePicture,
+                agent.ProfilePicturePath,
+                agent.AverageRating,
+                agent.RatingCount
+            };
+        }));
+
+        return Ok(response);
     }
 
     [HttpGet("{agentId}")]
@@ -55,7 +82,7 @@ public class AgentsController : ControllerBase
                 u.FullName,
                 u.Bio,
                 u.PhoneNumber,
-                u.ProfilePicture,
+                ProfilePicturePath = u.ProfilePicture,
                 AverageRating = _context.AgentRatings
                     .Where(r => r.AgentId == u.Id)
                     .Average(r => (double?)r.Stars) ?? 0,
@@ -78,7 +105,25 @@ public class AgentsController : ControllerBase
         if (agent == null)
             return NotFound(new { message = "Agent not found" });
 
-        return Ok(agent);
+        var profilePicture = await _storageService.CreateSignedUrlAsync(
+            agent.ProfilePicturePath,
+            604800,
+            HttpContext.RequestAborted);
+
+        return Ok(new
+        {
+            agent.Id,
+            agent.UserName,
+            agent.FullName,
+            agent.Bio,
+            agent.PhoneNumber,
+            ProfilePicture = profilePicture,
+            ProfilePictureUrl = profilePicture,
+            agent.ProfilePicturePath,
+            agent.AverageRating,
+            agent.RatingCount,
+            agent.Ratings
+        });
     }
 
     [Authorize]
