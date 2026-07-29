@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.IO.Compression;
 using System.Text;
 using Website_API.Data;
 using Website_API.Models;
@@ -11,6 +13,40 @@ using Website_API.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+builder.Services.AddMemoryCache();
+builder.Services.AddOutputCache(options =>
+{
+    options.AddPolicy(
+        "StaticLocations",
+        policy => policy
+            .Expire(TimeSpan.FromHours(24))
+            .SetVaryByHeader("Origin")
+            .SetVaryByQuery("*"));
+    options.AddPolicy(
+        "Apartments",
+        policy => policy
+            .Expire(TimeSpan.FromMinutes(1))
+            .SetVaryByHeader("Origin")
+            .SetVaryByQuery("*")
+            .Tag("apartments"));
+});
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+    options.MimeTypes =
+        ResponseCompressionDefaults.MimeTypes.Concat(
+            ["application/json"]);
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(options =>
+{
+    options.Level = CompressionLevel.Fastest;
+});
+builder.Services.Configure<GzipCompressionProviderOptions>(options =>
+{
+    options.Level = CompressionLevel.Fastest;
+});
 
 builder.Services.AddHttpClient<GoogleNearbyPlacesService>();
 builder.Services.AddHttpClient<SupabaseStorageService>();
@@ -44,8 +80,9 @@ builder.Services.AddCors(options =>
 
 var connectionString = DatabaseConnection.Resolve(builder.Configuration);
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(connectionString));
+builder.Services.AddDbContextPool<AppDbContext>(
+    options => options.UseNpgsql(connectionString),
+    poolSize: 128);
 
 // =========================
 // IDENTITY
@@ -302,9 +339,11 @@ using (var scope = app.Services.CreateScope())
 // HTTP PIPELINE
 // =========================
 
+app.UseResponseCompression();
 app.UseStaticFiles();
 
 app.UseCors("AngularPolicy");
+app.UseOutputCache();
 
 app.UseAuthentication();
 app.UseAuthorization();

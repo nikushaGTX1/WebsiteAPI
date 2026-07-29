@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Website_API.Data;
 
 namespace Website_API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[OutputCache(PolicyName = "StaticLocations")]
 public class LocationsController : ControllerBase
 {
     [HttpGet]

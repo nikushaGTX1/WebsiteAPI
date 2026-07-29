@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 using Website_API.Data;
 using Website_API.DTO;
@@ -15,18 +16,22 @@ public class ApartmentsController : ControllerBase
     private readonly AppDbContext _context;
     private readonly SupabaseStorageService _storageService;
     private readonly GoogleNearbyPlacesService _nearbyPlacesService;
+    private readonly IOutputCacheStore _outputCache;
 
     public ApartmentsController(
         AppDbContext context,
         GoogleNearbyPlacesService nearbyPlacesService,
-        SupabaseStorageService storageService)
+        SupabaseStorageService storageService,
+        IOutputCacheStore outputCache)
     {
         _context = context;
         _nearbyPlacesService = nearbyPlacesService;
         _storageService = storageService;
+        _outputCache = outputCache;
     }
 
     [HttpGet]
+    [OutputCache(PolicyName = "Apartments")]
     public async Task<IActionResult> GetApartments(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
@@ -184,6 +189,7 @@ public class ApartmentsController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
+    [OutputCache(PolicyName = "Apartments")]
     public async Task<IActionResult> GetApartment(
         int id,
         CancellationToken cancellationToken)
@@ -308,6 +314,7 @@ public class ApartmentsController : ControllerBase
                 cancellationToken);
 
             await _context.SaveChangesAsync(cancellationToken);
+            await InvalidateApartmentCacheAsync(cancellationToken);
 
             return Ok(new
             {
@@ -590,6 +597,7 @@ public class ApartmentsController : ControllerBase
             }
 
             await _context.SaveChangesAsync(cancellationToken);
+            await InvalidateApartmentCacheAsync(cancellationToken);
 
             foreach (var removedImagePath in removedImagePaths)
             {
@@ -645,6 +653,7 @@ public class ApartmentsController : ControllerBase
             cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
+        await InvalidateApartmentCacheAsync(cancellationToken);
 
         return Ok(new
         {
@@ -686,6 +695,7 @@ public class ApartmentsController : ControllerBase
 
         _context.Apartments.Remove(apartment);
         await _context.SaveChangesAsync(cancellationToken);
+        await InvalidateApartmentCacheAsync(cancellationToken);
 
         // Delete the file only after the database record was deleted.
         await Parallel.ForEachAsync(
@@ -702,6 +712,14 @@ public class ApartmentsController : ControllerBase
         {
             message = "Apartment deleted successfully"
         });
+    }
+
+    private ValueTask InvalidateApartmentCacheAsync(
+        CancellationToken cancellationToken)
+    {
+        return _outputCache.EvictByTagAsync(
+            "apartments",
+            cancellationToken);
     }
 
     private async Task<object> ToResponseAsync(

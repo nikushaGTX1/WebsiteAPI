@@ -1,12 +1,14 @@
 ﻿using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Website_API.Services;
 
 public sealed class SupabaseStorageService
 {
     private readonly HttpClient _httpClient;
+    private readonly IMemoryCache _memoryCache;
     private readonly ILogger<SupabaseStorageService> _logger;
 
     private readonly string _supabaseUrl;
@@ -15,10 +17,12 @@ public sealed class SupabaseStorageService
 
     public SupabaseStorageService(
         HttpClient httpClient,
+        IMemoryCache memoryCache,
         IConfiguration configuration,
         ILogger<SupabaseStorageService> logger)
     {
         _httpClient = httpClient;
+        _memoryCache = memoryCache;
         _logger = logger;
 
         _supabaseUrl =
@@ -149,6 +153,17 @@ public sealed class SupabaseStorageService
             return absoluteUrl.ToString();
         }
 
+        var cacheKey = GetSignedUrlCacheKey(
+            objectPath,
+            expiresInSeconds);
+
+        if (_memoryCache.TryGetValue<string>(
+                cacheKey,
+                out var cachedSignedUrl))
+        {
+            return cachedSignedUrl;
+        }
+
         var encodedBucket = Uri.EscapeDataString(_bucket);
         var encodedPath = EncodeObjectPath(objectPath);
 
@@ -212,28 +227,17 @@ public sealed class SupabaseStorageService
             return null;
         }
 
-        if (signedUrl.StartsWith(
-                "http",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return signedUrl;
-        }
+        var absoluteSignedUrl = ToAbsoluteSignedUrl(signedUrl);
+        var cacheLifetimeSeconds = Math.Max(
+            30,
+            expiresInSeconds - 60);
 
-        // Supabase commonly returns /object/sign/...,
-        // so /storage/v1 must be included.
-        if (signedUrl.StartsWith(
-                "/object/",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return $"{_supabaseUrl}/storage/v1{signedUrl}";
-        }
+        _memoryCache.Set(
+            cacheKey,
+            absoluteSignedUrl,
+            TimeSpan.FromSeconds(cacheLifetimeSeconds));
 
-        if (!signedUrl.StartsWith('/'))
-        {
-            signedUrl = $"/{signedUrl}";
-        }
-
-        return $"{_supabaseUrl}{signedUrl}";
+        return absoluteSignedUrl;
     }
 
     public async Task DeleteImageAsync(
@@ -355,6 +359,40 @@ public sealed class SupabaseStorageService
                     '/',
                     StringSplitOptions.RemoveEmptyEntries)
                 .Select(Uri.EscapeDataString));
+    }
+
+    private string GetSignedUrlCacheKey(
+        string objectPath,
+        int expiresInSeconds)
+    {
+        return
+            $"supabase:signed-url:{_bucket}:{expiresInSeconds}:{objectPath}";
+    }
+
+    private string ToAbsoluteSignedUrl(string signedUrl)
+    {
+        if (signedUrl.StartsWith(
+                "http",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return signedUrl;
+        }
+
+        // Supabase commonly returns /object/sign/...,
+        // so /storage/v1 must be included.
+        if (signedUrl.StartsWith(
+                "/object/",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{_supabaseUrl}/storage/v1{signedUrl}";
+        }
+
+        if (!signedUrl.StartsWith('/'))
+        {
+            signedUrl = $"/{signedUrl}";
+        }
+
+        return $"{_supabaseUrl}{signedUrl}";
     }
 
     private void ApplyAuthentication(HttpRequestMessage request)
