@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Website_API.Data;
+using Website_API.DTO;
 using Website_API.Models;
 using Website_API.Services;
 
@@ -118,6 +119,93 @@ public class AdminController : ControllerBase
             user.IsAgent,
             Roles = roles
         });
+    }
+
+    [HttpPut("users/{id}/settings")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UpdateUserSettings(
+        string id,
+        [FromForm] AdminUpdateUserDto dto,
+        CancellationToken cancellationToken)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+
+        if (user == null)
+            return NotFound(new { message = "User not found" });
+
+        var oldProfilePicture = user.ProfilePicture;
+        string? uploadedProfilePicture = null;
+        var profileSaved = false;
+
+        try
+        {
+            if (dto.ProfilePicture is { Length: > 0 })
+            {
+                uploadedProfilePicture = await _storageService.UploadImageAsync(
+                    dto.ProfilePicture,
+                    $"profiles/{user.Id}",
+                    cancellationToken);
+                user.ProfilePicture = uploadedProfilePicture;
+            }
+
+            user.FullName = dto.FullName.Trim();
+            user.UserName = dto.UserName.Trim();
+            user.Email = dto.Email.Trim();
+            user.PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber)
+                ? null
+                : dto.PhoneNumber.Trim();
+            user.Bio = string.IsNullOrWhiteSpace(dto.Bio) ? null : dto.Bio.Trim();
+
+            var result = await _userManager.UpdateAsync(user);
+
+            if (!result.Succeeded)
+            {
+                user.ProfilePicture = oldProfilePicture;
+
+                if (uploadedProfilePicture is not null)
+                    await _storageService.DeleteImageAsync(uploadedProfilePicture, CancellationToken.None);
+
+                return BadRequest(result.Errors);
+            }
+
+            profileSaved = true;
+
+            if (uploadedProfilePicture is not null &&
+                !string.IsNullOrWhiteSpace(oldProfilePicture) &&
+                oldProfilePicture.Contains('/'))
+            {
+                await _storageService.DeleteImageAsync(oldProfilePicture, cancellationToken);
+            }
+
+            return Ok(new { message = "User settings updated" });
+        }
+        catch
+        {
+            if (uploadedProfilePicture is not null && !profileSaved)
+                await _storageService.DeleteImageAsync(uploadedProfilePicture, CancellationToken.None);
+
+            throw;
+        }
+    }
+
+    [HttpPut("users/{id}/password")]
+    public async Task<IActionResult> ResetUserPassword(
+        string id,
+        [FromBody] AdminResetPasswordDto dto)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+
+        if (user == null)
+            return NotFound(new { message = "User not found" });
+
+        var resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var result = await _userManager.ResetPasswordAsync(user, resetToken, dto.NewPassword);
+
+        if (!result.Succeeded)
+            return BadRequest(result.Errors);
+
+        await _userManager.UpdateSecurityStampAsync(user);
+        return Ok(new { message = "Password reset successfully" });
     }
 
     [HttpPost("make-agent/{userId}")]

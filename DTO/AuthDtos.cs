@@ -40,6 +40,33 @@ public class ProfilePictureDto
     public IFormFile ProfilePicture { get; set; } = null!;
 }
 
+public class AdminUpdateUserDto
+{
+    [Required]
+    public string FullName { get; set; } = "";
+
+    [Required]
+    public string UserName { get; set; } = "";
+
+    [Required]
+    [EmailAddress]
+    public string Email { get; set; } = "";
+
+    [Phone]
+    public string? PhoneNumber { get; set; }
+
+    public string? Bio { get; set; }
+
+    public IFormFile? ProfilePicture { get; set; }
+}
+
+public class AdminResetPasswordDto
+{
+    [Required]
+    [MinLength(8)]
+    public string NewPassword { get; set; } = "";
+}
+
 public class RatingDto
 {
     public int Stars { get; set; }
