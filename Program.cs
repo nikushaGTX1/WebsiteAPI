@@ -1,11 +1,14 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.IO.Compression;
+using System.Net;
 using System.Text;
+using System.Threading.RateLimiting;
 using Website_API.Data;
 using Website_API.Models;
 using Website_API.Services;
@@ -14,6 +17,33 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddMemoryCache();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("CrmInquiries", context =>
+    {
+        // The public website proxies API calls, so the socket address belongs
+        // to that proxy. Use its forwarded client IP when it is a valid IP;
+        // direct callers fall back to their actual remote address.
+        var forwardedValue = context.Request.Headers["X-Forwarded-For"]
+            .ToString()
+            .Split(',', 2)[0]
+            .Trim();
+        var partitionKey = IPAddress.TryParse(forwardedValue, out var clientIp)
+            ? clientIp.ToString()
+            : context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: partitionKey,
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 5,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(10)
+            });
+    });
+});
 builder.Services.AddOutputCache(options =>
 {
     options.AddPolicy(
@@ -342,7 +372,9 @@ using (var scope = app.Services.CreateScope())
 app.UseResponseCompression();
 app.UseStaticFiles();
 
+app.UseRouting();
 app.UseCors("AngularPolicy");
+app.UseRateLimiter();
 app.UseOutputCache();
 
 app.UseAuthentication();

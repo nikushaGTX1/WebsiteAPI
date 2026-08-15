@@ -17,6 +17,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
     public DbSet<FavoriteApartment> FavoriteApartments =>
         Set<FavoriteApartment>();
+    public DbSet<CrmLead> CrmLeads => Set<CrmLead>();
+    public DbSet<CrmActivity> CrmActivities => Set<CrmActivity>();
+    public DbSet<CrmTask> CrmTasks => Set<CrmTask>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -65,6 +68,139 @@ public class AppDbContext : IdentityDbContext<AppUser>
             {
                 item.UserId,
                 item.CreatedAt
+            });
+        });
+
+        builder.Entity<CrmLead>(lead =>
+        {
+            lead.Property(item => item.Name)
+                .HasMaxLength(160);
+            lead.Property(item => item.Email)
+                .HasMaxLength(254);
+            lead.Property(item => item.Phone)
+                .HasMaxLength(50);
+            lead.Property(item => item.Goal)
+                .HasMaxLength(80);
+            lead.Property(item => item.PreferredContactMethod)
+                .HasMaxLength(30);
+            lead.Property(item => item.PreferredDistricts)
+                .HasColumnType("text[]");
+            lead.Property(item => item.PreferredPropertyType)
+                .HasMaxLength(80);
+            lead.Property(item => item.BudgetMin)
+                .HasPrecision(18, 2);
+            lead.Property(item => item.BudgetMax)
+                .HasPrecision(18, 2);
+            lead.Property(item => item.Currency)
+                .HasMaxLength(3);
+            lead.Property(item => item.Preferences)
+                .HasMaxLength(4000);
+            lead.Property(item => item.Message)
+                .HasMaxLength(4000);
+            lead.Property(item => item.Status)
+                .HasConversion(
+                    value => value.ToApiValue(),
+                    value => CrmEnumText.ParseLeadStatus(value))
+                .HasMaxLength(16);
+            lead.Property(item => item.Source)
+                .HasConversion(
+                    value => value.ToApiValue(),
+                    value => CrmEnumText.ParseLeadSource(value))
+                .HasMaxLength(16);
+
+            lead.HasOne(item => item.Apartment)
+                .WithMany()
+                .HasForeignKey(item => item.ApartmentId)
+                .OnDelete(DeleteBehavior.SetNull);
+            lead.HasOne(item => item.CustomerUser)
+                .WithMany()
+                .HasForeignKey(item => item.CustomerUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            lead.HasOne(item => item.AssignedAgent)
+                .WithMany()
+                .HasForeignKey(item => item.AssignedAgentId)
+                .OnDelete(DeleteBehavior.SetNull);
+            lead.HasOne(item => item.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.CreatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            lead.HasIndex(item => new
+            {
+                item.AssignedAgentId,
+                item.Status,
+                item.UpdatedAt
+            });
+            lead.HasIndex(item => new
+            {
+                item.Status,
+                item.CreatedAt
+            });
+            lead.HasIndex(item => item.ApartmentId);
+            lead.HasIndex(item => item.CustomerUserId);
+        });
+
+        builder.Entity<CrmActivity>(activity =>
+        {
+            activity.Property(item => item.Type)
+                .HasConversion(
+                    value => value.ToApiValue(),
+                    value => CrmEnumText.ParseActivityType(value))
+                .HasMaxLength(16);
+            activity.Property(item => item.Content)
+                .HasMaxLength(4000);
+
+            activity.HasOne(item => item.Lead)
+                .WithMany(lead => lead.Activities)
+                .HasForeignKey(item => item.LeadId)
+                .OnDelete(DeleteBehavior.Cascade);
+            activity.HasOne(item => item.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.CreatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            activity.HasIndex(item => new
+            {
+                item.LeadId,
+                item.CreatedAt
+            });
+        });
+
+        builder.Entity<CrmTask>(task =>
+        {
+            task.Property(item => item.Type)
+                .HasConversion(
+                    value => value.ToApiValue(),
+                    value => CrmEnumText.ParseTaskType(value))
+                .HasMaxLength(16);
+            task.Property(item => item.Title)
+                .HasMaxLength(200);
+            task.Property(item => item.Details)
+                .HasMaxLength(4000);
+
+            task.HasOne(item => item.Lead)
+                .WithMany(lead => lead.Tasks)
+                .HasForeignKey(item => item.LeadId)
+                .OnDelete(DeleteBehavior.Cascade);
+            task.HasOne(item => item.AssignedAgent)
+                .WithMany()
+                .HasForeignKey(item => item.AssignedAgentId)
+                .OnDelete(DeleteBehavior.SetNull);
+            task.HasOne(item => item.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(item => item.CreatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            task.HasIndex(item => new
+            {
+                item.LeadId,
+                item.DueAt
+            });
+            task.HasIndex(item => new
+            {
+                item.AssignedAgentId,
+                item.CompletedAt,
+                item.DueAt
             });
         });
     }
