@@ -80,6 +80,15 @@ builder.Services.Configure<GzipCompressionProviderOptions>(options =>
 
 builder.Services.AddHttpClient<GoogleNearbyPlacesService>();
 builder.Services.AddHttpClient<SupabaseStorageService>();
+builder.Services.AddHttpClient("OpenStreetMap", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(4);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "VelvenRealEstate/1.0 (street geometry import)");
+});
+builder.Services.AddSingleton<StreetGeometryImportService>();
+builder.Services.AddHostedService(serviceProvider =>
+    serviceProvider.GetRequiredService<StreetGeometryImportService>());
 builder.Services.AddScoped<HomeMatchScorer>();
 
 // =========================

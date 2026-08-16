@@ -20,6 +20,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<CrmLead> CrmLeads => Set<CrmLead>();
     public DbSet<CrmActivity> CrmActivities => Set<CrmActivity>();
     public DbSet<CrmTask> CrmTasks => Set<CrmTask>();
+    public DbSet<StreetGeometry> StreetGeometries => Set<StreetGeometry>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -78,6 +79,24 @@ public class AppDbContext : IdentityDbContext<AppUser>
                 item.UserId,
                 item.CreatedAt
             });
+        });
+
+        builder.Entity<StreetGeometry>(street =>
+        {
+            street.Property(item => item.City)
+                .HasMaxLength(100);
+            street.Property(item => item.District)
+                .HasMaxLength(120);
+            street.Property(item => item.Names)
+                .HasColumnType("text[]");
+            street.Property(item => item.CoordinatesJson)
+                .HasColumnType("jsonb");
+            street.HasIndex(item => item.City);
+            street.HasIndex(item => new { item.City, item.District });
+            street.HasIndex(item => new { item.OsmWayId, item.District })
+                .IsUnique();
+            street.HasIndex(item => item.Names)
+                .HasMethod("gin");
         });
 
         builder.Entity<CrmLead>(lead =>
