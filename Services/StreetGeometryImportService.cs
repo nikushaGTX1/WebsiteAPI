@@ -116,6 +116,19 @@ public sealed class StreetGeometryImportService(
         using var payload = await DownloadDistrictAsync(relationId, cancellationToken);
         var importedAt = DateTime.UtcNow;
         var streets = new List<StreetGeometry>();
+        var districtStreetNames = StreetData.StreetsList
+            .Where(area =>
+                area.City.Equals("Tbilisi", StringComparison.OrdinalIgnoreCase) &&
+                area.District.Equals(district, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(area => area.StreetNames.SelectMany(name => new[]
+            {
+                name,
+                GeorgianStreetTranslations.Find(name)
+            }))
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => NormalizeStreetName(name!))
+            .Where(name => name.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
         foreach (var element in payload.RootElement.GetProperty("elements").EnumerateArray())
         {
             if (!element.TryGetProperty("id", out var idElement) ||
@@ -127,6 +140,11 @@ public sealed class StreetGeometryImportService(
 
             var names = ReadNames(element);
             if (names.Length == 0)
+            {
+                continue;
+            }
+            if (districtStreetNames.Count > 0 &&
+                !names.Select(NormalizeStreetName).Any(districtStreetNames.Contains))
             {
                 continue;
             }
@@ -169,10 +187,13 @@ public sealed class StreetGeometryImportService(
         long relationId,
         CancellationToken cancellationToken)
     {
+        var (south, west, north, east) = await DownloadBoundaryBoxAsync(
+            relationId,
+            cancellationToken);
         var query =
-            $"[out:json][timeout:120];rel({relationId})->.district;" +
-            "map_to_area.district->.districtArea;" +
-            "way(area.districtArea)[\"highway\"][\"name\"];out tags geom;";
+            "[out:json][timeout:120];" +
+            $"way[\"highway\"][\"name\"]({south},{west},{north},{east});" +
+            "out tags geom;";
         Exception? lastError = null;
         var client = httpClientFactory.CreateClient("OpenStreetMap");
 
@@ -211,6 +232,74 @@ public sealed class StreetGeometryImportService(
             lastError);
     }
 
+    private async Task<(double South, double West, double North, double East)>
+        DownloadBoundaryBoxAsync(
+            long relationId,
+            CancellationToken cancellationToken)
+    {
+        var client = httpClientFactory.CreateClient("OpenStreetMap");
+        using var response = await client.GetAsync(
+            $"https://polygons.openstreetmap.fr/get_geojson.py?id={relationId}&params=0",
+            cancellationToken);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var geometry = await JsonDocument.ParseAsync(
+            stream,
+            cancellationToken: cancellationToken);
+        if (!geometry.RootElement.TryGetProperty("coordinates", out var coordinates))
+        {
+            throw new InvalidOperationException(
+                $"Boundary {relationId} contains no coordinates.");
+        }
+
+        var south = double.PositiveInfinity;
+        var west = double.PositiveInfinity;
+        var north = double.NegativeInfinity;
+        var east = double.NegativeInfinity;
+        ReadCoordinateBounds(
+            coordinates,
+            ref south,
+            ref west,
+            ref north,
+            ref east);
+        if (!double.IsFinite(south) || !double.IsFinite(west) ||
+            !double.IsFinite(north) || !double.IsFinite(east))
+        {
+            throw new InvalidOperationException(
+                $"Boundary {relationId} contains invalid coordinates.");
+        }
+        return (south, west, north, east);
+    }
+
+    private static void ReadCoordinateBounds(
+        JsonElement value,
+        ref double south,
+        ref double west,
+        ref double north,
+        ref double east)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+        if (value.GetArrayLength() >= 2 &&
+            value[0].ValueKind == JsonValueKind.Number &&
+            value[1].ValueKind == JsonValueKind.Number)
+        {
+            var longitude = value[0].GetDouble();
+            var latitude = value[1].GetDouble();
+            south = Math.Min(south, latitude);
+            west = Math.Min(west, longitude);
+            north = Math.Max(north, latitude);
+            east = Math.Max(east, longitude);
+            return;
+        }
+        foreach (var child in value.EnumerateArray())
+        {
+            ReadCoordinateBounds(child, ref south, ref west, ref north, ref east);
+        }
+    }
+
     private static string[] ReadNames(JsonElement element)
     {
         if (!element.TryGetProperty("tags", out var tags))
@@ -228,5 +317,19 @@ public sealed class StreetGeometryImportService(
             }
         }
         return names.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static string NormalizeStreetName(string value)
+    {
+        var words = new string(
+                value.Trim().ToLowerInvariant()
+                    .Select(character => char.IsLetterOrDigit(character) ? character : ' ')
+                    .ToArray())
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(word => word is not (
+                "street" or "st" or "avenue" or "ave" or "road" or "rd" or
+                "lane" or "ln" or "alley" or "square"))
+            .ToArray();
+        return string.Join(' ', words);
     }
 }

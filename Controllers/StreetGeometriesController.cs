@@ -28,7 +28,17 @@ public sealed class StreetGeometriesController(
             });
         }
 
-        await importer.EnsureDistrictAsync(district, cancellationToken);
+        try
+        {
+            await importer.EnsureDistrictAsync(district, cancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Street geometry import is temporarily unavailable.",
+                detail: exception.Message);
+        }
         var rows = await context.StreetGeometries
             .AsNoTracking()
             .Where(street =>
