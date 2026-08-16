@@ -14,6 +14,7 @@ namespace Website_API.Controllers;
 [Authorize(Roles = "Admin")]
 public class AdminController : ControllerBase
 {
+    private static readonly string[] CrmRoles = ["Manager", "Agent", "Uploader"];
     private readonly UserManager<AppUser> _userManager;
     private readonly AppDbContext _context;
     private readonly SupabaseStorageService _storageService;
@@ -252,5 +253,60 @@ public class AdminController : ControllerBase
         }
 
         return Ok(new { message = "User is no longer an agent" });
+    }
+
+    [HttpPut("users/{id}/crm-role")]
+    public async Task<IActionResult> SetCrmRole(
+        string id,
+        [FromBody] SetCrmRoleDto dto)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+        if (user is null)
+            return NotFound(new { message = "User not found" });
+        if (await _userManager.IsInRoleAsync(user, "Admin"))
+        {
+            return BadRequest(new
+            {
+                message = "The administrator's CRM access cannot be changed."
+            });
+        }
+
+        var requestedRole = CrmRoles.FirstOrDefault(role =>
+            string.Equals(role, dto.Role?.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (requestedRole is null)
+        {
+            return BadRequest(new
+            {
+                message = "CRM role must be Manager, Agent, or Uploader."
+            });
+        }
+
+        var currentRoles = await _userManager.GetRolesAsync(user);
+        var rolesToRemove = currentRoles
+            .Where(role => CrmRoles.Contains(role, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        if (rolesToRemove.Length > 0)
+        {
+            var removeResult = await _userManager.RemoveFromRolesAsync(
+                user,
+                rolesToRemove);
+            if (!removeResult.Succeeded)
+                return BadRequest(removeResult.Errors);
+        }
+
+        var addResult = await _userManager.AddToRoleAsync(user, requestedRole);
+        if (!addResult.Succeeded)
+            return BadRequest(addResult.Errors);
+
+        user.IsAgent = requestedRole == "Agent";
+        var updateResult = await _userManager.UpdateAsync(user);
+        if (!updateResult.Succeeded)
+            return BadRequest(updateResult.Errors);
+
+        return Ok(new
+        {
+            message = $"CRM role changed to {requestedRole}.",
+            role = requestedRole
+        });
     }
 }

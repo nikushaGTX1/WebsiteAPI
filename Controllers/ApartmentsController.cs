@@ -221,6 +221,17 @@ public class ApartmentsController : ControllerBase
         [FromForm] CreateApartmentDto dto,
         CancellationToken cancellationToken)
     {
+        var uploadedByUserId = string.IsNullOrWhiteSpace(dto.UploadedByUserId)
+            ? null
+            : dto.UploadedByUserId.Trim();
+        if (uploadedByUserId is not null &&
+            !await _context.Users.AnyAsync(
+                user => user.Id == uploadedByUserId,
+                cancellationToken))
+        {
+            return BadRequest(new { message = "Uploader user is not valid." });
+        }
+
         if (!ApartmentLocationResolver.TryResolve(
                 dto.District,
                 dto.Street,
@@ -253,6 +264,7 @@ public class ApartmentsController : ControllerBase
                     ? null
                     : dto.PhoneNumber.Trim(),
                 ImageUrl = storedImagePaths.FirstOrDefault(),
+                UploadedByUserId = uploadedByUserId,
                 Images = storedImagePaths
                     .Select((path, index) => new ApartmentImage
                     {

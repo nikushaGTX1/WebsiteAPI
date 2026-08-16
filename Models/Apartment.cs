@@ -21,6 +21,13 @@ public class Apartment
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    // Original account that submitted this property. Admins may publish on
+    // the uploader's behalf after approval.
+    public string? UploadedByUserId { get; set; }
+
+    [JsonIgnore]
+    public AppUser? UploadedByUser { get; set; }
+
 
     // Location
     public string City { get; set; } = "Tbilisi";

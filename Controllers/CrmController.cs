@@ -14,7 +14,9 @@ namespace Website_API.Controllers;
 [Route("api/Crm")]
 public class CrmController : ControllerBase
 {
-    private const string CrmRoles = "Admin,Agent";
+    private const string CrmReadRoles = "Admin,Manager,Agent,Uploader";
+    private const string CrmWriteRoles = "Admin,Manager,Agent";
+    private const string CrmManagerRoles = "Admin,Manager";
 
     private readonly AppDbContext _context;
     private readonly UserManager<AppUser> _userManager;
@@ -27,7 +29,7 @@ public class CrmController : ControllerBase
         _userManager = userManager;
     }
 
-    [Authorize(Roles = CrmRoles)]
+    [Authorize(Roles = CrmReadRoles)]
     [HttpGet("leads")]
     public async Task<ActionResult<IReadOnlyList<CrmLeadListItemDto>>> GetLeads(
         [FromQuery] string? status = null,
@@ -75,17 +77,17 @@ public class CrmController : ControllerBase
             parsedSource = value;
         }
 
-        var isAdmin = User.IsInRole("Admin");
+        var hasFullAccess = HasFullCrmAccess();
         var normalizedAssignedAgentId = NormalizeOptional(assignedAgentId);
 
-        if (!isAdmin &&
+        if (!hasFullAccess &&
             normalizedAssignedAgentId is not null &&
             normalizedAssignedAgentId != userId)
         {
             return Forbid();
         }
 
-        if (isAdmin && normalizedAssignedAgentId is not null &&
+        if (hasFullAccess && normalizedAssignedAgentId is not null &&
             await FindAgentAsync(
                 normalizedAssignedAgentId,
                 cancellationToken) is null)
@@ -168,6 +170,11 @@ public class CrmController : ControllerBase
                 AssignedAgentName = lead.AssignedAgent == null
                     ? null
                     : lead.AssignedAgent.FullName ?? lead.AssignedAgent.UserName,
+                UploaderUserId = lead.Apartment == null
+                    ? null
+                    : lead.Apartment.UploadedByUserId,
+                lead.CustomerUserId,
+                lead.CreatedByUserId,
                 NextFollowUpAt = lead.Tasks
                     .Where(task =>
                         task.CompletedAt == null &&
@@ -226,6 +233,9 @@ public class CrmController : ControllerBase
             ApartmentTitle = row.ApartmentTitle,
             AssignedAgentId = row.AssignedAgentId,
             AssignedAgentName = row.AssignedAgentName,
+            UploaderUserId = row.UploaderUserId,
+            CustomerUserId = row.CustomerUserId,
+            CreatedByUserId = row.CreatedByUserId,
             NextFollowUpAt = row.NextFollowUpAt,
             NextTask = row.NextTask is null
                 ? null
@@ -253,7 +263,7 @@ public class CrmController : ControllerBase
         return Ok(response);
     }
 
-    [Authorize(Roles = CrmRoles)]
+    [Authorize(Roles = CrmReadRoles)]
     [HttpGet("leads/{id:int}")]
     public async Task<ActionResult<CrmLeadDetailDto>> GetLead(
         int id,
@@ -270,7 +280,7 @@ public class CrmController : ControllerBase
         return Ok(ToLeadDetail(lead));
     }
 
-    [Authorize(Roles = CrmRoles)]
+    [Authorize(Roles = CrmReadRoles)]
     [HttpGet("metrics")]
     public async Task<ActionResult<CrmMetricsDto>> GetMetrics(
         CancellationToken cancellationToken)
@@ -297,11 +307,11 @@ public class CrmController : ControllerBase
         var lostLeads = Count(CrmLeadStatus.Lost);
         var closedLeads = wonLeads + lostLeads;
 
-        var isAdmin = User.IsInRole("Admin");
+        var accessibleLeadIds = AccessibleLeads(userId)
+            .Select(lead => lead.Id);
         var taskQuery = _context.CrmTasks
             .AsNoTracking()
-            .Where(task => isAdmin ||
-                task.Lead.AssignedAgentId == userId);
+            .Where(task => accessibleLeadIds.Contains(task.LeadId));
         var now = DateTime.UtcNow;
         var today = now.Date;
         var tomorrow = today.AddDays(1);
@@ -321,7 +331,7 @@ public class CrmController : ControllerBase
                 task.Type == CrmTaskType.Viewing &&
                 task.DueAt >= now,
             cancellationToken);
-        var unassignedLeads = isAdmin
+        var unassignedLeads = HasFullCrmAccess()
             ? await leadQuery.CountAsync(
                 lead => lead.AssignedAgentId == null,
                 cancellationToken)
@@ -356,7 +366,7 @@ public class CrmController : ControllerBase
             counts.GetValueOrDefault(statusValue);
     }
 
-    [Authorize(Roles = CrmRoles)]
+    [Authorize(Roles = CrmWriteRoles)]
     [HttpPost("leads")]
     public async Task<ActionResult<CrmLeadDetailDto>> CreateLead(
         [FromBody] CreateCrmLeadDto dto,
@@ -412,7 +422,7 @@ public class CrmController : ControllerBase
 
         string? assignedAgentId;
         AppUser? assignedAgent = null;
-        if (User.IsInRole("Admin"))
+        if (HasFullCrmAccess())
         {
             assignedAgentId = NormalizeOptional(dto.AssignedAgentId);
             if (assignedAgentId is not null)
@@ -508,7 +518,7 @@ public class CrmController : ControllerBase
             ToLeadDetail(created!));
     }
 
-    [Authorize(Roles = CrmRoles)]
+    [Authorize(Roles = CrmWriteRoles)]
     [HttpPut("leads/{id:int}")]
     public async Task<ActionResult<CrmLeadDetailDto>> UpdateLead(
         int id,
@@ -594,7 +604,7 @@ public class CrmController : ControllerBase
         return Ok(ToLeadDetail(updated!));
     }
 
-    [Authorize(Roles = CrmRoles)]
+    [Authorize(Roles = CrmWriteRoles)]
     [HttpPatch("leads/{id:int}/status")]
     public async Task<ActionResult<CrmLeadDetailDto>> UpdateLeadStatus(
         int id,
@@ -646,7 +656,7 @@ public class CrmController : ControllerBase
         return Ok(ToLeadDetail(updated!));
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = CrmManagerRoles)]
     [HttpPut("leads/{id:int}/assignment")]
     public async Task<ActionResult<CrmLeadDetailDto>> AssignLead(
         int id,
@@ -714,7 +724,7 @@ public class CrmController : ControllerBase
         return Ok(ToLeadDetail(updated!));
     }
 
-    [Authorize(Roles = CrmRoles)]
+    [Authorize(Roles = CrmWriteRoles)]
     [HttpPost("leads/{leadId:int}/activities")]
     [HttpPost("leads/{leadId:int}/notes")]
     public async Task<ActionResult<CrmActivityResponseDto>> AddActivity(
@@ -773,7 +783,7 @@ public class CrmController : ControllerBase
             ToActivityDto(activity, creatorName));
     }
 
-    [Authorize(Roles = CrmRoles)]
+    [Authorize(Roles = CrmWriteRoles)]
     [HttpPost("leads/{leadId:int}/tasks")]
     public async Task<ActionResult<CrmTaskResponseDto>> CreateTask(
         int leadId,
@@ -853,7 +863,7 @@ public class CrmController : ControllerBase
                 taskAgent?.FullName ?? taskAgent?.UserName));
     }
 
-    [Authorize(Roles = CrmRoles)]
+    [Authorize(Roles = CrmWriteRoles)]
     [HttpPatch("tasks/{taskId:int}")]
     [HttpPatch("leads/{leadId:int}/tasks/{taskId:int}")]
     public async Task<ActionResult<CrmTaskResponseDto>> PatchTask(
@@ -893,11 +903,11 @@ public class CrmController : ControllerBase
             });
         }
 
-        var isAdmin = User.IsInRole("Admin");
+        var hasFullAccess = HasFullCrmAccess();
         var task = await _context.CrmTasks
             .Include(item => item.Lead)
             .Include(item => item.AssignedAgent)
-            .Where(item => isAdmin ||
+            .Where(item => hasFullAccess ||
                 item.Lead.AssignedAgentId == userId)
             .FirstOrDefaultAsync(item => item.Id == taskId, cancellationToken);
         if (task is null)
@@ -1053,10 +1063,18 @@ public class CrmController : ControllerBase
     private IQueryable<CrmLead> AccessibleLeads(string userId)
     {
         var query = _context.CrmLeads.AsQueryable();
-        return User.IsInRole("Admin")
-            ? query
-            : query.Where(lead => lead.AssignedAgentId == userId);
+        if (HasFullCrmAccess())
+            return query;
+        if (User.IsInRole("Agent"))
+            return query.Where(lead => lead.AssignedAgentId == userId);
+
+        return query.Where(lead =>
+            lead.Apartment != null &&
+            lead.Apartment.UploadedByUserId == userId);
     }
+
+    private bool HasFullCrmAccess() =>
+        User.IsInRole("Admin") || User.IsInRole("Manager");
 
     private async Task<CrmLead?> LoadLeadDetailsAsync(
         int id,
@@ -1185,6 +1203,7 @@ public class CrmController : ControllerBase
             ConsentGivenAt = lead.ConsentGivenAt,
             ApartmentId = lead.ApartmentId,
             ApartmentTitle = lead.Apartment?.Title,
+            UploaderUserId = lead.Apartment?.UploadedByUserId,
             CustomerUserId = lead.CustomerUserId,
             AssignedAgentId = lead.AssignedAgentId,
             AssignedAgentName = lead.AssignedAgent?.FullName ??

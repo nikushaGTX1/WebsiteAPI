@@ -4,6 +4,11 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Website_API.DTO;
 
+public class SetCrmRoleDto
+{
+    public string Role { get; set; } = string.Empty;
+}
+
 public class RegisterDto
 {
     public string UserName { get; set; } = "";

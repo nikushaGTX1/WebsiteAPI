@@ -29,6 +29,15 @@ public class AppDbContext : IdentityDbContext<AppUser>
             .HasIndex(apartment => apartment.CreatedAt);
 
         builder.Entity<Apartment>()
+            .HasOne(apartment => apartment.UploadedByUser)
+            .WithMany()
+            .HasForeignKey(apartment => apartment.UploadedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<Apartment>()
+            .HasIndex(apartment => apartment.UploadedByUserId);
+
+        builder.Entity<Apartment>()
             .HasIndex(apartment => new
             {
                 apartment.City,

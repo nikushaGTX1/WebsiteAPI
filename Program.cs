@@ -275,7 +275,9 @@ using (var scope = app.Services.CreateScope())
         string[] roles =
         [
             "Admin",
+            "Manager",
             "Agent",
+            "Uploader",
             "User"
         ];
 

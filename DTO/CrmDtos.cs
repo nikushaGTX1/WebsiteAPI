@@ -199,6 +199,9 @@ public class CrmLeadListItemDto
     public string? ApartmentTitle { get; set; }
     public string? AssignedAgentId { get; set; }
     public string? AssignedAgentName { get; set; }
+    public string? UploaderUserId { get; set; }
+    public string? CustomerUserId { get; set; }
+    public string? CreatedByUserId { get; set; }
     public DateTime? NextFollowUpAt { get; set; }
     public CrmTaskResponseDto? NextTask { get; set; }
     public DateTime? LastActivityAt { get; set; }
@@ -231,6 +234,7 @@ public class CrmLeadDetailDto
     public DateTime? ConsentGivenAt { get; set; }
     public int? ApartmentId { get; set; }
     public string? ApartmentTitle { get; set; }
+    public string? UploaderUserId { get; set; }
     public string? CustomerUserId { get; set; }
     public string? AssignedAgentId { get; set; }
     public string? AssignedAgentName { get; set; }
