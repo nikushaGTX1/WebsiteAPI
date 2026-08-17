@@ -15,6 +15,7 @@ namespace Website_API.Controllers;
 public class CrmController : ControllerBase
 {
     private const string CrmReadRoles = "Admin,Manager,Agent,Uploader";
+    private const string CrmCreateRoles = "Admin,Manager,Agent,Uploader";
     private const string CrmWriteRoles = "Admin,Manager,Agent";
     private const string CrmManagerRoles = "Admin,Manager";
 
@@ -366,7 +367,7 @@ public class CrmController : ControllerBase
             counts.GetValueOrDefault(statusValue);
     }
 
-    [Authorize(Roles = CrmWriteRoles)]
+    [Authorize(Roles = CrmCreateRoles)]
     [HttpPost("leads")]
     public async Task<ActionResult<CrmLeadDetailDto>> CreateLead(
         [FromBody] CreateCrmLeadDto dto,
@@ -439,9 +440,14 @@ public class CrmController : ControllerBase
                 }
             }
         }
-        else
+        else if (User.IsInRole("Agent"))
         {
             assignedAgentId = userId;
+        }
+        else
+        {
+            // Uploaders can create leads, but only CRM agents may be assigned.
+            assignedAgentId = null;
         }
 
         var now = DateTime.UtcNow;
@@ -1069,8 +1075,9 @@ public class CrmController : ControllerBase
             return query.Where(lead => lead.AssignedAgentId == userId);
 
         return query.Where(lead =>
-            lead.Apartment != null &&
-            lead.Apartment.UploadedByUserId == userId);
+            lead.CreatedByUserId == userId ||
+            (lead.Apartment != null &&
+             lead.Apartment.UploadedByUserId == userId));
     }
 
     private bool HasFullCrmAccess() =>
