@@ -39,6 +39,7 @@ public class ApartmentsController : ControllerBase
         [FromQuery] string? region = null,
         [FromQuery] string? district = null,
         [FromQuery] string? street = null,
+        [FromQuery(Name = "street_id")] long? streetId = null,
         [FromQuery] string? search = null,
         [FromQuery] decimal? minPrice = null,
         [FromQuery] decimal? maxPrice = null,
@@ -108,6 +109,8 @@ public class ApartmentsController : ControllerBase
                 EF.Functions.ILike(a.Street, pattern) ||
                 (a.Address != null && EF.Functions.ILike(a.Address, pattern)));
         }
+        if (streetId.HasValue)
+            query = query.Where(apartment => apartment.StreetId == streetId.Value);
         if (!string.IsNullOrWhiteSpace(search))
         {
             var pattern = $"%{search.Trim()}%";
@@ -232,16 +235,30 @@ public class ApartmentsController : ControllerBase
             return BadRequest(new { message = "Uploader user is not valid." });
         }
 
-        if (!ApartmentLocationResolver.TryResolve(
-                dto.District,
-                dto.Street,
-                out var resolvedLocation))
+        if (!dto.StreetId.HasValue)
         {
             return BadRequest(new
             {
-                message =
-                    "Select a valid district and then select one of its streets " +
-                    "from the Locations API."
+                message = "Select an approved canonical street by street_id. Street-name resolution is not accepted."
+            });
+        }
+        var canonicalStreet = await _context.CanonicalStreets
+            .AsNoTracking()
+            .Include(street => street.City)
+            .Include(street => street.District)
+            .FirstOrDefaultAsync(street =>
+                street.Id == dto.StreetId.Value &&
+                street.GeometryStatus == "approved",
+                cancellationToken);
+        if (canonicalStreet is null)
+            return BadRequest(new { message = "The selected street_id has no approved canonical geometry." });
+        if (!dto.PropertyLatitude.HasValue || !dto.PropertyLongitude.HasValue ||
+            dto.PropertyLatitude.Value is < -90 or > 90 ||
+            dto.PropertyLongitude.Value is < -180 or > 180)
+        {
+            return BadRequest(new
+            {
+                message = "Place the exact property point. A street geometry is never used as the property coordinate."
             });
         }
 
@@ -275,12 +292,16 @@ public class ApartmentsController : ControllerBase
                     .ToList(),
 
                 // Location
-                City = resolvedLocation.City,
-                Region = resolvedLocation.Region,
-                District = resolvedLocation.District,
-                Street = resolvedLocation.Street,
+                City = canonicalStreet.City.NameEn,
+                Region = string.Empty,
+                District = canonicalStreet.District.NameEn,
+                Street = canonicalStreet.NameEn,
+                StreetId = canonicalStreet.Id,
+                BuildingNumber = dto.BuildingNumber?.Trim(),
                 Latitude = dto.Latitude,
                 Longitude = dto.Longitude,
+                PropertyLatitude = dto.PropertyLatitude,
+                PropertyLongitude = dto.PropertyLongitude,
 
                 // Apartment details
                 Bedrooms = dto.Bedrooms,
@@ -321,11 +342,6 @@ public class ApartmentsController : ControllerBase
             _context.Apartments.Add(apartment);
             await _context.SaveChangesAsync(cancellationToken);
 
-            await _nearbyPlacesService.EnrichApartmentAsync(
-                apartment,
-                cancellationToken);
-
-            await _context.SaveChangesAsync(cancellationToken);
             await InvalidateApartmentCacheAsync(cancellationToken);
 
             return Ok(new
@@ -371,31 +387,31 @@ public class ApartmentsController : ControllerBase
             });
         }
 
-        ResolvedApartmentLocation? resolvedLocation = null;
-        if (dto.District is not null || dto.Street is not null)
+        CanonicalStreet? canonicalStreet = null;
+        if (dto.StreetId.HasValue)
         {
-            if (!ApartmentLocationResolver.TryResolve(
-                    dto.District ?? apartment.District,
-                    dto.Street ?? apartment.Street,
-                    out resolvedLocation))
+            canonicalStreet = await _context.CanonicalStreets
+                .AsNoTracking()
+                .Include(street => street.City)
+                .Include(street => street.District)
+                .FirstOrDefaultAsync(street =>
+                    street.Id == dto.StreetId.Value &&
+                    street.GeometryStatus == "approved",
+                    cancellationToken);
+            if (canonicalStreet is null)
             {
                 return BadRequest(new
                 {
-                    message =
-                        "Select a valid district and then select one of its " +
-                        "streets from the Locations API."
+                    message = "The selected street_id has no approved canonical geometry."
                 });
             }
         }
-
-        var locationChanged =
-            dto.Address is not null ||
-            dto.City is not null ||
-            dto.Region is not null ||
-            dto.District is not null ||
-            dto.Street is not null ||
-            dto.Latitude.HasValue ||
-            dto.Longitude.HasValue;
+        if (dto.PropertyLatitude.HasValue != dto.PropertyLongitude.HasValue ||
+            dto.PropertyLatitude is < -90 or > 90 ||
+            dto.PropertyLongitude is < -180 or > 180)
+        {
+            return BadRequest(new { message = "Property latitude and longitude must be supplied together and be valid." });
+        }
 
         apartment.Title =
             dto.Title ?? apartment.Title;
@@ -418,22 +434,30 @@ public class ApartmentsController : ControllerBase
 
         // Location
         apartment.City =
-            resolvedLocation?.City ?? dto.City ?? apartment.City;
+            canonicalStreet?.City.NameEn ?? dto.City ?? apartment.City;
 
-        apartment.Region =
-            resolvedLocation?.Region ?? dto.Region ?? apartment.Region;
+        apartment.Region = dto.Region ?? apartment.Region;
 
         apartment.District =
-            resolvedLocation?.District ?? apartment.District;
+            canonicalStreet?.District.NameEn ?? dto.District ?? apartment.District;
 
         apartment.Street =
-            resolvedLocation?.Street ?? apartment.Street;
+            canonicalStreet?.NameEn ?? apartment.Street;
+
+        if (canonicalStreet is not null) apartment.StreetId = canonicalStreet.Id;
+        apartment.BuildingNumber = dto.BuildingNumber ?? apartment.BuildingNumber;
 
         apartment.Latitude =
             dto.Latitude ?? apartment.Latitude;
 
         apartment.Longitude =
             dto.Longitude ?? apartment.Longitude;
+
+        apartment.PropertyLatitude =
+            dto.PropertyLatitude ?? apartment.PropertyLatitude;
+
+        apartment.PropertyLongitude =
+            dto.PropertyLongitude ?? apartment.PropertyLongitude;
 
         // Apartment details
         apartment.Bedrooms =
@@ -600,13 +624,6 @@ public class ApartmentsController : ControllerBase
             var coverImage = apartment.Images
                 .FirstOrDefault(image => image.IsCover);
             apartment.ImageUrl = coverImage?.StoragePath;
-
-            if (locationChanged)
-            {
-                await _nearbyPlacesService.EnrichApartmentAsync(
-                    apartment,
-                    cancellationToken);
-            }
 
             await _context.SaveChangesAsync(cancellationToken);
             await InvalidateApartmentCacheAsync(cancellationToken);
@@ -790,8 +807,12 @@ public class ApartmentsController : ControllerBase
             apartment.Region,
             apartment.District,
             apartment.Street,
+            apartment.StreetId,
+            apartment.BuildingNumber,
             apartment.Latitude,
             apartment.Longitude,
+            apartment.PropertyLatitude,
+            apartment.PropertyLongitude,
 
             apartment.Bedrooms,
             apartment.Bathrooms,

@@ -38,9 +38,24 @@ public class Apartment
 
     public string Street { get; set; } = string.Empty;
 
+    // Canonical Velven street identity. Text fields remain temporarily for
+    // backwards compatibility while existing listings are backfilled.
+    public long? StreetId { get; set; }
+
+    public string? BuildingNumber { get; set; }
+
+    [JsonIgnore]
+    public CanonicalStreet? CanonicalStreet { get; set; }
+
     public double? Latitude { get; set; }
 
     public double? Longitude { get; set; }
+
+    // Independently verified listing point. These values must come from the
+    // owner/admin point-selection workflow, never from a street centroid.
+    public double? PropertyLatitude { get; set; }
+
+    public double? PropertyLongitude { get; set; }
 
 
     // apartamentis detalebi

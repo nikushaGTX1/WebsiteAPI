@@ -39,11 +39,15 @@ public class CreateApartmentDto
     [Required]
     public string District { get; set; } = string.Empty;
 
-    [Required]
     public string Street { get; set; } = string.Empty;
+
+    public long? StreetId { get; set; }
+    public string? BuildingNumber { get; set; }
 
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
+    public double? PropertyLatitude { get; set; }
+    public double? PropertyLongitude { get; set; }
 
     // Apartment details
     [Range(0, int.MaxValue)]
@@ -120,8 +124,12 @@ public class UpdateApartmentDto
     public string? Region { get; set; }
     public string? District { get; set; }
     public string? Street { get; set; }
+    public long? StreetId { get; set; }
+    public string? BuildingNumber { get; set; }
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
+    public double? PropertyLatitude { get; set; }
+    public double? PropertyLongitude { get; set; }
 
     // Apartment details
     [Range(0, int.MaxValue)]

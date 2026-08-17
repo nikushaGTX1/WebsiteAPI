@@ -21,6 +21,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<CrmActivity> CrmActivities => Set<CrmActivity>();
     public DbSet<CrmTask> CrmTasks => Set<CrmTask>();
     public DbSet<StreetGeometry> StreetGeometries => Set<StreetGeometry>();
+    public DbSet<LocationArea> LocationAreas => Set<LocationArea>();
+    public DbSet<CanonicalStreet> CanonicalStreets => Set<CanonicalStreet>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -37,6 +39,15 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<Apartment>()
             .HasIndex(apartment => apartment.UploadedByUserId);
+
+        builder.Entity<Apartment>()
+            .HasOne(apartment => apartment.CanonicalStreet)
+            .WithMany()
+            .HasForeignKey(apartment => apartment.StreetId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<Apartment>()
+            .HasIndex(apartment => apartment.StreetId);
 
         builder.Entity<Apartment>()
             .HasIndex(apartment => new
@@ -97,6 +108,50 @@ public class AppDbContext : IdentityDbContext<AppUser>
                 .IsUnique();
             street.HasIndex(item => item.Names)
                 .HasMethod("gin");
+        });
+
+        builder.Entity<LocationArea>(area =>
+        {
+            area.Property(item => item.Type).HasMaxLength(32);
+            area.Property(item => item.NameKa).HasMaxLength(180);
+            area.Property(item => item.NameEn).HasMaxLength(180);
+            area.Property(item => item.Slug).HasMaxLength(200);
+            area.Property(item => item.BoundaryGeoJson).HasColumnType("jsonb");
+            area.Property(item => item.Source).HasMaxLength(80);
+            area.Property(item => item.ExternalSourceId).HasMaxLength(160);
+            area.Property(item => item.GeometryStatus).HasMaxLength(32);
+            area.HasIndex(item => item.Slug).IsUnique();
+            area.HasIndex(item => new { item.Type, item.NameEn });
+            area.HasOne(item => item.Parent)
+                .WithMany(item => item.Children)
+                .HasForeignKey(item => item.ParentId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<CanonicalStreet>(street =>
+        {
+            street.Property(item => item.NameKa).HasMaxLength(240);
+            street.Property(item => item.NameEn).HasMaxLength(240);
+            street.Property(item => item.Aliases).HasColumnType("text[]");
+            street.Property(item => item.GeometryGeoJson).HasColumnType("jsonb");
+            street.Property(item => item.BoundsGeoJson).HasColumnType("jsonb");
+            street.Property(item => item.Source).HasMaxLength(80);
+            street.Property(item => item.ExternalSourceId).HasMaxLength(2000);
+            street.Property(item => item.GeometryStatus).HasMaxLength(32);
+            street.Property(item => item.ApprovedByUserId).HasMaxLength(450);
+            street.Property(item => item.ReviewNotes).HasMaxLength(2000);
+            street.HasOne(item => item.City)
+                .WithMany()
+                .HasForeignKey(item => item.CityId)
+                .OnDelete(DeleteBehavior.Restrict);
+            street.HasOne(item => item.District)
+                .WithMany()
+                .HasForeignKey(item => item.DistrictId)
+                .OnDelete(DeleteBehavior.Restrict);
+            street.HasIndex(item => new { item.DistrictId, item.NameEn });
+            street.HasIndex(item => new { item.DistrictId, item.NameKa });
+            street.HasIndex(item => item.GeometryStatus);
+            street.HasIndex(item => item.Aliases).HasMethod("gin");
         });
 
         builder.Entity<CrmLead>(lead =>

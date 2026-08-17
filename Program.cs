@@ -86,9 +86,9 @@ builder.Services.AddHttpClient("OpenStreetMap", client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd(
         "VelvenRealEstate/1.0 (street geometry import)");
 });
-builder.Services.AddSingleton<StreetGeometryImportService>();
-builder.Services.AddHostedService(serviceProvider =>
-    serviceProvider.GetRequiredService<StreetGeometryImportService>());
+// Canonical street imports are admin-triggered review jobs. Never start an
+// external map-data import from application startup or a public user request.
+builder.Services.AddScoped<CanonicalStreetImportService>();
 builder.Services.AddScoped<HomeMatchScorer>();
 
 // =========================

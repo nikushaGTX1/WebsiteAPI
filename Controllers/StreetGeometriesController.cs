@@ -11,16 +11,14 @@ namespace Website_API.Controllers;
 [Route("api/[controller]")]
 [OutputCache(PolicyName = "StaticLocations")]
 public sealed class StreetGeometriesController(
-    AppDbContext context,
-    StreetGeometryImportService importer) : ControllerBase
+    AppDbContext context) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetDistrict(
         [FromQuery] string? district,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(district) ||
-            !importer.SupportsDistrict(district))
+        if (string.IsNullOrWhiteSpace(district))
         {
             return BadRequest(new
             {
@@ -28,17 +26,6 @@ public sealed class StreetGeometriesController(
             });
         }
 
-        try
-        {
-            await importer.EnsureDistrictAsync(district, cancellationToken);
-        }
-        catch (InvalidOperationException exception)
-        {
-            return Problem(
-                statusCode: StatusCodes.Status503ServiceUnavailable,
-                title: "Street geometry import is temporarily unavailable.",
-                detail: exception.Message);
-        }
         var rows = await context.StreetGeometries
             .AsNoTracking()
             .Where(street =>
