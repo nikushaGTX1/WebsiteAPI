@@ -41,9 +41,15 @@ public sealed class LocationCatalogController(AppDbContext context) : Controller
         if (area is null) return NotFound();
         if (area.GeometryStatus != "approved" || area.BoundaryGeoJson is null)
         {
-            return Conflict(new
+            return Ok(new
             {
                 area.Id,
+                area.ParentId,
+                area.Type,
+                area.NameKa,
+                area.NameEn,
+                area.Slug,
+                geometry = (object?)null,
                 geometryStatus = area.GeometryStatus,
                 message = "This area has no approved boundary geometry."
             });
