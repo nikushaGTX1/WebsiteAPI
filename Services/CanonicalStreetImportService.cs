@@ -41,8 +41,8 @@ public sealed partial class CanonicalStreetImportService(
 
     private static readonly string[] Providers =
     [
-        "https://overpass.kumi.systems/api/interpreter",
         "https://overpass.private.coffee/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
         "https://overpass-api.de/api/interpreter"
     ];
 
@@ -56,7 +56,13 @@ public sealed partial class CanonicalStreetImportService(
         var city = await EnsureAreaAsync(null, "city", "Tbilisi", 0, cancellationToken);
         var relationId = DistrictRelations[districtName];
         var district = await EnsureAreaAsync(city.Id, "district", districtName, relationId, cancellationToken);
-        await StoreBoundaryAsync(district, relationId, cancellationToken);
+        // Imports are idempotent. A public, approved boundary is never reset
+        // or re-downloaded by a routine street refresh.
+        if (district.GeometryStatus != "approved" ||
+            !StreetGeoJson.IsValidBoundary(district.BoundaryGeoJson))
+        {
+            await StoreBoundaryAsync(district, relationId, cancellationToken);
+        }
         using var payload = await DownloadRoadsAsync(relationId, cancellationToken);
 
         var candidates = payload.RootElement.GetProperty("elements")
@@ -189,27 +195,34 @@ public sealed partial class CanonicalStreetImportService(
         CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient("OpenStreetMap");
-        using var response = await client.GetAsync(
-            $"https://polygons.openstreetmap.fr/get_geojson.py?id={relationId}&params=0",
-            cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        using var document = JsonDocument.Parse(json);
-        var type = document.RootElement.GetProperty("type").GetString();
-        if (type is not ("Polygon" or "MultiPolygon"))
-            throw new InvalidOperationException("District source returned invalid boundary geometry.");
-        district.BoundaryGeoJson = json;
-        district.GeometryStatus = "pending_review";
-        district.UpdatedAt = DateTime.UtcNow;
-        await context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            using var response = await client.GetAsync(
+                $"https://polygons.openstreetmap.fr/get_geojson.py?id={relationId}&params=0",
+                cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!StreetGeoJson.IsValidBoundary(json))
+                throw new InvalidOperationException("District source returned invalid boundary geometry.");
+            district.BoundaryGeoJson = json;
+            district.GeometryStatus = "pending_review";
+            district.UpdatedAt = DateTime.UtcNow;
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            throw new InvalidOperationException(
+                "The district boundary source is temporarily unavailable. Retry this district later.", exception);
+        }
     }
 
     private async Task<JsonDocument> DownloadRoadsAsync(
         long relationId,
         CancellationToken cancellationToken)
     {
-        var query = "[out:json][timeout:120];" +
-            $"rel({relationId});map_to_area->.districtArea;" +
+        var areaId = 3_600_000_000L + relationId;
+        var query = "[out:json][timeout:180];" +
+            $"area({areaId})->.districtArea;" +
             "way(area.districtArea)[\"highway\"][\"name\"];out tags geom;";
         var client = httpClientFactory.CreateClient("OpenStreetMap");
         Exception? last = null;
@@ -231,7 +244,9 @@ public sealed partial class CanonicalStreetImportService(
                 last = exception;
             }
         }
-        throw new InvalidOperationException("Every OpenStreetMap provider failed.", last);
+        throw new InvalidOperationException(
+            "Every OpenStreetMap provider timed out or failed for this district. Retry later; existing approved geometry was not changed.",
+            last);
     }
 
     private static ImportedRoad? ReadRoad(JsonElement element)

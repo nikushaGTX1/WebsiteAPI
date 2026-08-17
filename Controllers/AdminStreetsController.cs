@@ -83,6 +83,13 @@ public sealed partial class AdminStreetsController(
         {
             return Problem(statusCode: 503, title: "Street source unavailable", detail: exception.Message);
         }
+        catch (DbUpdateException exception)
+        {
+            return Problem(
+                statusCode: 409,
+                title: "Street import could not be stored",
+                detail: exception.GetBaseException().Message);
+        }
     }
 
     [HttpPut("{id:long}/geometry")]

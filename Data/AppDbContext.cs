@@ -136,7 +136,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
             street.Property(item => item.GeometryGeoJson).HasColumnType("jsonb");
             street.Property(item => item.BoundsGeoJson).HasColumnType("jsonb");
             street.Property(item => item.Source).HasMaxLength(80);
-            street.Property(item => item.ExternalSourceId).HasMaxLength(2000);
+            // A canonical road can consist of hundreds of verified OSM ways.
+            // Keep every source ID without truncation.
+            street.Property(item => item.ExternalSourceId).HasColumnType("text");
             street.Property(item => item.GeometryStatus).HasMaxLength(32);
             street.Property(item => item.ApprovedByUserId).HasMaxLength(450);
             street.Property(item => item.ReviewNotes).HasMaxLength(2000);
