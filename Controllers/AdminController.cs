@@ -18,15 +18,18 @@ public class AdminController : ControllerBase
     private readonly UserManager<AppUser> _userManager;
     private readonly AppDbContext _context;
     private readonly SupabaseStorageService _storageService;
+    private readonly ILogger<AdminController> _logger;
 
     public AdminController(
         UserManager<AppUser> userManager,
         AppDbContext context,
-        SupabaseStorageService storageService)
+        SupabaseStorageService storageService,
+        ILogger<AdminController> logger)
     {
         _userManager = userManager;
         _context = context;
         _storageService = storageService;
+        _logger = logger;
     }
 
     [HttpGet("users")]
@@ -207,6 +210,50 @@ public class AdminController : ControllerBase
 
         await _userManager.UpdateSecurityStampAsync(user);
         return Ok(new { message = "Password reset successfully" });
+    }
+
+    [HttpDelete("users/{id}")]
+    public async Task<IActionResult> DeleteUser(
+        string id,
+        CancellationToken cancellationToken)
+    {
+        var currentUserId = _userManager.GetUserId(User);
+        if (string.Equals(currentUserId, id, StringComparison.Ordinal))
+        {
+            return BadRequest(new
+            {
+                message = "You cannot delete your own account from the admin panel."
+            });
+        }
+
+        var user = await _userManager.FindByIdAsync(id);
+        if (user is null)
+            return NotFound(new { message = "User not found" });
+
+        var profilePicture = user.ProfilePicture;
+        var result = await _userManager.DeleteAsync(user);
+        if (!result.Succeeded)
+            return BadRequest(result.Errors);
+
+        if (!string.IsNullOrWhiteSpace(profilePicture) &&
+            profilePicture.Contains('/'))
+        {
+            try
+            {
+                await _storageService.DeleteImageAsync(
+                    profilePicture,
+                    cancellationToken);
+            }
+            catch (Exception error)
+            {
+                _logger.LogWarning(
+                    error,
+                    "Admin deleted account {UserId}, but its profile image could not be removed.",
+                    id);
+            }
+        }
+
+        return NoContent();
     }
 
     [HttpPost("make-agent/{userId}")]
