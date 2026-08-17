@@ -3666,17 +3666,17 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\user\\.nuget\\packages\\": {},
+    "C:\\Users\\user\\Desktop\\website\\.dotnet-cli\\.nuget\\packages\\": {},
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\user\\source\\repos\\Website API\\Website API\\Website API.csproj",
+      "projectUniqueName": "C:\\Users\\user\\Desktop\\WebsiteAPI\\Website API.csproj",
       "projectName": "Website API",
-      "projectPath": "C:\\Users\\user\\source\\repos\\Website API\\Website API\\Website API.csproj",
-      "packagesPath": "C:\\Users\\user\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\user\\source\\repos\\Website API\\Website API\\obj\\",
+      "projectPath": "C:\\Users\\user\\Desktop\\WebsiteAPI\\Website API.csproj",
+      "packagesPath": "C:\\Users\\user\\Desktop\\website\\.dotnet-cli\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\user\\Desktop\\WebsiteAPI\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

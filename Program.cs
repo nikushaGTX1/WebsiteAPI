@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.IO.Compression;
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
 using Website_API.Data;
@@ -193,6 +194,37 @@ builder.Services
 
                 ClockSkew = TimeSpan.Zero
             };
+
+        // A signed JWT can otherwise remain usable until it expires even after
+        // its owner has deleted their account. Verify that the user still
+        // exists so account deletion revokes API access immediately.
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var userId = context.Principal?
+                    .FindFirstValue(ClaimTypes.NameIdentifier);
+
+                if (string.IsNullOrWhiteSpace(userId))
+                {
+                    context.Fail("The access token has no user identifier.");
+                    return;
+                }
+
+                var dbContext = context.HttpContext.RequestServices
+                    .GetRequiredService<AppDbContext>();
+                var userExists = await dbContext.Users
+                    .AsNoTracking()
+                    .AnyAsync(
+                        user => user.Id == userId,
+                        context.HttpContext.RequestAborted);
+
+                if (!userExists)
+                {
+                    context.Fail("The user account no longer exists.");
+                }
+            }
+        };
     });
 
 builder.Services.AddAuthorization();
