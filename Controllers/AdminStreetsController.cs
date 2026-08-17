@@ -167,12 +167,81 @@ public sealed partial class AdminStreetsController(
     {
         var area = await context.LocationAreas.FindAsync([id], cancellationToken);
         if (area is null) return NotFound();
-        if (string.IsNullOrWhiteSpace(area.BoundaryGeoJson))
-            return Conflict(new { message = "Boundary geometry is missing." });
+        if (!StreetGeoJson.IsValidBoundary(area.BoundaryGeoJson))
+            return Conflict(new { message = "Boundary geometry is missing or invalid." });
+        if (string.IsNullOrWhiteSpace(area.Source) || string.IsNullOrWhiteSpace(area.ExternalSourceId))
+            return Conflict(new { message = "Boundary source metadata is missing." });
         area.GeometryStatus = "approved";
         area.ApprovedAt = DateTime.UtcNow;
         await context.SaveChangesAsync(cancellationToken);
         return Ok(new { area.Id, area.GeometryStatus });
+    }
+
+    [HttpPost("approve-all-verified")]
+    public async Task<IActionResult> ApproveAllVerified(CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        var reviewerId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var areas = await context.LocationAreas
+            .Where(area => area.Type == "district" && area.GeometryStatus != "approved")
+            .ToListAsync(cancellationToken);
+        var approvedAreaIds = new List<long>();
+        var skippedAreas = new List<object>();
+        foreach (var area in areas)
+        {
+            if (!StreetGeoJson.IsValidBoundary(area.BoundaryGeoJson) ||
+                string.IsNullOrWhiteSpace(area.Source) ||
+                string.IsNullOrWhiteSpace(area.ExternalSourceId))
+            {
+                skippedAreas.Add(new { area.Id, area.NameEn, reason = "Missing/invalid geometry or source metadata" });
+                continue;
+            }
+            area.GeometryStatus = "approved";
+            area.ApprovedAt = now;
+            approvedAreaIds.Add(area.Id);
+        }
+
+        var streets = await context.CanonicalStreets
+            .Include(street => street.District)
+            .Where(street => street.GeometryStatus != "approved")
+            .ToListAsync(cancellationToken);
+        var approvedStreetIds = new List<long>();
+        var skippedStreets = new List<object>();
+        foreach (var street in streets)
+        {
+            var summary = StreetGeoJson.SummarizeGeoJson(street.GeometryGeoJson);
+            string? reason = null;
+            if (summary is null) reason = "Missing/invalid LineString geometry";
+            else if (!ValidLanguageNames(street)) reason = "Missing or invalid Georgian/English names";
+            else if (string.IsNullOrWhiteSpace(street.Source) || string.IsNullOrWhiteSpace(street.ExternalSourceId))
+                reason = "Missing source metadata";
+            else if (street.District.GeometryStatus != "approved" ||
+                     !StreetGeoJson.IsValidBoundary(street.District.BoundaryGeoJson))
+                reason = "District boundary is not approved";
+            else if (!StreetGeoJson.PointInsideBoundary(
+                         summary.CentroidLongitude, summary.CentroidLatitude,
+                         street.District.BoundaryGeoJson))
+                reason = "Centroid is outside the district";
+
+            if (reason is not null)
+            {
+                skippedStreets.Add(new { street.Id, street.NameEn, reason });
+                continue;
+            }
+            street.GeometryStatus = "approved";
+            street.ApprovedAt = now;
+            street.ApprovedByUserId = reviewerId;
+            street.ReviewNotes = "Bulk-approved after canonical geometry validation.";
+            approvedStreetIds.Add(street.Id);
+        }
+        await context.SaveChangesAsync(cancellationToken);
+        return Ok(new
+        {
+            approvedDistricts = approvedAreaIds.Count,
+            approvedStreets = approvedStreetIds.Count,
+            skippedDistricts = skippedAreas,
+            skippedStreets
+        });
     }
 
     [HttpGet("areas/{id:long}")]

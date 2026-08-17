@@ -15,6 +15,30 @@ public sealed record StreetGeometrySummary(
 
 public static class StreetGeoJson
 {
+    public static bool IsValidBoundary(string? geoJson)
+    {
+        if (string.IsNullOrWhiteSpace(geoJson)) return false;
+        try
+        {
+            using var document = JsonDocument.Parse(geoJson);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("type", out var typeElement) ||
+                !root.TryGetProperty("coordinates", out var coordinates)) return false;
+            return typeElement.GetString() switch
+            {
+                "Polygon" => ValidPolygon(coordinates),
+                "MultiPolygon" => coordinates.ValueKind == JsonValueKind.Array &&
+                    coordinates.GetArrayLength() > 0 &&
+                    coordinates.EnumerateArray().All(ValidPolygon),
+                _ => false
+            };
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or FormatException)
+        {
+            return false;
+        }
+    }
+
     public static StreetGeometrySummary? SummarizeLines(IEnumerable<double[][]> sourceLines)
     {
         var lines = sourceLines
@@ -175,6 +199,18 @@ public static class StreetGeoJson
         var rings = polygon.EnumerateArray().ToArray();
         if (rings.Length == 0 || !PointInsideRing(longitude, latitude, rings[0])) return false;
         return rings.Skip(1).All(ring => !PointInsideRing(longitude, latitude, ring));
+    }
+
+    private static bool ValidPolygon(JsonElement polygon)
+    {
+        if (polygon.ValueKind != JsonValueKind.Array || polygon.GetArrayLength() == 0) return false;
+        var outerRing = polygon[0];
+        if (outerRing.ValueKind != JsonValueKind.Array || outerRing.GetArrayLength() < 4) return false;
+        var points = ReadLine(outerRing);
+        return points.Length >= 4 &&
+            points.All(IsCoordinate) &&
+            CoordinateKey(points[0]) == CoordinateKey(points[^1]) &&
+            points.DistinctBy(CoordinateKey).Count() >= 3;
     }
 
     private static bool PointInsideRing(double longitude, double latitude, JsonElement ringElement)
