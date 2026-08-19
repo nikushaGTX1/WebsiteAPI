@@ -15,7 +15,11 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Website API")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
+<<<<<<< HEAD
 [assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+6066b168c75ef77bf7ba61aa123fbdf2697ac1bc")]
+=======
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+bf7c596183e0ba36d131a6a77b71949507537720")]
+>>>>>>> 46463a8308e562420f67b24145cdad769380dce5
 [assembly: System.Reflection.AssemblyProductAttribute("Website API")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Website API")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
