@@ -108,6 +108,7 @@ builder.Services.AddCors(options =>
                 "http://192.168.56.1:3000/",
                 "http://192.168.56.1",
                 "http://localhost:4200/"
+                "https://velven.ge/"
             )
             .AllowAnyHeader()
             .AllowAnyMethod();
