@@ -368,7 +368,6 @@ public class CrmController : ControllerBase
             counts.GetValueOrDefault(statusValue);
     }
 
-<<<<<<< HEAD
     // =========================================================
     // QUESTIONNAIRE REFERRAL LINKS
     // =========================================================
@@ -590,10 +589,7 @@ public class CrmController : ControllerBase
     }
 
 
-    [Authorize(Roles = CrmWriteRoles)]
-=======
     [Authorize(Roles = CrmCreateRoles)]
->>>>>>> 46463a8308e562420f67b24145cdad769380dce5
     [HttpPost("leads")]
     public async Task<ActionResult<CrmLeadDetailDto>> CreateLead(
         [FromBody] CreateCrmLeadDto dto,
