@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using Website_API.Data;
 using Website_API.DTO;
 using Website_API.Models;
@@ -365,6 +366,227 @@ public class CrmController : ControllerBase
         int Count(CrmLeadStatus statusValue) =>
             counts.GetValueOrDefault(statusValue);
     }
+
+    // =========================================================
+    // QUESTIONNAIRE REFERRAL LINKS
+    // =========================================================
+
+    [Authorize(Roles = CrmWriteRoles)]
+    [HttpPost("questionnaire-links")]
+    public async Task<IActionResult> GenerateQuestionnaireLink(
+        CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        // A questionnaire referral link must belong to a real CRM agent.
+        // Admins/managers can use this endpoint only when their account is
+        // also configured as an Agent.
+        var agent = await FindAgentAsync(userId, cancellationToken);
+        if (agent is null)
+        {
+            return BadRequest(new
+            {
+                message = "Only a valid CRM agent can generate a questionnaire link."
+            });
+        }
+
+        string token;
+
+        do
+        {
+            token = GenerateQuestionnaireToken();
+        }
+        while (await _context.CrmQuestionnaireLinks
+            .AnyAsync(item => item.Token == token, cancellationToken));
+
+        var link = new CrmQuestionnaireLink
+        {
+            Token = token,
+            AgentUserId = userId,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = null,
+            IsActive = true,
+            Uses = 0
+        };
+
+        _context.CrmQuestionnaireLinks.Add(link);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return Ok(new
+        {
+            token,
+            path = $"/crm-questioner/agent-{token}"
+        });
+    }
+
+
+    // =========================================================
+    // PUBLIC QUESTIONNAIRE SUBMISSION
+    // =========================================================
+
+    [AllowAnonymous]
+    [EnableRateLimiting("CrmInquiries")]
+    [HttpPost("questionnaire-leads/{token}")]
+    public async Task<ActionResult<PublicCrmInquiryResponseDto>>
+        CreateQuestionnaireLead(
+            string token,
+            [FromBody] CreateCrmLeadDto dto,
+            CancellationToken cancellationToken)
+    {
+        token = NormalizeQuestionnaireToken(token);
+
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return BadRequest(new
+            {
+                message = "Questionnaire link is invalid."
+            });
+        }
+
+        var now = DateTime.UtcNow;
+
+        var questionnaireLink = await _context.CrmQuestionnaireLinks
+            .FirstOrDefaultAsync(
+                item =>
+                    item.Token == token &&
+                    item.IsActive &&
+                    (!item.ExpiresAt.HasValue || item.ExpiresAt.Value > now),
+                cancellationToken);
+
+        if (questionnaireLink is null)
+        {
+            return BadRequest(new
+            {
+                message = "Questionnaire link is invalid, disabled, or expired."
+            });
+        }
+
+        // Make sure the owner still exists and is still a CRM Agent.
+        var assignedAgent = await FindAgentAsync(
+            questionnaireLink.AgentUserId,
+            cancellationToken);
+
+        if (assignedAgent is null)
+        {
+            return BadRequest(new
+            {
+                message = "The agent connected to this questionnaire link is no longer available."
+            });
+        }
+
+        if (!dto.ConsentGiven)
+        {
+            return BadRequest(new
+            {
+                message = "Consent to contact is required."
+            });
+        }
+
+        var validationError = ValidateLeadDetails(
+            dto.FullName,
+            dto.Email,
+            dto.PhoneNumber,
+            dto.BudgetMin,
+            dto.BudgetMax,
+            dto.Currency,
+            dto.PreferredDistricts);
+
+        if (validationError is not null)
+            return BadRequest(new { message = validationError });
+
+        if (dto.ApartmentId.HasValue &&
+            !await ApartmentExistsAsync(
+                dto.ApartmentId.Value,
+                cancellationToken))
+        {
+            return BadRequest(new
+            {
+                message = "Apartment is not valid."
+            });
+        }
+
+        DateTime? requestedViewingAt = dto.RequestedViewingAt.HasValue
+            ? ToUtc(dto.RequestedViewingAt.Value)
+            : null;
+
+        var lead = new CrmLead
+        {
+            Name = dto.FullName.Trim(),
+            Email = NormalizeEmail(dto.Email),
+            Phone = NormalizeOptional(dto.PhoneNumber),
+
+            // Public questionnaire submissions cannot choose their own
+            // status/source/assignment. The backend controls them.
+            Status = CrmLeadStatus.New,
+            Source = CrmLeadSource.Website,
+
+            Goal = NormalizeOptional(dto.Goal) ?? "rent",
+            PreferredContactMethod =
+                NormalizeOptional(dto.PreferredContactMethod),
+            PreferredDistricts =
+                NormalizeDistricts(dto.PreferredDistricts),
+            PreferredPropertyType =
+                NormalizeOptional(dto.PreferredPropertyType),
+            Bedrooms = dto.Bedrooms,
+            BudgetMin = dto.BudgetMin,
+            BudgetMax = dto.BudgetMax,
+            Currency = dto.Currency.Trim().ToUpperInvariant(),
+            Preferences = NormalizeOptional(dto.Preferences),
+            Message = NormalizeOptional(dto.Message),
+            RequestedViewingAt = requestedViewingAt,
+            ApartmentId = dto.ApartmentId,
+
+            // Do not trust CustomerUserId or AssignedAgentId from the
+            // anonymous browser. Assignment comes only from the token.
+            CustomerUserId = null,
+            AssignedAgentId = questionnaireLink.AgentUserId,
+            CreatedByUserId = null,
+
+            ConsentGiven = true,
+            ConsentGivenAt = now,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        lead.Activities.Add(new CrmActivity
+        {
+            Type = CrmActivityType.Inquiry,
+            Content =
+                NormalizeOptional(dto.Message) ??
+                "Questionnaire submitted through an agent referral link.",
+            CreatedByUserId = null,
+            CreatedAt = now
+        });
+
+        if (requestedViewingAt.HasValue)
+        {
+            lead.Tasks.Add(new CrmTask
+            {
+                Type = CrmTaskType.Viewing,
+                Title = "Requested property viewing",
+                Details = NormalizeOptional(dto.Message),
+                DueAt = requestedViewingAt.Value,
+                AssignedAgentId = questionnaireLink.AgentUserId,
+                CreatedByUserId = null,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+        }
+
+        questionnaireLink.Uses++;
+
+        _context.CrmLeads.Add(lead);
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return Accepted(new PublicCrmInquiryResponseDto
+        {
+            Received = true
+        });
+    }
+
 
     [Authorize(Roles = CrmWriteRoles)]
     [HttpPost("leads")]
@@ -1263,6 +1485,33 @@ public class CrmController : ControllerBase
             CreatedAt = task.CreatedAt,
             UpdatedAt = task.UpdatedAt
         };
+
+    private static string GenerateQuestionnaireToken()
+    {
+        // 16 random bytes = 128 bits of randomness.
+        // Hex produces a URL-safe 32-character token.
+        return Convert
+            .ToHexString(RandomNumberGenerator.GetBytes(16))
+            .ToLowerInvariant();
+    }
+
+    private static string NormalizeQuestionnaireToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var token = value.Trim();
+
+        if (token.StartsWith(
+            "agent-",
+            StringComparison.OrdinalIgnoreCase))
+        {
+            token = token["agent-".Length..];
+        }
+
+        return token;
+    }
+
 
     private static string? NormalizeEmail(string? value) =>
         string.IsNullOrWhiteSpace(value)
