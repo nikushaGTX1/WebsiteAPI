@@ -832,6 +832,22 @@ public class CrmController : ControllerBase
         return Ok(ToLeadDetail(updated!));
     }
 
+    [Authorize(Roles = CrmManagerRoles)]
+    [HttpDelete("leads/{id:int}")]
+    public async Task<IActionResult> DeleteLead(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var lead = await _context.CrmLeads
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (lead is null)
+            return NotFound(new { message = "Lead not found." });
+
+        _context.CrmLeads.Remove(lead);
+        await _context.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
     [Authorize(Roles = CrmWriteRoles)]
     [HttpPatch("leads/{id:int}/status")]
     public async Task<ActionResult<CrmLeadDetailDto>> UpdateLeadStatus(
