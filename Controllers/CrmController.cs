@@ -855,13 +855,17 @@ public class CrmController : ControllerBase
         return Ok(ToLeadDetail(updated!));
     }
 
-    [Authorize(Roles = CrmManagerRoles)]
+    [Authorize(Roles = CrmReadRoles)]
     [HttpDelete("leads/{id:int}")]
     public async Task<IActionResult> DeleteLead(
         int id,
         CancellationToken cancellationToken)
     {
-        var lead = await _context.CrmLeads
+        var userId = CurrentUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        var lead = await AccessibleLeads(userId)
             .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (lead is null)
             return NotFound(new { message = "Lead not found." });
