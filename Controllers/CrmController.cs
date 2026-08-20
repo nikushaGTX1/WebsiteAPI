@@ -475,14 +475,29 @@ public class CrmController : ControllerBase
         }
         var ownerRoles = await _userManager.GetRolesAsync(linkOwner);
         var ownerIsAgent = linkOwner.IsAgent && ownerRoles.Contains("Agent");
-        var ownerHasCrmAccess = ownerIsAgent || ownerRoles.Any(role =>
-            role is "Admin" or "Manager" or "Uploader");
+        var ownerIsManager = ownerRoles.Any(role => role is "Admin" or "Manager");
+        var ownerIsUploader = ownerRoles.Contains("Uploader");
+        var ownerHasCrmAccess = ownerIsAgent || ownerIsManager || ownerIsUploader;
         if (!ownerHasCrmAccess)
         {
             return BadRequest(new
             {
                 message = "The CRM account connected to this questionnaire link no longer has access."
             });
+        }
+
+        var assignedUserId = questionnaireLink.AgentUserId;
+        if (ownerIsUploader && !ownerIsAgent && !ownerIsManager)
+        {
+            var manager = await FindDefaultManagerAsync();
+            if (manager is null)
+            {
+                return BadRequest(new
+                {
+                    message = "No CRM manager is available for this questionnaire link."
+                });
+            }
+            assignedUserId = manager.Id;
         }
 
         if (!dto.ConsentGiven)
@@ -550,8 +565,8 @@ public class CrmController : ControllerBase
             // Do not trust CustomerUserId or AssignedAgentId from the
             // anonymous browser. Assignment comes only from the token.
             CustomerUserId = null,
-            AssignedAgentId = ownerIsAgent ? questionnaireLink.AgentUserId : null,
-            CreatedByUserId = ownerIsAgent ? null : questionnaireLink.AgentUserId,
+            AssignedAgentId = assignedUserId,
+            CreatedByUserId = ownerIsUploader ? questionnaireLink.AgentUserId : null,
 
             ConsentGiven = true,
             ConsentGivenAt = now,
@@ -577,7 +592,7 @@ public class CrmController : ControllerBase
                 Title = "Requested property viewing",
                 Details = NormalizeOptional(dto.Message),
                 DueAt = requestedViewingAt.Value,
-                AssignedAgentId = ownerIsAgent ? questionnaireLink.AgentUserId : null,
+                AssignedAgentId = assignedUserId,
                 CreatedByUserId = null,
                 CreatedAt = now,
                 UpdatedAt = now
@@ -1350,12 +1365,28 @@ public class CrmController : ControllerBase
     {
         var agent = await _context.Users
             .FirstOrDefaultAsync(
-                user => user.Id == id && user.IsAgent,
+                user => user.Id == id,
                 cancellationToken);
-        if (agent is null || !await _userManager.IsInRoleAsync(agent, "Agent"))
+        if (agent is null)
+            return null;
+
+        var roles = await _userManager.GetRolesAsync(agent);
+        var isAgent = agent.IsAgent && roles.Contains("Agent");
+        if (!isAgent && !roles.Any(role => role is "Admin" or "Manager"))
             return null;
 
         return agent;
+    }
+
+    private async Task<AppUser?> FindDefaultManagerAsync()
+    {
+        var managers = await _userManager.GetUsersInRoleAsync("Manager");
+        var manager = managers.OrderBy(user => user.Id).FirstOrDefault();
+        if (manager is not null)
+            return manager;
+
+        var admins = await _userManager.GetUsersInRoleAsync("Admin");
+        return admins.OrderBy(user => user.Id).FirstOrDefault();
     }
 
     private Task<bool> ApartmentExistsAsync(
