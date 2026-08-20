@@ -372,7 +372,7 @@ public class CrmController : ControllerBase
     // QUESTIONNAIRE REFERRAL LINKS
     // =========================================================
 
-    [Authorize(Roles = CrmWriteRoles)]
+    [Authorize(Roles = CrmCreateRoles)]
     [HttpPost("questionnaire-links")]
     public async Task<IActionResult> GenerateQuestionnaireLink(
         CancellationToken cancellationToken)
@@ -381,15 +381,12 @@ public class CrmController : ControllerBase
         if (userId is null)
             return Unauthorized();
 
-        // A questionnaire referral link must belong to a real CRM agent.
-        // Admins/managers can use this endpoint only when their account is
-        // also configured as an Agent.
-        var agent = await FindAgentAsync(userId, cancellationToken);
-        if (agent is null)
+        var ownerExists = await UserExistsAsync(userId, cancellationToken);
+        if (!ownerExists)
         {
             return BadRequest(new
             {
-                message = "Only a valid CRM agent can generate a questionnaire link."
+                message = "The CRM account connected to this link is not available."
             });
         }
 
@@ -464,16 +461,27 @@ public class CrmController : ControllerBase
             });
         }
 
-        // Make sure the owner still exists and is still a CRM Agent.
-        var assignedAgent = await FindAgentAsync(
-            questionnaireLink.AgentUserId,
+        // Links may belong to a manager, agent, or uploader. Only an Agent
+        // receives assignment; other CRM roles retain ownership as creator.
+        var linkOwner = await _context.Users.FirstOrDefaultAsync(
+            user => user.Id == questionnaireLink.AgentUserId,
             cancellationToken);
-
-        if (assignedAgent is null)
+        if (linkOwner is null)
         {
             return BadRequest(new
             {
-                message = "The agent connected to this questionnaire link is no longer available."
+                message = "The CRM account connected to this questionnaire link is no longer available."
+            });
+        }
+        var ownerRoles = await _userManager.GetRolesAsync(linkOwner);
+        var ownerIsAgent = linkOwner.IsAgent && ownerRoles.Contains("Agent");
+        var ownerHasCrmAccess = ownerIsAgent || ownerRoles.Any(role =>
+            role is "Admin" or "Manager" or "Uploader");
+        if (!ownerHasCrmAccess)
+        {
+            return BadRequest(new
+            {
+                message = "The CRM account connected to this questionnaire link no longer has access."
             });
         }
 
@@ -542,8 +550,8 @@ public class CrmController : ControllerBase
             // Do not trust CustomerUserId or AssignedAgentId from the
             // anonymous browser. Assignment comes only from the token.
             CustomerUserId = null,
-            AssignedAgentId = questionnaireLink.AgentUserId,
-            CreatedByUserId = null,
+            AssignedAgentId = ownerIsAgent ? questionnaireLink.AgentUserId : null,
+            CreatedByUserId = ownerIsAgent ? null : questionnaireLink.AgentUserId,
 
             ConsentGiven = true,
             ConsentGivenAt = now,
@@ -569,7 +577,7 @@ public class CrmController : ControllerBase
                 Title = "Requested property viewing",
                 Details = NormalizeOptional(dto.Message),
                 DueAt = requestedViewingAt.Value,
-                AssignedAgentId = questionnaireLink.AgentUserId,
+                AssignedAgentId = ownerIsAgent ? questionnaireLink.AgentUserId : null,
                 CreatedByUserId = null,
                 CreatedAt = now,
                 UpdatedAt = now
