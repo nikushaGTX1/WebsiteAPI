@@ -313,7 +313,10 @@ public class CrmController : ControllerBase
             .Select(lead => lead.Id);
         var taskQuery = _context.CrmTasks
             .AsNoTracking()
-            .Where(task => accessibleLeadIds.Contains(task.LeadId));
+            .Where(task =>
+                accessibleLeadIds.Contains(task.LeadId) &&
+                task.Lead.Status != CrmLeadStatus.Won &&
+                task.Lead.Status != CrmLeadStatus.Lost);
         var now = DateTime.UtcNow;
         var today = now.Date;
         var tomorrow = today.AddDays(1);
