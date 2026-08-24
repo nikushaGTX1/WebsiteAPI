@@ -10,7 +10,7 @@
         "projectUniqueName": "C:\\Users\\user\\Desktop\\WebsiteAPI\\Website API.csproj",
         "projectName": "Website API",
         "projectPath": "C:\\Users\\user\\Desktop\\WebsiteAPI\\Website API.csproj",
-        "packagesPath": "C:\\Users\\user\\AppData\\Local\\Temp\\codex-websiteapi-dotnet\\.nuget\\packages\\",
+        "packagesPath": "C:\\Users\\user\\.nuget\\packages\\",
         "outputPath": "C:\\Users\\user\\Desktop\\WebsiteAPI\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [

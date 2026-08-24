@@ -55,14 +55,18 @@ public sealed partial class CanonicalStreetImportService(
             ?? throw new ArgumentException("Unsupported Tbilisi district.", nameof(requestedDistrict));
         var city = await EnsureAreaAsync(null, "city", "Tbilisi", 0, cancellationToken);
         var relationId = DistrictRelations[districtName];
+        var expectedBoundarySource = $"osm:relation/{relationId}";
         var district = await EnsureAreaAsync(city.Id, "district", districtName, relationId, cancellationToken);
-        // Imports are idempotent. A public, approved boundary is never reset
-        // or re-downloaded by a routine street refresh.
-        if (district.GeometryStatus != "approved" ||
-            !StreetGeoJson.IsValidBoundary(district.BoundaryGeoJson))
+        // Keep approved geometry stable during routine refreshes, but never
+        // preserve a polygon that came from a different OSM relation.
+        if (!string.Equals(district.ExternalSourceId, expectedBoundarySource, StringComparison.OrdinalIgnoreCase) ||
+            district.GeometryStatus != "approved" ||
+            !StreetGeoJson.IsValidBoundary(district.BoundaryGeoJson) ||
+            !BoundaryMatchesKnownArea(districtName, district.BoundaryGeoJson))
         {
             await StoreBoundaryAsync(district, relationId, cancellationToken);
         }
+        district.ExternalSourceId = expectedBoundarySource;
         using var payload = await DownloadRoadsAsync(relationId, cancellationToken);
 
         var candidates = payload.RootElement.GetProperty("elements")
@@ -168,7 +172,6 @@ public sealed partial class CanonicalStreetImportService(
                     ? GeorgianLocationTranslations.FindCity(nameEn) ?? string.Empty
                     : GeorgianLocationTranslations.FindDistrict(nameEn) ?? string.Empty;
             area.Source = "OpenStreetMap";
-            if (relationId > 0) area.ExternalSourceId = $"osm:relation/{relationId}";
             return area;
         }
         area = new LocationArea
@@ -214,6 +217,38 @@ public sealed partial class CanonicalStreetImportService(
             throw new InvalidOperationException(
                 "The district boundary source is temporarily unavailable. Retry this district later.", exception);
         }
+    }
+
+    private static bool BoundaryMatchesKnownArea(string districtName, string? geoJson)
+    {
+        if (!districtName.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.IsNullOrWhiteSpace(geoJson)) return false;
+
+        // OSM relation 18183807 is a compact neighbourhood boundary. This
+        // rejects the historic Gldani/Zahesi polygon that was once retained
+        // after the configured relation ID changed.
+        using var document = JsonDocument.Parse(geoJson);
+        if (!document.RootElement.TryGetProperty("coordinates", out var coordinates)) return false;
+        var points = new List<(double Longitude, double Latitude)>();
+        CollectCoordinatePairs(coordinates, points);
+        return points.Count >= 4 && points.All(point =>
+            point.Longitude is >= 44.70 and <= 44.80 &&
+            point.Latitude is >= 41.77 and <= 41.82);
+    }
+
+    private static void CollectCoordinatePairs(
+        JsonElement element,
+        ICollection<(double Longitude, double Latitude)> points)
+    {
+        if (element.ValueKind != JsonValueKind.Array) return;
+        if (element.GetArrayLength() >= 2 &&
+            element[0].ValueKind == JsonValueKind.Number &&
+            element[1].ValueKind == JsonValueKind.Number)
+        {
+            points.Add((element[0].GetDouble(), element[1].GetDouble()));
+            return;
+        }
+        foreach (var child in element.EnumerateArray()) CollectCoordinatePairs(child, points);
     }
 
     private async Task<JsonDocument> DownloadRoadsAsync(
