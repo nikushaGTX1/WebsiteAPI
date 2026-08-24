@@ -55,7 +55,9 @@ public sealed partial class CanonicalStreetImportService(
             ?? throw new ArgumentException("Unsupported Tbilisi district.", nameof(requestedDistrict));
         var city = await EnsureAreaAsync(null, "city", "Tbilisi", 0, cancellationToken);
         var relationId = DistrictRelations[districtName];
-        var expectedBoundarySource = $"osm:relation/{relationId}";
+        var expectedBoundarySource = districtName.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase)
+            ? "curated:didi-digomi-street-coverage:v1"
+            : $"osm:relation/{relationId}";
         var district = await EnsureAreaAsync(city.Id, "district", districtName, relationId, cancellationToken);
         // Keep approved geometry stable during routine refreshes, but never
         // preserve a polygon that came from a different OSM relation.
@@ -64,7 +66,7 @@ public sealed partial class CanonicalStreetImportService(
             !StreetGeoJson.IsValidBoundary(district.BoundaryGeoJson) ||
             !BoundaryMatchesKnownArea(districtName, district.BoundaryGeoJson))
         {
-            await StoreBoundaryAsync(district, relationId, cancellationToken);
+            await StoreBoundaryAsync(district, districtName, relationId, cancellationToken);
         }
         district.ExternalSourceId = expectedBoundarySource;
         using var payload = await DownloadRoadsAsync(districtName, relationId, cancellationToken);
@@ -171,7 +173,11 @@ public sealed partial class CanonicalStreetImportService(
                 area.NameKa = type == "city"
                     ? GeorgianLocationTranslations.FindCity(nameEn) ?? string.Empty
                     : GeorgianLocationTranslations.FindDistrict(nameEn) ?? string.Empty;
-            area.Source = "OpenStreetMap";
+            if (!nameEn.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(area.ExternalSourceId, "curated:didi-digomi-street-coverage:v1", StringComparison.Ordinal))
+            {
+                area.Source = "OpenStreetMap";
+            }
             return area;
         }
         area = new LocationArea
@@ -194,9 +200,27 @@ public sealed partial class CanonicalStreetImportService(
 
     private async Task StoreBoundaryAsync(
         LocationArea district,
+        string districtName,
         long relationId,
         CancellationToken cancellationToken)
     {
+        if (districtName.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase))
+        {
+            // OSM relation 18183807 describes only the northern neighbourhood
+            // core. Search/property usage of Didi Digomi also includes the
+            // developed street grid immediately west of the highway and south
+            // through Asmati Street. Keep this reviewed product boundary
+            // explicit and deterministic instead of silently stretching OSM.
+            district.BoundaryGeoJson = """
+                {"type":"Polygon","coordinates":[[[44.7095,41.7790],[44.7130,41.7910],[44.7272,41.7990],[44.7468,41.8005],[44.7706,41.7960],[44.7720,41.7790],[44.7645,41.7695],[44.7390,41.7680],[44.7190,41.7710],[44.7095,41.7790]]]}
+                """;
+            district.Source = "Curated street coverage";
+            district.GeometryStatus = "pending_review";
+            district.UpdatedAt = DateTime.UtcNow;
+            await context.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
         var client = httpClientFactory.CreateClient("OpenStreetMap");
         try
         {
@@ -224,16 +248,20 @@ public sealed partial class CanonicalStreetImportService(
         if (!districtName.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase)) return true;
         if (string.IsNullOrWhiteSpace(geoJson)) return false;
 
-        // OSM relation 18183807 is a compact neighbourhood boundary. This
-        // rejects the historic Gldani/Zahesi polygon that was once retained
-        // after the configured relation ID changed.
+        // The real-estate area must include the developed southern street grid
+        // (including Asmati Street), not just OSM's northern neighbourhood core.
         using var document = JsonDocument.Parse(geoJson);
         if (!document.RootElement.TryGetProperty("coordinates", out var coordinates)) return false;
         var points = new List<(double Longitude, double Latitude)>();
         CollectCoordinatePairs(coordinates, points);
-        return points.Count >= 4 && points.All(point =>
-            point.Longitude is >= 44.70 and <= 44.80 &&
-            point.Latitude is >= 41.77 and <= 41.82);
+        return points.Count >= 4 &&
+            points.Min(point => point.Longitude) <= 44.71 &&
+            points.Min(point => point.Latitude) <= 41.779 &&
+            points.Max(point => point.Longitude) >= 44.77 &&
+            points.Max(point => point.Latitude) >= 41.798 &&
+            points.All(point =>
+                point.Longitude is >= 44.69 and <= 44.80 &&
+                point.Latitude is >= 41.75 and <= 41.82);
     }
 
     private static void CollectCoordinatePairs(
