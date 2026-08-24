@@ -150,6 +150,10 @@ public sealed partial class AdminStreetsController(
         street.ApprovedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         street.ReviewNotes = decision.Notes?.Trim();
         await context.SaveChangesAsync(cancellationToken);
+        // Propagate an approved exact-name geometry to the supplied official
+        // street catalog immediately; otherwise it would remain catalog-only
+        // until the API process is restarted.
+        await OfficialStreetCatalogSeeder.SeedAsync(context, cancellationToken);
         return Ok(new { street.Id, street.GeometryStatus, street.ApprovedAt });
     }
 

@@ -67,7 +67,7 @@ public sealed partial class CanonicalStreetImportService(
             await StoreBoundaryAsync(district, relationId, cancellationToken);
         }
         district.ExternalSourceId = expectedBoundarySource;
-        using var payload = await DownloadRoadsAsync(relationId, cancellationToken);
+        using var payload = await DownloadRoadsAsync(districtName, relationId, cancellationToken);
 
         var candidates = payload.RootElement.GetProperty("elements")
             .EnumerateArray()
@@ -252,13 +252,22 @@ public sealed partial class CanonicalStreetImportService(
     }
 
     private async Task<JsonDocument> DownloadRoadsAsync(
+        string districtName,
         long relationId,
         CancellationToken cancellationToken)
     {
         var areaId = 3_600_000_000L + relationId;
+        var roadSelector = districtName.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase)
+            // The OSM neighbourhood polygon ends at latitude 41.787, while
+            // verified Didi Digomi streets such as Asmati Street continue a
+            // few hundred metres south. Include a conservative local buffer;
+            // canonical names and review still determine what is published.
+            ? "(way(area.districtArea)[\"highway\"][\"name\"];" +
+              "way(around:1500,41.7925,44.7490)[\"highway\"][\"name\"];)"
+            : "way(area.districtArea)[\"highway\"][\"name\"]";
         var query = "[out:json][timeout:180];" +
             $"area({areaId})->.districtArea;" +
-            "way(area.districtArea)[\"highway\"][\"name\"];out tags geom;";
+            $"{roadSelector};out tags geom;";
         var client = httpClientFactory.CreateClient("OpenStreetMap");
         Exception? last = null;
         foreach (var provider in Providers)
