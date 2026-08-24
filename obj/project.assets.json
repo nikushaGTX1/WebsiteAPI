@@ -3666,7 +3666,7 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\user\\Desktop\\website\\.dotnet-cli\\.nuget\\packages\\": {},
+    "C:\\Users\\user\\AppData\\Local\\Temp\\codex-websiteapi-dotnet\\.nuget\\packages\\": {},
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
@@ -3675,7 +3675,7 @@
       "projectUniqueName": "C:\\Users\\user\\Desktop\\WebsiteAPI\\Website API.csproj",
       "projectName": "Website API",
       "projectPath": "C:\\Users\\user\\Desktop\\WebsiteAPI\\Website API.csproj",
-      "packagesPath": "C:\\Users\\user\\Desktop\\website\\.dotnet-cli\\.nuget\\packages\\",
+      "packagesPath": "C:\\Users\\user\\AppData\\Local\\Temp\\codex-websiteapi-dotnet\\.nuget\\packages\\",
       "outputPath": "C:\\Users\\user\\Desktop\\WebsiteAPI\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [

@@ -239,7 +239,7 @@ public class ApartmentsController : ControllerBase
         {
             return BadRequest(new
             {
-                message = "Select an approved canonical street by street_id. Street-name resolution is not accepted."
+                message = "Select a street from the canonical catalog by street_id. Street-name resolution is not accepted."
             });
         }
         var canonicalStreet = await _context.CanonicalStreets
@@ -248,10 +248,11 @@ public class ApartmentsController : ControllerBase
             .Include(street => street.District)
             .FirstOrDefaultAsync(street =>
                 street.Id == dto.StreetId.Value &&
-                street.GeometryStatus == "approved",
+                (street.GeometryStatus == "approved" ||
+                    street.Source == OfficialStreetCatalog.Source),
                 cancellationToken);
         if (canonicalStreet is null)
-            return BadRequest(new { message = "The selected street_id has no approved canonical geometry." });
+            return BadRequest(new { message = "The selected street_id is not in the canonical street catalog." });
         if (!dto.PropertyLatitude.HasValue || !dto.PropertyLongitude.HasValue ||
             dto.PropertyLatitude.Value is < -90 or > 90 ||
             dto.PropertyLongitude.Value is < -180 or > 180)
@@ -396,13 +397,14 @@ public class ApartmentsController : ControllerBase
                 .Include(street => street.District)
                 .FirstOrDefaultAsync(street =>
                     street.Id == dto.StreetId.Value &&
-                    street.GeometryStatus == "approved",
+                    (street.GeometryStatus == "approved" ||
+                        street.Source == OfficialStreetCatalog.Source),
                     cancellationToken);
             if (canonicalStreet is null)
             {
                 return BadRequest(new
                 {
-                    message = "The selected street_id has no approved canonical geometry."
+                    message = "The selected street_id is not in the canonical street catalog."
                 });
             }
         }
