@@ -21,6 +21,8 @@ Generation method:
    44.72-44.78 / 41.765-41.805 extract.
 3. Build a 3 km maximum-edge concave hull.
 4. Apply a 180 metre coverage margin and simplify at 0.00018 degrees.
+5. Round output coordinates to seven decimal places for drawing-engine
+   compatibility while retaining sub-metre precision.
 
 The margin represents address/building coverage around road centre lines. It
 is not an administrative claim. The result is stored in
