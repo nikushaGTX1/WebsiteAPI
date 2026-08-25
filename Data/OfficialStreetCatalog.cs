@@ -136,6 +136,45 @@ public static class OfficialStreetCatalogSeeder
         }
 
         var catalogAreas = OfficialStreetCatalog.ReadAreas();
+        // The supplied city catalog names Didi Dighomi in Georgian and used to
+        // create a second geometry-less district. Merge that record into the
+        // canonical district before seeding so streets such as Asmati inherit
+        // the full reviewed Didi Dighomi coverage.
+        var canonicalDidiDigomi = await context.LocationAreas.FirstOrDefaultAsync(
+            area => area.Type == "district" && area.Slug == DidiDigomiCoverage.CanonicalSlug,
+            cancellationToken);
+        if (canonicalDidiDigomi is not null)
+        {
+            canonicalDidiDigomi.NameKa = DidiDigomiCoverage.NameKa;
+            canonicalDidiDigomi.BoundaryGeoJson = DidiDigomiCoverage.BoundaryGeoJson;
+            canonicalDidiDigomi.Source = DidiDigomiCoverage.Source;
+            canonicalDidiDigomi.ExternalSourceId = DidiDigomiCoverage.ExternalSourceId;
+            canonicalDidiDigomi.GeometryStatus = "approved";
+            canonicalDidiDigomi.ApprovedAt ??= DateTime.UtcNow;
+            canonicalDidiDigomi.UpdatedAt = DateTime.UtcNow;
+
+            var duplicateDistricts = await context.LocationAreas
+                .Where(area =>
+                    area.Type == "district" &&
+                    area.Id != canonicalDidiDigomi.Id &&
+                    area.NameKa == DidiDigomiCoverage.NameKa)
+                .ToListAsync(cancellationToken);
+            if (duplicateDistricts.Count > 0)
+            {
+                var duplicateIds = duplicateDistricts.Select(area => area.Id).ToArray();
+                var duplicateStreets = await context.CanonicalStreets
+                    .Where(street => duplicateIds.Contains(street.DistrictId))
+                    .ToListAsync(cancellationToken);
+                foreach (var street in duplicateStreets)
+                    street.DistrictId = canonicalDidiDigomi.Id;
+                foreach (var duplicate in duplicateDistricts)
+                {
+                    duplicate.Type = "legacy_district";
+                    duplicate.Source = $"{OfficialStreetCatalog.Source}Legacy";
+                }
+            }
+            await context.SaveChangesAsync(cancellationToken);
+        }
         var desiredExternalIds = catalogAreas
             .SelectMany(area => area.Streets.Select(street =>
                 OfficialStreetCatalog.ExternalId(area.NameKa, street)))
@@ -184,9 +223,11 @@ public static class OfficialStreetCatalogSeeder
         foreach (var area in catalogAreas)
         {
             var slug = AreaSlug(area.NameKa);
-            var district = await context.LocationAreas.FirstOrDefaultAsync(
-                item => item.Type == "district" && item.Slug == slug,
-                cancellationToken);
+            var district = area.NameKa == DidiDigomiCoverage.NameKa
+                ? canonicalDidiDigomi
+                : await context.LocationAreas.FirstOrDefaultAsync(
+                    item => item.Type == "district" && item.Slug == slug,
+                    cancellationToken);
             if (district is null)
             {
                 district = new LocationArea

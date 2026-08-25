@@ -56,7 +56,7 @@ public sealed partial class CanonicalStreetImportService(
         var city = await EnsureAreaAsync(null, "city", "Tbilisi", 0, cancellationToken);
         var relationId = DistrictRelations[districtName];
         var expectedBoundarySource = districtName.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase)
-            ? "curated:didi-digomi-street-coverage:v1"
+            ? DidiDigomiCoverage.ExternalSourceId
             : $"osm:relation/{relationId}";
         var district = await EnsureAreaAsync(city.Id, "district", districtName, relationId, cancellationToken);
         // Keep approved geometry stable during routine refreshes, but never
@@ -174,7 +174,7 @@ public sealed partial class CanonicalStreetImportService(
                     ? GeorgianLocationTranslations.FindCity(nameEn) ?? string.Empty
                     : GeorgianLocationTranslations.FindDistrict(nameEn) ?? string.Empty;
             if (!nameEn.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase) ||
-                !string.Equals(area.ExternalSourceId, "curated:didi-digomi-street-coverage:v1", StringComparison.Ordinal))
+                !string.Equals(area.ExternalSourceId, DidiDigomiCoverage.ExternalSourceId, StringComparison.Ordinal))
             {
                 area.Source = "OpenStreetMap";
             }
@@ -211,11 +211,11 @@ public sealed partial class CanonicalStreetImportService(
             // developed street grid immediately west of the highway and south
             // through Asmati Street. Keep this reviewed product boundary
             // explicit and deterministic instead of silently stretching OSM.
-            district.BoundaryGeoJson = """
-                {"type":"Polygon","coordinates":[[[44.7095,41.7790],[44.7130,41.7910],[44.7272,41.7990],[44.7468,41.8005],[44.7706,41.7960],[44.7720,41.7790],[44.7645,41.7695],[44.7390,41.7680],[44.7190,41.7710],[44.7095,41.7790]]]}
-                """;
-            district.Source = "Curated street coverage";
-            district.GeometryStatus = "pending_review";
+            district.BoundaryGeoJson = DidiDigomiCoverage.BoundaryGeoJson;
+            district.Source = DidiDigomiCoverage.Source;
+            district.ExternalSourceId = DidiDigomiCoverage.ExternalSourceId;
+            district.GeometryStatus = "approved";
+            district.ApprovedAt ??= DateTime.UtcNow;
             district.UpdatedAt = DateTime.UtcNow;
             await context.SaveChangesAsync(cancellationToken);
             return;
