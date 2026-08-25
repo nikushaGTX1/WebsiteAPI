@@ -27,7 +27,9 @@ public sealed partial class CanonicalStreetImportService(
             ["Mtatsminda"] = 2073140,
             ["Didube"] = 16749659,
             ["Digomi"] = 16356610,
-            ["Didi Digomi"] = 18183807,
+            // Didi Dighomi uses DidiDigomiCoverage, never the smaller OSM
+            // neighbourhood relation 18183807.
+            ["Didi Digomi"] = 0,
             ["Gldani"] = 13438812,
             ["Nadzaladevi"] = 10790351,
             ["Isani"] = 18467266,
@@ -254,11 +256,12 @@ public sealed partial class CanonicalStreetImportService(
         if (!document.RootElement.TryGetProperty("coordinates", out var coordinates)) return false;
         var points = new List<(double Longitude, double Latitude)>();
         CollectCoordinatePairs(coordinates, points);
-        return points.Count >= 4 &&
-            points.Min(point => point.Longitude) <= 44.71 &&
-            points.Min(point => point.Latitude) <= 41.779 &&
-            points.Max(point => point.Longitude) >= 44.77 &&
-            points.Max(point => point.Latitude) >= 41.798 &&
+        const double tolerance = 0.000001;
+        return points.Count >= 12 &&
+            points.Min(point => point.Longitude) <= DidiDigomiCoverage.West + tolerance &&
+            points.Min(point => point.Latitude) <= DidiDigomiCoverage.South + tolerance &&
+            points.Max(point => point.Longitude) >= DidiDigomiCoverage.East - tolerance &&
+            points.Max(point => point.Latitude) >= DidiDigomiCoverage.North - tolerance &&
             points.All(point =>
                 point.Longitude is >= 44.69 and <= 44.80 &&
                 point.Latitude is >= 41.75 and <= 41.82);
@@ -284,18 +287,21 @@ public sealed partial class CanonicalStreetImportService(
         long relationId,
         CancellationToken cancellationToken)
     {
-        var areaId = 3_600_000_000L + relationId;
-        var roadSelector = districtName.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase)
-            // The OSM neighbourhood polygon ends at latitude 41.787, while
-            // verified Didi Digomi streets such as Asmati Street continue a
-            // few hundred metres south. Include a conservative local buffer;
-            // canonical names and review still determine what is published.
-            ? "(way(area.districtArea)[\"highway\"][\"name\"];" +
-              "way(around:1500,41.7925,44.7490)[\"highway\"][\"name\"];)"
-            : "way(area.districtArea)[\"highway\"][\"name\"]";
-        var query = "[out:json][timeout:180];" +
-            $"area({areaId})->.districtArea;" +
-            $"{roadSelector};out tags geom;";
+        string query;
+        if (districtName.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase))
+        {
+            query = "[out:json][timeout:180];" +
+                $"way({DidiDigomiCoverage.South},{DidiDigomiCoverage.West}," +
+                $"{DidiDigomiCoverage.North},{DidiDigomiCoverage.East})" +
+                "[\"highway\"][\"name\"];out tags geom;";
+        }
+        else
+        {
+            var areaId = 3_600_000_000L + relationId;
+            query = "[out:json][timeout:180];" +
+                $"area({areaId})->.districtArea;" +
+                "way(area.districtArea)[\"highway\"][\"name\"];out tags geom;";
+        }
         var client = httpClientFactory.CreateClient("OpenStreetMap");
         Exception? last = null;
         foreach (var provider in Providers)

@@ -22,7 +22,9 @@ public sealed class StreetGeometryImportService(
             ["Mtatsminda"] = 2073140,
             ["Didube"] = 16749659,
             ["Digomi"] = 16356610,
-            ["Didi Digomi"] = 18183807,
+            // Didi Dighomi uses the real-estate coverage bounds below, not
+            // the smaller OSM neighbourhood relation.
+            ["Didi Digomi"] = 0,
             ["Gldani"] = 13438812,
             ["Nadzaladevi"] = 10790351,
             ["Isani"] = 18467266,
@@ -113,7 +115,7 @@ public sealed class StreetGeometryImportService(
             return;
         }
 
-        using var payload = await DownloadDistrictAsync(relationId, cancellationToken);
+        using var payload = await DownloadDistrictAsync(district, relationId, cancellationToken);
         var importedAt = DateTime.UtcNow;
         var streets = new List<StreetGeometry>();
         var districtStreetNames = StreetData.StreetsList
@@ -184,12 +186,15 @@ public sealed class StreetGeometryImportService(
     }
 
     private async Task<JsonDocument> DownloadDistrictAsync(
+        string district,
         long relationId,
         CancellationToken cancellationToken)
     {
-        var (south, west, north, east) = await DownloadBoundaryBoxAsync(
-            relationId,
-            cancellationToken);
+        var (south, west, north, east) =
+            district.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase)
+                ? (DidiDigomiCoverage.South, DidiDigomiCoverage.West,
+                    DidiDigomiCoverage.North, DidiDigomiCoverage.East)
+                : await DownloadBoundaryBoxAsync(relationId, cancellationToken);
         var query =
             "[out:json][timeout:120];" +
             $"way[\"highway\"][\"name\"]({south},{west},{north},{east});" +

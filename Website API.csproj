@@ -25,4 +25,8 @@
     <EmbeddedResource Include="Data\OfficialStreets\*.txt" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="Website API.Tests\**\*.cs" />
+  </ItemGroup>
+
 </Project>
