@@ -86,6 +86,8 @@ public class ListingUploadsController : ControllerBase
         }
 
         var publishedListingId = dto.PublishedListingId.Trim();
+        if (platform == "myhome" && !System.Text.RegularExpressions.Regex.IsMatch(publishedListingId, @"^\d{5,8}$"))
+            return BadRequest(new { message = "MyHome publishedListingId must be a listing ID, not a payment/transaction ID." });
         var existing = await _context.ListingUploads
             .Include(item => item.AgentUser)
             .FirstOrDefaultAsync(item =>
