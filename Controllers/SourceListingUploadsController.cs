@@ -35,8 +35,16 @@ public class SourceListingUploadsController : ControllerBase
         if (source is null || platform is null) return BadRequest(new { message = "Platforms must be myhome or ssge." });
         if (platform == "myhome" && !System.Text.RegularExpressions.Regex.IsMatch(dto.PublishedListingId.Trim(), @"^\d{5,8}$"))
             return BadRequest(new { message = "MyHome publishedListingId must be a listing ID, not a payment/transaction ID." });
-        var existing = await _context.ListingUploads.Include(x => x.AgentUser).FirstOrDefaultAsync(x => x.SourcePlatform == source && x.SourceListingId == dto.SourceListingId.Trim() && x.AgentUserId == userId && x.Platform == platform && x.PublishedListingId == dto.PublishedListingId.Trim(), token);
-        if (existing is not null) return Ok(ToResponse(existing));
+        var existing = await _context.ListingUploads.Include(x => x.AgentUser).FirstOrDefaultAsync(x => x.SourcePlatform == source && x.SourceListingId == dto.SourceListingId.Trim() && x.AgentUserId == userId && x.Platform == platform, token);
+        if (existing is not null)
+        {
+            existing.PublishedListingId = dto.PublishedListingId.Trim();
+            existing.PublishedUrl = dto.PublishedUrl?.Trim();
+            existing.SourceUrl = dto.SourceUrl?.Trim();
+            existing.UploadedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync(token);
+            return Ok(ToResponse(existing));
+        }
         var user = await _users.FindByIdAsync(userId); if (user is null) return Unauthorized();
         var upload = new ListingUpload { SourcePlatform = source, SourceListingId = dto.SourceListingId.Trim(), SourceUrl = dto.SourceUrl?.Trim(), AgentUserId = userId, AgentUser = user, AgentName = user.FullName ?? user.UserName ?? userId, Platform = platform, PublishedListingId = dto.PublishedListingId.Trim(), PublishedUrl = dto.PublishedUrl?.Trim() };
         _context.ListingUploads.Add(upload); await _context.SaveChangesAsync(token); return Ok(ToResponse(upload));
