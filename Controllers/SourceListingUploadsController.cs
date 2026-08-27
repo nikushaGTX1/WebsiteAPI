@@ -33,7 +33,7 @@ public class SourceListingUploadsController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier); if (userId is null) return Unauthorized();
         var source = Normalize(dto.SourcePlatform); var platform = Normalize(dto.Platform);
         if (source is null || platform is null) return BadRequest(new { message = "Platforms must be myhome or ssge." });
-        if (platform == "myhome" && !System.Text.RegularExpressions.Regex.IsMatch(dto.PublishedListingId.Trim(), @"^\d{5,8}$"))
+        if (platform == "myhome" && (!int.TryParse(dto.PublishedListingId.Trim(), out var myHomeId) || myHomeId < 20_000_000))
             return BadRequest(new { message = "MyHome publishedListingId must be a listing ID, not a payment/transaction ID." });
         var existing = await _context.ListingUploads.Include(x => x.AgentUser).FirstOrDefaultAsync(x => x.SourcePlatform == source && x.SourceListingId == dto.SourceListingId.Trim() && x.AgentUserId == userId && x.Platform == platform, token);
         if (existing is not null)
