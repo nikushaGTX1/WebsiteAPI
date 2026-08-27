@@ -68,6 +68,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             upload.Property(item => item.AgentUserId).HasMaxLength(450);
             upload.Property(item => item.AgentName).HasMaxLength(200);
+            upload.Property(item => item.SourcePlatform).HasMaxLength(20);
+            upload.Property(item => item.SourceListingId).HasMaxLength(100);
+            upload.Property(item => item.SourceUrl).HasMaxLength(2000);
             upload.Property(item => item.Platform).HasMaxLength(20);
             upload.Property(item => item.PublishedListingId).HasMaxLength(100);
             upload.Property(item => item.PublishedUrl).HasMaxLength(2000);
@@ -89,6 +92,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
                 item.Platform,
                 item.PublishedListingId
             }).IsUnique();
+            upload.HasIndex(item => new { item.SourcePlatform, item.SourceListingId, item.AgentUserId, item.Platform, item.PublishedListingId }).IsUnique();
 
             upload.HasIndex(item => new
             {
