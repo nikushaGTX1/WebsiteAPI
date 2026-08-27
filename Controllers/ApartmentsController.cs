@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using Website_API.Data;
 using Website_API.DTO;
 using Website_API.Models;
@@ -218,15 +219,17 @@ public class ApartmentsController : ControllerBase
             cancellationToken));
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize]
     [HttpPost]
     public async Task<IActionResult> CreateApartment(
         [FromForm] CreateApartmentDto dto,
         CancellationToken cancellationToken)
     {
-        var uploadedByUserId = string.IsNullOrWhiteSpace(dto.UploadedByUserId)
-            ? null
-            : dto.UploadedByUserId.Trim();
+        var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(currentUserId)) return Unauthorized();
+        var uploadedByUserId = User.IsInRole("Admin") && !string.IsNullOrWhiteSpace(dto.UploadedByUserId)
+            ? dto.UploadedByUserId.Trim()
+            : currentUserId;
         if (uploadedByUserId is not null &&
             !await _context.Users.AnyAsync(
                 user => user.Id == uploadedByUserId,
