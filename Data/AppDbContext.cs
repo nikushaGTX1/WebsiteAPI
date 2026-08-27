@@ -14,6 +14,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<AgentRating> AgentRatings => Set<AgentRating>();
     public DbSet<Apartment> Apartments => Set<Apartment>();
     public DbSet<ApartmentImage> ApartmentImages => Set<ApartmentImage>();
+    public DbSet<ListingUpload> ListingUploads => Set<ListingUpload>();
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
     public DbSet<FavoriteApartment> FavoriteApartments =>
         Set<FavoriteApartment>();
@@ -62,6 +63,39 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<ApartmentImage>()
             .ToTable("ApartmentImage");
+
+        builder.Entity<ListingUpload>(upload =>
+        {
+            upload.Property(item => item.AgentUserId).HasMaxLength(450);
+            upload.Property(item => item.AgentName).HasMaxLength(200);
+            upload.Property(item => item.Platform).HasMaxLength(20);
+            upload.Property(item => item.PublishedListingId).HasMaxLength(100);
+            upload.Property(item => item.PublishedUrl).HasMaxLength(2000);
+
+            upload.HasOne(item => item.Apartment)
+                .WithMany(apartment => apartment.ListingUploads)
+                .HasForeignKey(item => item.ApartmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            upload.HasOne(item => item.AgentUser)
+                .WithMany()
+                .HasForeignKey(item => item.AgentUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            upload.HasIndex(item => new
+            {
+                item.ApartmentId,
+                item.AgentUserId,
+                item.Platform,
+                item.PublishedListingId
+            }).IsUnique();
+
+            upload.HasIndex(item => new
+            {
+                item.ApartmentId,
+                item.UploadedAt
+            });
+        });
 
         builder.Entity<BlogPost>()
             .HasIndex(post => post.CreatedAt);
