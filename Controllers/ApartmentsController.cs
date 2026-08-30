@@ -238,34 +238,6 @@ public class ApartmentsController : ControllerBase
             return BadRequest(new { message = "Uploader user is not valid." });
         }
 
-        if (!dto.StreetId.HasValue)
-        {
-            return BadRequest(new
-            {
-                message = "Select a street from the canonical catalog by street_id. Street-name resolution is not accepted."
-            });
-        }
-        var canonicalStreet = await _context.CanonicalStreets
-            .AsNoTracking()
-            .Include(street => street.City)
-            .Include(street => street.District)
-            .FirstOrDefaultAsync(street =>
-                street.Id == dto.StreetId.Value &&
-                (street.GeometryStatus == "approved" ||
-                    street.Source == OfficialStreetCatalog.Source),
-                cancellationToken);
-        if (canonicalStreet is null)
-            return BadRequest(new { message = "The selected street_id is not in the canonical street catalog." });
-        if (!dto.PropertyLatitude.HasValue || !dto.PropertyLongitude.HasValue ||
-            dto.PropertyLatitude.Value is < -90 or > 90 ||
-            dto.PropertyLongitude.Value is < -180 or > 180)
-        {
-            return BadRequest(new
-            {
-                message = "Place the exact property point. A street geometry is never used as the property coordinate."
-            });
-        }
-
         List<string> storedImagePaths = [];
 
         try
@@ -280,7 +252,7 @@ public class ApartmentsController : ControllerBase
                 Title = dto.Title,
                 Description = dto.Description,
                 Price = dto.Price,
-                Address = dto.Address,
+                Address = null,
                 PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber)
                     ? null
                     : dto.PhoneNumber.Trim(),
@@ -296,16 +268,16 @@ public class ApartmentsController : ControllerBase
                     .ToList(),
 
                 // Location
-                City = canonicalStreet.City.NameEn,
-                Region = string.Empty,
-                District = canonicalStreet.District.NameEn,
-                Street = canonicalStreet.NameEn,
-                StreetId = canonicalStreet.Id,
-                BuildingNumber = dto.BuildingNumber?.Trim(),
-                Latitude = dto.Latitude,
-                Longitude = dto.Longitude,
-                PropertyLatitude = dto.PropertyLatitude,
-                PropertyLongitude = dto.PropertyLongitude,
+                City = dto.City.Trim(),
+                Region = dto.Region.Trim(),
+                District = dto.District.Trim(),
+                Street = string.Empty,
+                StreetId = null,
+                BuildingNumber = null,
+                Latitude = null,
+                Longitude = null,
+                PropertyLatitude = null,
+                PropertyLongitude = null,
 
                 // Apartment details
                 Bedrooms = dto.Bedrooms,
