@@ -23,6 +23,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<StreetGeometry> StreetGeometries => Set<StreetGeometry>();
     public DbSet<LocationArea> LocationAreas => Set<LocationArea>();
     public DbSet<CanonicalStreet> CanonicalStreets => Set<CanonicalStreet>();
+    public DbSet<CrmQuestionnaireLink> CrmQuestionnaireLinks { get; set; }
+
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
