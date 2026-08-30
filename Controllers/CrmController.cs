@@ -313,7 +313,10 @@ public class CrmController : ControllerBase
             .Select(lead => lead.Id);
         var taskQuery = _context.CrmTasks
             .AsNoTracking()
-            .Where(task => accessibleLeadIds.Contains(task.LeadId));
+            .Where(task =>
+                accessibleLeadIds.Contains(task.LeadId) &&
+                task.Lead.Status != CrmLeadStatus.Won &&
+                task.Lead.Status != CrmLeadStatus.Lost);
         var now = DateTime.UtcNow;
         var today = now.Date;
         var tomorrow = today.AddDays(1);
@@ -372,7 +375,7 @@ public class CrmController : ControllerBase
     // QUESTIONNAIRE REFERRAL LINKS
     // =========================================================
 
-    [Authorize(Roles = CrmWriteRoles)]
+    [Authorize(Roles = CrmCreateRoles)]
     [HttpPost("questionnaire-links")]
     public async Task<IActionResult> GenerateQuestionnaireLink(
         CancellationToken cancellationToken)
@@ -381,15 +384,12 @@ public class CrmController : ControllerBase
         if (userId is null)
             return Unauthorized();
 
-        // A questionnaire referral link must belong to a real CRM agent.
-        // Admins/managers can use this endpoint only when their account is
-        // also configured as an Agent.
-        var agent = await FindAgentAsync(userId, cancellationToken);
-        if (agent is null)
+        var ownerExists = await UserExistsAsync(userId, cancellationToken);
+        if (!ownerExists)
         {
             return BadRequest(new
             {
-                message = "Only a valid CRM agent can generate a questionnaire link."
+                message = "The CRM account connected to this link is not available."
             });
         }
 
@@ -464,17 +464,43 @@ public class CrmController : ControllerBase
             });
         }
 
-        // Make sure the owner still exists and is still a CRM Agent.
-        var assignedAgent = await FindAgentAsync(
-            questionnaireLink.AgentUserId,
+        // Links may belong to a manager, agent, or uploader. Only an Agent
+        // receives assignment; other CRM roles retain ownership as creator.
+        var linkOwner = await _context.Users.FirstOrDefaultAsync(
+            user => user.Id == questionnaireLink.AgentUserId,
             cancellationToken);
-
-        if (assignedAgent is null)
+        if (linkOwner is null)
         {
             return BadRequest(new
             {
-                message = "The agent connected to this questionnaire link is no longer available."
+                message = "The CRM account connected to this questionnaire link is no longer available."
             });
+        }
+        var ownerRoles = await _userManager.GetRolesAsync(linkOwner);
+        var ownerIsAgent = linkOwner.IsAgent && ownerRoles.Contains("Agent");
+        var ownerIsManager = ownerRoles.Any(role => role is "Admin" or "Manager");
+        var ownerIsUploader = ownerRoles.Contains("Uploader");
+        var ownerHasCrmAccess = ownerIsAgent || ownerIsManager || ownerIsUploader;
+        if (!ownerHasCrmAccess)
+        {
+            return BadRequest(new
+            {
+                message = "The CRM account connected to this questionnaire link no longer has access."
+            });
+        }
+
+        var assignedUserId = questionnaireLink.AgentUserId;
+        if (ownerIsUploader && !ownerIsAgent && !ownerIsManager)
+        {
+            var manager = await FindDefaultManagerAsync();
+            if (manager is null)
+            {
+                return BadRequest(new
+                {
+                    message = "No CRM manager is available for this questionnaire link."
+                });
+            }
+            assignedUserId = manager.Id;
         }
 
         if (!dto.ConsentGiven)
@@ -542,8 +568,8 @@ public class CrmController : ControllerBase
             // Do not trust CustomerUserId or AssignedAgentId from the
             // anonymous browser. Assignment comes only from the token.
             CustomerUserId = null,
-            AssignedAgentId = questionnaireLink.AgentUserId,
-            CreatedByUserId = null,
+            AssignedAgentId = assignedUserId,
+            CreatedByUserId = ownerIsUploader ? questionnaireLink.AgentUserId : null,
 
             ConsentGiven = true,
             ConsentGivenAt = now,
@@ -569,7 +595,7 @@ public class CrmController : ControllerBase
                 Title = "Requested property viewing",
                 Details = NormalizeOptional(dto.Message),
                 DueAt = requestedViewingAt.Value,
-                AssignedAgentId = questionnaireLink.AgentUserId,
+                AssignedAgentId = assignedUserId,
                 CreatedByUserId = null,
                 CreatedAt = now,
                 UpdatedAt = now
@@ -830,6 +856,26 @@ public class CrmController : ControllerBase
 
         var updated = await LoadLeadDetailsAsync(id, userId, cancellationToken);
         return Ok(ToLeadDetail(updated!));
+    }
+
+    [Authorize(Roles = CrmReadRoles)]
+    [HttpDelete("leads/{id:int}")]
+    public async Task<IActionResult> DeleteLead(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        var lead = await AccessibleLeads(userId)
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (lead is null)
+            return NotFound(new { message = "Lead not found." });
+
+        _context.CrmLeads.Remove(lead);
+        await _context.SaveChangesAsync(cancellationToken);
+        return NoContent();
     }
 
     [Authorize(Roles = CrmWriteRoles)]
@@ -1326,12 +1372,28 @@ public class CrmController : ControllerBase
     {
         var agent = await _context.Users
             .FirstOrDefaultAsync(
-                user => user.Id == id && user.IsAgent,
+                user => user.Id == id,
                 cancellationToken);
-        if (agent is null || !await _userManager.IsInRoleAsync(agent, "Agent"))
+        if (agent is null)
+            return null;
+
+        var roles = await _userManager.GetRolesAsync(agent);
+        var isAgent = agent.IsAgent && roles.Contains("Agent");
+        if (!isAgent && !roles.Any(role => role is "Admin" or "Manager"))
             return null;
 
         return agent;
+    }
+
+    private async Task<AppUser?> FindDefaultManagerAsync()
+    {
+        var managers = await _userManager.GetUsersInRoleAsync("Manager");
+        var manager = managers.OrderBy(user => user.Id).FirstOrDefault();
+        if (manager is not null)
+            return manager;
+
+        var admins = await _userManager.GetUsersInRoleAsync("Admin");
+        return admins.OrderBy(user => user.Id).FirstOrDefault();
     }
 
     private Task<bool> ApartmentExistsAsync(

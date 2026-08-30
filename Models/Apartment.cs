@@ -119,4 +119,7 @@ public class Apartment
 
     [JsonIgnore]
     public List<FavoriteApartment> FavoritedBy { get; set; } = [];
+
+    [JsonIgnore]
+    public List<ListingUpload> ListingUploads { get; set; } = [];
 }

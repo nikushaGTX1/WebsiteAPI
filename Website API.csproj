@@ -21,4 +21,12 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Data\OfficialStreets\*.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Website API.Tests\**\*.cs" />
+  </ItemGroup>
+
 </Project>

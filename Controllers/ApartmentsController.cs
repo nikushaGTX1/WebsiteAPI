@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using Website_API.Data;
 using Website_API.DTO;
 using Website_API.Models;
@@ -218,15 +219,17 @@ public class ApartmentsController : ControllerBase
             cancellationToken));
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize]
     [HttpPost]
     public async Task<IActionResult> CreateApartment(
         [FromForm] CreateApartmentDto dto,
         CancellationToken cancellationToken)
     {
-        var uploadedByUserId = string.IsNullOrWhiteSpace(dto.UploadedByUserId)
-            ? null
-            : dto.UploadedByUserId.Trim();
+        var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(currentUserId)) return Unauthorized();
+        var uploadedByUserId = User.IsInRole("Admin") && !string.IsNullOrWhiteSpace(dto.UploadedByUserId)
+            ? dto.UploadedByUserId.Trim()
+            : currentUserId;
         if (uploadedByUserId is not null &&
             !await _context.Users.AnyAsync(
                 user => user.Id == uploadedByUserId,
@@ -239,7 +242,7 @@ public class ApartmentsController : ControllerBase
         {
             return BadRequest(new
             {
-                message = "Select an approved canonical street by street_id. Street-name resolution is not accepted."
+                message = "Select a street from the canonical catalog by street_id. Street-name resolution is not accepted."
             });
         }
         var canonicalStreet = await _context.CanonicalStreets
@@ -248,10 +251,11 @@ public class ApartmentsController : ControllerBase
             .Include(street => street.District)
             .FirstOrDefaultAsync(street =>
                 street.Id == dto.StreetId.Value &&
-                street.GeometryStatus == "approved",
+                (street.GeometryStatus == "approved" ||
+                    street.Source == OfficialStreetCatalog.Source),
                 cancellationToken);
         if (canonicalStreet is null)
-            return BadRequest(new { message = "The selected street_id has no approved canonical geometry." });
+            return BadRequest(new { message = "The selected street_id is not in the canonical street catalog." });
         if (!dto.PropertyLatitude.HasValue || !dto.PropertyLongitude.HasValue ||
             dto.PropertyLatitude.Value is < -90 or > 90 ||
             dto.PropertyLongitude.Value is < -180 or > 180)
@@ -396,13 +400,14 @@ public class ApartmentsController : ControllerBase
                 .Include(street => street.District)
                 .FirstOrDefaultAsync(street =>
                     street.Id == dto.StreetId.Value &&
-                    street.GeometryStatus == "approved",
+                    (street.GeometryStatus == "approved" ||
+                        street.Source == OfficialStreetCatalog.Source),
                     cancellationToken);
             if (canonicalStreet is null)
             {
                 return BadRequest(new
                 {
-                    message = "The selected street_id has no approved canonical geometry."
+                    message = "The selected street_id is not in the canonical street catalog."
                 });
             }
         }

@@ -27,7 +27,9 @@ public sealed partial class CanonicalStreetImportService(
             ["Mtatsminda"] = 2073140,
             ["Didube"] = 16749659,
             ["Digomi"] = 16356610,
-            ["Didi Digomi"] = 18183807,
+            // Didi Dighomi uses DidiDigomiCoverage, never the smaller OSM
+            // neighbourhood relation 18183807.
+            ["Didi Digomi"] = 0,
             ["Gldani"] = 13438812,
             ["Nadzaladevi"] = 10790351,
             ["Isani"] = 18467266,
@@ -55,15 +57,21 @@ public sealed partial class CanonicalStreetImportService(
             ?? throw new ArgumentException("Unsupported Tbilisi district.", nameof(requestedDistrict));
         var city = await EnsureAreaAsync(null, "city", "Tbilisi", 0, cancellationToken);
         var relationId = DistrictRelations[districtName];
+        var expectedBoundarySource = districtName.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase)
+            ? DidiDigomiCoverage.ExternalSourceId
+            : $"osm:relation/{relationId}";
         var district = await EnsureAreaAsync(city.Id, "district", districtName, relationId, cancellationToken);
-        // Imports are idempotent. A public, approved boundary is never reset
-        // or re-downloaded by a routine street refresh.
-        if (district.GeometryStatus != "approved" ||
-            !StreetGeoJson.IsValidBoundary(district.BoundaryGeoJson))
+        // Keep approved geometry stable during routine refreshes, but never
+        // preserve a polygon that came from a different OSM relation.
+        if (!string.Equals(district.ExternalSourceId, expectedBoundarySource, StringComparison.OrdinalIgnoreCase) ||
+            district.GeometryStatus != "approved" ||
+            !StreetGeoJson.IsValidBoundary(district.BoundaryGeoJson) ||
+            !BoundaryMatchesKnownArea(districtName, district.BoundaryGeoJson))
         {
-            await StoreBoundaryAsync(district, relationId, cancellationToken);
+            await StoreBoundaryAsync(district, districtName, relationId, cancellationToken);
         }
-        using var payload = await DownloadRoadsAsync(relationId, cancellationToken);
+        district.ExternalSourceId = expectedBoundarySource;
+        using var payload = await DownloadRoadsAsync(districtName, relationId, cancellationToken);
 
         var candidates = payload.RootElement.GetProperty("elements")
             .EnumerateArray()
@@ -167,8 +175,11 @@ public sealed partial class CanonicalStreetImportService(
                 area.NameKa = type == "city"
                     ? GeorgianLocationTranslations.FindCity(nameEn) ?? string.Empty
                     : GeorgianLocationTranslations.FindDistrict(nameEn) ?? string.Empty;
-            area.Source = "OpenStreetMap";
-            if (relationId > 0) area.ExternalSourceId = $"osm:relation/{relationId}";
+            if (!nameEn.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(area.ExternalSourceId, DidiDigomiCoverage.ExternalSourceId, StringComparison.Ordinal))
+            {
+                area.Source = "OpenStreetMap";
+            }
             return area;
         }
         area = new LocationArea
@@ -191,9 +202,27 @@ public sealed partial class CanonicalStreetImportService(
 
     private async Task StoreBoundaryAsync(
         LocationArea district,
+        string districtName,
         long relationId,
         CancellationToken cancellationToken)
     {
+        if (districtName.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase))
+        {
+            // OSM relation 18183807 describes only the northern neighbourhood
+            // core. Search/property usage of Didi Digomi also includes the
+            // developed street grid immediately west of the highway and south
+            // through Asmati Street. Keep this reviewed product boundary
+            // explicit and deterministic instead of silently stretching OSM.
+            district.BoundaryGeoJson = DidiDigomiCoverage.BoundaryGeoJson;
+            district.Source = DidiDigomiCoverage.Source;
+            district.ExternalSourceId = DidiDigomiCoverage.ExternalSourceId;
+            district.GeometryStatus = "approved";
+            district.ApprovedAt ??= DateTime.UtcNow;
+            district.UpdatedAt = DateTime.UtcNow;
+            await context.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
         var client = httpClientFactory.CreateClient("OpenStreetMap");
         try
         {
@@ -216,14 +245,63 @@ public sealed partial class CanonicalStreetImportService(
         }
     }
 
+    private static bool BoundaryMatchesKnownArea(string districtName, string? geoJson)
+    {
+        if (!districtName.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.IsNullOrWhiteSpace(geoJson)) return false;
+
+        // The real-estate area must include the developed southern street grid
+        // (including Asmati Street), not just OSM's northern neighbourhood core.
+        using var document = JsonDocument.Parse(geoJson);
+        if (!document.RootElement.TryGetProperty("coordinates", out var coordinates)) return false;
+        var points = new List<(double Longitude, double Latitude)>();
+        CollectCoordinatePairs(coordinates, points);
+        const double tolerance = 0.000001;
+        return points.Count >= 12 &&
+            points.Min(point => point.Longitude) <= DidiDigomiCoverage.West + tolerance &&
+            points.Min(point => point.Latitude) <= DidiDigomiCoverage.South + tolerance &&
+            points.Max(point => point.Longitude) >= DidiDigomiCoverage.East - tolerance &&
+            points.Max(point => point.Latitude) >= DidiDigomiCoverage.North - tolerance &&
+            points.All(point =>
+                point.Longitude is >= 44.69 and <= 44.80 &&
+                point.Latitude is >= 41.75 and <= 41.82);
+    }
+
+    private static void CollectCoordinatePairs(
+        JsonElement element,
+        ICollection<(double Longitude, double Latitude)> points)
+    {
+        if (element.ValueKind != JsonValueKind.Array) return;
+        if (element.GetArrayLength() >= 2 &&
+            element[0].ValueKind == JsonValueKind.Number &&
+            element[1].ValueKind == JsonValueKind.Number)
+        {
+            points.Add((element[0].GetDouble(), element[1].GetDouble()));
+            return;
+        }
+        foreach (var child in element.EnumerateArray()) CollectCoordinatePairs(child, points);
+    }
+
     private async Task<JsonDocument> DownloadRoadsAsync(
+        string districtName,
         long relationId,
         CancellationToken cancellationToken)
     {
-        var areaId = 3_600_000_000L + relationId;
-        var query = "[out:json][timeout:180];" +
-            $"area({areaId})->.districtArea;" +
-            "way(area.districtArea)[\"highway\"][\"name\"];out tags geom;";
+        string query;
+        if (districtName.Equals("Didi Digomi", StringComparison.OrdinalIgnoreCase))
+        {
+            query = "[out:json][timeout:180];" +
+                $"way({DidiDigomiCoverage.South},{DidiDigomiCoverage.West}," +
+                $"{DidiDigomiCoverage.North},{DidiDigomiCoverage.East})" +
+                "[\"highway\"][\"name\"];out tags geom;";
+        }
+        else
+        {
+            var areaId = 3_600_000_000L + relationId;
+            query = "[out:json][timeout:180];" +
+                $"area({areaId})->.districtArea;" +
+                "way(area.districtArea)[\"highway\"][\"name\"];out tags geom;";
+        }
         var client = httpClientFactory.CreateClient("OpenStreetMap");
         Exception? last = null;
         foreach (var provider in Providers)

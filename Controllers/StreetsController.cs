@@ -18,8 +18,9 @@ public sealed class StreetsController(AppDbContext context) : ControllerBase
     {
         var query = context.CanonicalStreets
             .AsNoTracking()
-            .Where(street => street.GeometryStatus == "approved" &&
-                street.GeometryGeoJson != null);
+            .Where(street =>
+                (street.GeometryStatus == "approved" && street.GeometryGeoJson != null) ||
+                street.Source == OfficialStreetCatalog.Source);
         if (districtId.HasValue)
             query = query.Where(street => street.DistrictId == districtId.Value);
         var streets = await query
@@ -49,15 +50,6 @@ public sealed class StreetsController(AppDbContext context) : ControllerBase
             .Include(item => item.District)
             .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (street is null) return NotFound();
-        if (street.GeometryStatus != "approved" || street.GeometryGeoJson is null)
-        {
-            return Conflict(new
-            {
-                street.Id,
-                geometryStatus = street.GeometryStatus,
-                message = "This street has no approved geometry and cannot be drawn."
-            });
-        }
         return Ok(ToResponse(street));
     }
 

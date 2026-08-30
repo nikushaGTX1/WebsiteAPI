@@ -296,6 +296,15 @@ using (var scope = app.Services.CreateScope())
 
         await context.Database.MigrateAsync();
 
+        var importedOfficialStreets =
+            await OfficialStreetCatalogSeeder.SeedAsync(context);
+        if (importedOfficialStreets > 0)
+        {
+            app.Logger.LogInformation(
+                "Imported {StreetCount} official Tbilisi street catalog records.",
+                importedOfficialStreets);
+        }
+
         var repairedLocations =
             await ApartmentLocationBackfill.RepairAsync(context);
         if (repairedLocations > 0)

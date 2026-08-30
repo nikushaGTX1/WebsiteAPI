@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Website_API.Data;
@@ -11,9 +12,11 @@ using Website_API.Data;
 namespace Website_API.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260827105734_AddListingUploads")]
+    partial class AddListingUploads
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -848,7 +851,7 @@ namespace Website_API.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("character varying(450)");
 
-                    b.Property<int?>("ApartmentId")
+                    b.Property<int>("ApartmentId")
                         .HasColumnType("integer");
 
                     b.Property<string>("Platform")
@@ -865,18 +868,6 @@ namespace Website_API.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
-                    b.Property<string>("SourceListingId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("SourcePlatform")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("SourceUrl")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
                     b.Property<DateTime>("UploadedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -887,9 +878,6 @@ namespace Website_API.Migrations
                     b.HasIndex("ApartmentId", "UploadedAt");
 
                     b.HasIndex("ApartmentId", "AgentUserId", "Platform", "PublishedListingId")
-                        .IsUnique();
-
-                    b.HasIndex("SourcePlatform", "SourceListingId", "AgentUserId", "Platform", "PublishedListingId")
                         .IsUnique();
 
                     b.ToTable("ListingUploads");
@@ -1229,7 +1217,8 @@ namespace Website_API.Migrations
                     b.HasOne("Website_API.Models.Apartment", "Apartment")
                         .WithMany("ListingUploads")
                         .HasForeignKey("ApartmentId")
-                        .OnDelete(DeleteBehavior.Cascade);
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("AgentUser");
 
