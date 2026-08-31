@@ -105,9 +105,11 @@ builder.Services.AddCors(options =>
                 "http://localhost:4200",
                 "https://website-lff1.onrender.com",
                 "https://website-production-ab09.up.railway.app",
-                "http://192.168.56.1:3000/",
+                "https://velven.ge",
+                "https://www.velven.ge",
+                "http://192.168.56.1:3000",
                 "http://192.168.56.1",
-                "http://localhost:4200/"
+                "http://localhost:3000"
             )
             .AllowAnyHeader()
             .AllowAnyMethod();

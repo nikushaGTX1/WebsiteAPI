@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Website_API</RootNamespace>
     <UserSecretsId>beeff8c3-be6b-4a44-8df1-bcb2004b86e4</UserSecretsId>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Website API.Tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,10 +24,6 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Data\OfficialStreets\*.txt" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Remove="Website API.Tests\**\*.cs" />
   </ItemGroup>
 
 </Project>
