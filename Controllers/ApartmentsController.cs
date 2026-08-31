@@ -77,7 +77,11 @@ public class ApartmentsController : ControllerBase
             });
         }
 
-        var query = _context.Apartments.AsNoTracking();
+        var query = _context.Apartments
+            .AsNoTracking()
+            .Where(apartment =>
+                !EF.Functions.ILike(apartment.Description, "%Source: https://www.myhome.ge/%") &&
+                !EF.Functions.ILike(apartment.Description, "%Source: https://home.ss.ge/%"));
 
         if (!string.IsNullOrWhiteSpace(city))
         {
@@ -202,7 +206,9 @@ public class ApartmentsController : ControllerBase
             .Include(apartment => apartment.Images)
             .AsNoTracking()
             .FirstOrDefaultAsync(
-                apartment => apartment.Id == id,
+                apartment => apartment.Id == id &&
+                    !EF.Functions.ILike(apartment.Description, "%Source: https://www.myhome.ge/%") &&
+                    !EF.Functions.ILike(apartment.Description, "%Source: https://home.ss.ge/%"),
                 cancellationToken);
 
         if (apartment is null)
@@ -225,6 +231,14 @@ public class ApartmentsController : ControllerBase
         [FromForm] CreateApartmentDto dto,
         CancellationToken cancellationToken)
     {
+        if (IsScrapedSource(dto.Description))
+        {
+            return BadRequest(new
+            {
+                message = "Scraped source listings cannot be published as Velven apartments."
+            });
+        }
+
         var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(currentUserId)) return Unauthorized();
         var uploadedByUserId = User.IsInRole("Admin") && !string.IsNullOrWhiteSpace(dto.UploadedByUserId)
@@ -341,6 +355,14 @@ public class ApartmentsController : ControllerBase
             throw;
         }
     }
+
+    private static bool IsScrapedSource(string? description) =>
+        description?.Contains(
+            "Source: https://www.myhome.ge/",
+            StringComparison.OrdinalIgnoreCase) == true ||
+        description?.Contains(
+            "Source: https://home.ss.ge/",
+            StringComparison.OrdinalIgnoreCase) == true;
 
     [Authorize(Roles = "Admin")]
     [HttpPut("{id:int}")]

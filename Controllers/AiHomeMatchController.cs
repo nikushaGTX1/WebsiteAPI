@@ -55,6 +55,9 @@ public class AiHomeMatchController : ControllerBase
 
         var apartments = await _context.Apartments
             .AsNoTracking()
+            .Where(apartment =>
+                !EF.Functions.ILike(apartment.Description, "%Source: https://www.myhome.ge/%") &&
+                !EF.Functions.ILike(apartment.Description, "%Source: https://home.ss.ge/%"))
             .ToListAsync(cancellationToken);
 
         var allMatches = apartments
