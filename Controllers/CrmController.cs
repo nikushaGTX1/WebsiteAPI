@@ -627,6 +627,7 @@ public class CrmController : ControllerBase
         }
 
         questionnaireLink.Uses++;
+        questionnaireLink.IsActive = false;
 
         _context.CrmLeads.Add(lead);
 
