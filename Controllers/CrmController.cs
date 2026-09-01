@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using Website_API.Data;
 using Website_API.DTO;
 using Website_API.Models;
@@ -384,8 +385,10 @@ public class CrmController : ControllerBase
         if (userId is null)
             return Unauthorized();
 
-        var ownerExists = await UserExistsAsync(userId, cancellationToken);
-        if (!ownerExists)
+        var owner = await _context.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(user => user.Id == userId, cancellationToken);
+        if (owner is null)
         {
             return BadRequest(new
             {
@@ -402,9 +405,18 @@ public class CrmController : ControllerBase
         while (await _context.CrmQuestionnaireLinks
             .AnyAsync(item => item.Token == token, cancellationToken));
 
+        var slugBase = CreateQuestionnaireSlug(owner.UserName ?? owner.FullName);
+        var slug = slugBase;
+        if (await _context.CrmQuestionnaireLinks
+            .AnyAsync(item => item.Slug == slug, cancellationToken))
+        {
+            slug = $"{slugBase}-{token[..6]}";
+        }
+
         var link = new CrmQuestionnaireLink
         {
             Token = token,
+            Slug = slug,
             AgentUserId = userId,
             CreatedAt = DateTime.UtcNow,
             ExpiresAt = null,
@@ -413,12 +425,24 @@ public class CrmController : ControllerBase
         };
 
         _context.CrmQuestionnaireLinks.Add(link);
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (slug == slugBase)
+        {
+            // Two requests for the same agent may both see the base slug as
+            // available. The unique index arbitrates that race safely.
+            slug = $"{slugBase}-{token[..6]}";
+            link.Slug = slug;
+            await _context.SaveChangesAsync(cancellationToken);
+        }
 
         return Ok(new
         {
             token,
-            path = $"/crm-questioner/agent-{token}"
+            slug,
+            path = $"/questions/{slug}"
         });
     }
 
@@ -451,7 +475,7 @@ public class CrmController : ControllerBase
         var questionnaireLink = await _context.CrmQuestionnaireLinks
             .FirstOrDefaultAsync(
                 item =>
-                    item.Token == token &&
+                    (item.Token == token || item.Slug == token) &&
                     item.IsActive &&
                     (!item.ExpiresAt.HasValue || item.ExpiresAt.Value > now),
                 cancellationToken);
@@ -1571,14 +1595,46 @@ public class CrmController : ControllerBase
 
         var token = value.Trim();
 
-        if (token.StartsWith(
-            "agent-",
-            StringComparison.OrdinalIgnoreCase))
+        if (token.StartsWith("agent-", StringComparison.OrdinalIgnoreCase) &&
+            token.Length == "agent-".Length + 32 &&
+            token["agent-".Length..].All(Uri.IsHexDigit))
         {
             token = token["agent-".Length..];
         }
 
         return token;
+    }
+
+    private static string CreateQuestionnaireSlug(string? value)
+    {
+        var source = string.IsNullOrWhiteSpace(value) ? "agent" : value.Trim();
+        var normalized = source.Normalize(NormalizationForm.FormD);
+        var slug = new StringBuilder(normalized.Length);
+        var previousWasDash = false;
+
+        foreach (var character in normalized)
+        {
+            if (char.GetUnicodeCategory(character) ==
+                System.Globalization.UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            if (character <= 127 && char.IsLetterOrDigit(character))
+            {
+                slug.Append(char.ToLowerInvariant(character));
+                previousWasDash = false;
+            }
+            else if (!previousWasDash && slug.Length > 0)
+            {
+                slug.Append('-');
+                previousWasDash = true;
+            }
+        }
+
+        var result = slug.ToString().Trim('-');
+        if (string.IsNullOrWhiteSpace(result)) result = "agent";
+        return result.Length <= 80 ? result : result[..80].TrimEnd('-');
     }
 
 

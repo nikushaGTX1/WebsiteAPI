@@ -31,6 +31,16 @@ public class AppDbContext : IdentityDbContext<AppUser>
     {
         base.OnModelCreating(builder);
 
+        builder.Entity<CrmQuestionnaireLink>(link =>
+        {
+            link.Property(item => item.Token).HasMaxLength(64);
+            link.Property(item => item.Slug).HasMaxLength(100);
+            link.HasIndex(item => item.Token).IsUnique();
+            link.HasIndex(item => item.Slug)
+                .IsUnique()
+                .HasFilter("\"Slug\" IS NOT NULL");
+        });
+
         builder.Entity<Apartment>()
             .HasIndex(apartment => apartment.CreatedAt);
 
