@@ -226,6 +226,21 @@ public class CrmLead
     public List<CrmTask> Tasks { get; set; } = [];
 }
 
+public class CrmJobApplication
+{
+    public int Id { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string PhoneNumber { get; set; } = string.Empty;
+    public string Position { get; set; } = string.Empty;
+    public string Experience { get; set; } = string.Empty;
+    public string? Languages { get; set; }
+    public string? CvStoredFileName { get; set; }
+    public string? CvOriginalFileName { get; set; }
+    public string? CvContentType { get; set; }
+    public long? CvFileSize { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 public class CrmActivity
 {
     public int Id { get; set; }

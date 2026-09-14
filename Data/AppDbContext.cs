@@ -21,6 +21,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<CrmLead> CrmLeads => Set<CrmLead>();
     public DbSet<CrmActivity> CrmActivities => Set<CrmActivity>();
     public DbSet<CrmTask> CrmTasks => Set<CrmTask>();
+    public DbSet<CrmJobApplication> CrmJobApplications => Set<CrmJobApplication>();
     public DbSet<StreetGeometry> StreetGeometries => Set<StreetGeometry>();
     public DbSet<LocationArea> LocationAreas => Set<LocationArea>();
     public DbSet<CanonicalStreet> CanonicalStreets => Set<CanonicalStreet>();
@@ -273,6 +274,19 @@ public class AppDbContext : IdentityDbContext<AppUser>
             });
             lead.HasIndex(item => item.ApartmentId);
             lead.HasIndex(item => item.CustomerUserId);
+        });
+
+        builder.Entity<CrmJobApplication>(application =>
+        {
+            application.Property(item => item.FullName).HasMaxLength(160);
+            application.Property(item => item.PhoneNumber).HasMaxLength(50);
+            application.Property(item => item.Position).HasMaxLength(160);
+            application.Property(item => item.Experience).HasMaxLength(120);
+            application.Property(item => item.Languages).HasMaxLength(500);
+            application.Property(item => item.CvStoredFileName).HasMaxLength(100);
+            application.Property(item => item.CvOriginalFileName).HasMaxLength(255);
+            application.Property(item => item.CvContentType).HasMaxLength(100);
+            application.HasIndex(item => item.CreatedAt);
         });
 
         builder.Entity<CrmActivity>(activity =>

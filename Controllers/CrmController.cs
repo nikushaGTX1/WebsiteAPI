@@ -23,14 +23,126 @@ public class CrmController : ControllerBase
 
     private readonly AppDbContext _context;
     private readonly UserManager<AppUser> _userManager;
+    private readonly IWebHostEnvironment _environment;
 
     public CrmController(
         AppDbContext context,
-        UserManager<AppUser> userManager)
+        UserManager<AppUser> userManager,
+        IWebHostEnvironment environment)
     {
         _context = context;
         _userManager = userManager;
+        _environment = environment;
     }
+
+    [AllowAnonymous]
+    [EnableRateLimiting("CrmInquiries")]
+    [HttpPost("job-applications")]
+    [RequestSizeLimit(6 * 1024 * 1024)]
+    public async Task<ActionResult> CreateJobApplication(
+        [FromForm] CreateCrmJobApplicationDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(dto.FullName) ||
+            string.IsNullOrWhiteSpace(dto.PhoneNumber) ||
+            string.IsNullOrWhiteSpace(dto.Position) ||
+            string.IsNullOrWhiteSpace(dto.Experience))
+            return BadRequest(new { message = "Complete all required fields." });
+
+        string? storedFileName = null;
+        if (dto.Cv is not null)
+        {
+            if (dto.Cv.Length <= 0 || dto.Cv.Length > 5 * 1024 * 1024)
+                return BadRequest(new { message = "The CV must be 5 MB or smaller." });
+
+            var extension = Path.GetExtension(dto.Cv.FileName).ToLowerInvariant();
+            if (extension is not (".pdf" or ".doc" or ".docx"))
+                return BadRequest(new { message = "Upload a PDF, DOC or DOCX file." });
+
+            storedFileName = $"{Guid.NewGuid():N}{extension}";
+            var uploadDirectory = Path.Combine(_environment.ContentRootPath, "PrivateUploads", "JobApplications");
+            Directory.CreateDirectory(uploadDirectory);
+            await using var stream = new FileStream(
+                Path.Combine(uploadDirectory, storedFileName), FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 81920, useAsync: true);
+            await dto.Cv.CopyToAsync(stream, cancellationToken);
+        }
+
+        var application = new CrmJobApplication
+        {
+            FullName = dto.FullName.Trim(),
+            PhoneNumber = dto.PhoneNumber.Trim(),
+            Position = dto.Position.Trim(),
+            Experience = dto.Experience.Trim(),
+            Languages = string.IsNullOrWhiteSpace(dto.Languages) ? null : dto.Languages.Trim(),
+            CvStoredFileName = storedFileName,
+            CvOriginalFileName = dto.Cv is null ? null : Path.GetFileName(dto.Cv.FileName),
+            CvContentType = dto.Cv?.ContentType,
+            CvFileSize = dto.Cv?.Length,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        try
+        {
+            _context.CrmJobApplications.Add(application);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            if (storedFileName is not null)
+            {
+                var path = JobApplicationFilePath(storedFileName);
+                if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
+            }
+            throw;
+        }
+
+        return Accepted(new { received = true });
+    }
+
+    [Authorize(Roles = CrmManagerRoles)]
+    [HttpGet("job-applications")]
+    public async Task<ActionResult<IReadOnlyList<CrmJobApplicationDto>>> GetJobApplications(
+        CancellationToken cancellationToken)
+    {
+        var applications = await _context.CrmJobApplications.AsNoTracking()
+            .OrderByDescending(item => item.CreatedAt)
+            .Select(item => new CrmJobApplicationDto
+            {
+                Id = item.Id,
+                FullName = item.FullName,
+                PhoneNumber = item.PhoneNumber,
+                Position = item.Position,
+                Experience = item.Experience,
+                Languages = item.Languages,
+                CvFileName = item.CvOriginalFileName,
+                CvUrl = item.CvStoredFileName == null ? null : $"/api/Crm/job-applications/{item.Id}/cv",
+                CvFileSize = item.CvFileSize,
+                CreatedAt = item.CreatedAt
+            }).ToListAsync(cancellationToken);
+
+        return Ok(applications);
+    }
+
+    [Authorize(Roles = CrmManagerRoles)]
+    [HttpGet("job-applications/{id:int}/cv")]
+    public async Task<IActionResult> DownloadJobApplicationCv(int id, CancellationToken cancellationToken)
+    {
+        var application = await _context.CrmJobApplications.AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (application?.CvStoredFileName is null)
+            return NotFound(new { message = "CV not found." });
+
+        var filePath = JobApplicationFilePath(application.CvStoredFileName);
+        if (!System.IO.File.Exists(filePath))
+            return NotFound(new { message = "CV file is unavailable." });
+
+        return PhysicalFile(filePath, application.CvContentType ?? "application/octet-stream",
+            application.CvOriginalFileName ?? "cv");
+    }
+
+    private string JobApplicationFilePath(string storedFileName) => Path.Combine(
+        _environment.ContentRootPath, "PrivateUploads", "JobApplications", Path.GetFileName(storedFileName));
 
     [Authorize(Roles = CrmReadRoles)]
     [HttpGet("leads")]

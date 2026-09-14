@@ -179,6 +179,40 @@ public class PublicCrmInquiryResponseDto
     public bool Received { get; set; }
 }
 
+public class CreateCrmJobApplicationDto
+{
+    [Required, StringLength(160)]
+    public string FullName { get; set; } = string.Empty;
+
+    [Required, Phone, StringLength(50)]
+    public string PhoneNumber { get; set; } = string.Empty;
+
+    [Required, StringLength(160)]
+    public string Position { get; set; } = string.Empty;
+
+    [Required, StringLength(120)]
+    public string Experience { get; set; } = string.Empty;
+
+    [StringLength(500)]
+    public string? Languages { get; set; }
+
+    public IFormFile? Cv { get; set; }
+}
+
+public class CrmJobApplicationDto
+{
+    public int Id { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string PhoneNumber { get; set; } = string.Empty;
+    public string Position { get; set; } = string.Empty;
+    public string Experience { get; set; } = string.Empty;
+    public string? Languages { get; set; }
+    public string? CvFileName { get; set; }
+    public string? CvUrl { get; set; }
+    public long? CvFileSize { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
 public class CrmLeadListItemDto
 {
     public int Id { get; set; }
