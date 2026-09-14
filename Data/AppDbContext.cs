@@ -22,6 +22,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<CrmActivity> CrmActivities => Set<CrmActivity>();
     public DbSet<CrmTask> CrmTasks => Set<CrmTask>();
     public DbSet<CrmJobApplication> CrmJobApplications => Set<CrmJobApplication>();
+    public DbSet<CrmVacancyPosition> CrmVacancyPositions => Set<CrmVacancyPosition>();
     public DbSet<StreetGeometry> StreetGeometries => Set<StreetGeometry>();
     public DbSet<LocationArea> LocationAreas => Set<LocationArea>();
     public DbSet<CanonicalStreet> CanonicalStreets => Set<CanonicalStreet>();
@@ -287,6 +288,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
             application.Property(item => item.CvOriginalFileName).HasMaxLength(255);
             application.Property(item => item.CvContentType).HasMaxLength(100);
             application.HasIndex(item => item.CreatedAt);
+        });
+
+        builder.Entity<CrmVacancyPosition>(position =>
+        {
+            position.Property(item => item.Title).HasMaxLength(160);
+            position.HasIndex(item => item.Title).IsUnique();
+            position.HasIndex(item => new { item.IsActive, item.CreatedAt });
         });
 
         builder.Entity<CrmActivity>(activity =>

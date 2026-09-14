@@ -238,6 +238,16 @@ public class CrmJobApplication
     public string? CvOriginalFileName { get; set; }
     public string? CvContentType { get; set; }
     public long? CvFileSize { get; set; }
+    public bool IsConfirmed { get; set; }
+    public DateTime? ConfirmedAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class CrmVacancyPosition
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 

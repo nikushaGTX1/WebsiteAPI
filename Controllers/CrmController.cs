@@ -118,6 +118,8 @@ public class CrmController : ControllerBase
                 CvFileName = item.CvOriginalFileName,
                 CvUrl = item.CvStoredFileName == null ? null : $"/api/Crm/job-applications/{item.Id}/cv",
                 CvFileSize = item.CvFileSize,
+                IsConfirmed = item.IsConfirmed,
+                ConfirmedAt = item.ConfirmedAt,
                 CreatedAt = item.CreatedAt
             }).ToListAsync(cancellationToken);
 
@@ -140,6 +142,113 @@ public class CrmController : ControllerBase
         return PhysicalFile(filePath, application.CvContentType ?? "application/octet-stream",
             application.CvOriginalFileName ?? "cv");
     }
+
+    [Authorize(Roles = CrmManagerRoles)]
+    [HttpPatch("job-applications/{id:int}/confirm")]
+    public async Task<ActionResult<CrmJobApplicationDto>> ConfirmJobApplication(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var application = await _context.CrmJobApplications
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (application is null) return NotFound(new { message = "Application not found." });
+
+        application.IsConfirmed = true;
+        application.ConfirmedAt ??= DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+        return Ok(ToJobApplicationDto(application));
+    }
+
+    [Authorize(Roles = CrmManagerRoles)]
+    [HttpDelete("job-applications/{id:int}")]
+    public async Task<IActionResult> DeleteJobApplication(int id, CancellationToken cancellationToken)
+    {
+        var application = await _context.CrmJobApplications
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (application is null) return NotFound(new { message = "Application not found." });
+
+        var storedFileName = application.CvStoredFileName;
+        _context.CrmJobApplications.Remove(application);
+        await _context.SaveChangesAsync(cancellationToken);
+        if (storedFileName is not null)
+        {
+            var filePath = JobApplicationFilePath(storedFileName);
+            if (System.IO.File.Exists(filePath)) System.IO.File.Delete(filePath);
+        }
+        return NoContent();
+    }
+
+    [AllowAnonymous]
+    [HttpGet("vacancy-positions")]
+    public async Task<ActionResult<IReadOnlyList<CrmVacancyPositionDto>>> GetVacancyPositions(
+        CancellationToken cancellationToken)
+    {
+        var positions = await _context.CrmVacancyPositions.AsNoTracking()
+            .Where(item => item.IsActive)
+            .OrderBy(item => item.Title)
+            .Select(item => new CrmVacancyPositionDto
+            {
+                Id = item.Id, Title = item.Title, IsActive = item.IsActive, CreatedAt = item.CreatedAt
+            }).ToListAsync(cancellationToken);
+        return Ok(positions);
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpGet("vacancy-positions/all")]
+    public async Task<ActionResult<IReadOnlyList<CrmVacancyPositionDto>>> GetAllVacancyPositions(
+        CancellationToken cancellationToken)
+    {
+        var positions = await _context.CrmVacancyPositions.AsNoTracking()
+            .OrderByDescending(item => item.IsActive).ThenBy(item => item.Title)
+            .Select(item => new CrmVacancyPositionDto
+            {
+                Id = item.Id, Title = item.Title, IsActive = item.IsActive, CreatedAt = item.CreatedAt
+            }).ToListAsync(cancellationToken);
+        return Ok(positions);
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("vacancy-positions")]
+    public async Task<ActionResult<CrmVacancyPositionDto>> CreateVacancyPosition(
+        [FromBody] CreateCrmVacancyPositionDto dto,
+        CancellationToken cancellationToken)
+    {
+        var title = dto.Title.Trim();
+        if (string.IsNullOrWhiteSpace(title)) return BadRequest(new { message = "Position title is required." });
+        if (await _context.CrmVacancyPositions.AnyAsync(item => item.Title.ToLower() == title.ToLower(), cancellationToken))
+            return Conflict(new { message = "This position already exists." });
+
+        var position = new CrmVacancyPosition { Title = title, IsActive = true, CreatedAt = DateTime.UtcNow };
+        _context.CrmVacancyPositions.Add(position);
+        await _context.SaveChangesAsync(cancellationToken);
+        return CreatedAtAction(nameof(GetVacancyPositions), ToVacancyPositionDto(position));
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpDelete("vacancy-positions/{id:int}")]
+    public async Task<IActionResult> DeleteVacancyPosition(int id, CancellationToken cancellationToken)
+    {
+        var position = await _context.CrmVacancyPositions.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (position is null) return NotFound(new { message = "Position not found." });
+        _context.CrmVacancyPositions.Remove(position);
+        await _context.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    private static CrmJobApplicationDto ToJobApplicationDto(CrmJobApplication item) => new()
+    {
+        Id = item.Id, FullName = item.FullName, PhoneNumber = item.PhoneNumber,
+        Position = item.Position, Experience = item.Experience, Languages = item.Languages,
+        CvFileName = item.CvOriginalFileName,
+        CvUrl = item.CvStoredFileName is null ? null : $"/api/Crm/job-applications/{item.Id}/cv",
+        CvFileSize = item.CvFileSize, IsConfirmed = item.IsConfirmed,
+        ConfirmedAt = item.ConfirmedAt, CreatedAt = item.CreatedAt
+    };
+
+    private static CrmVacancyPositionDto ToVacancyPositionDto(CrmVacancyPosition item) => new()
+    {
+        Id = item.Id, Title = item.Title, IsActive = item.IsActive, CreatedAt = item.CreatedAt
+    };
 
     private string JobApplicationFilePath(string storedFileName) => Path.Combine(
         _environment.ContentRootPath, "PrivateUploads", "JobApplications", Path.GetFileName(storedFileName));

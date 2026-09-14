@@ -210,6 +210,22 @@ public class CrmJobApplicationDto
     public string? CvFileName { get; set; }
     public string? CvUrl { get; set; }
     public long? CvFileSize { get; set; }
+    public bool IsConfirmed { get; set; }
+    public DateTime? ConfirmedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class CreateCrmVacancyPositionDto
+{
+    [Required, StringLength(160)]
+    public string Title { get; set; } = string.Empty;
+}
+
+public class CrmVacancyPositionDto
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
