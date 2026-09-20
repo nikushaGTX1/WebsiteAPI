@@ -1533,11 +1533,27 @@ public class CrmController : ControllerBase
             }
         }
 
+        // A viewing request goes to the CRM of whoever uploaded the apartment.
+        string? uploaderAssignedAgentId = null;
+        if (dto.ApartmentId.HasValue)
+        {
+            var uploaderId = await _context.Apartments
+                .Where(apartment => apartment.Id == dto.ApartmentId.Value)
+                .Select(apartment => apartment.UploadedByUserId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (!string.IsNullOrEmpty(uploaderId) &&
+                await FindAgentAsync(uploaderId, cancellationToken) is not null)
+            {
+                uploaderAssignedAgentId = uploaderId;
+            }
+        }
+
         var lead = new CrmLead
         {
             Name = dto.Name.Trim(),
             Email = NormalizeEmail(dto.Email),
             Phone = NormalizeOptional(dto.Phone),
+            AssignedAgentId = uploaderAssignedAgentId,
             Status = CrmLeadStatus.New,
             Source = CrmLeadSource.Website,
             Message = NormalizeOptional(dto.Message),
@@ -1586,7 +1602,11 @@ public class CrmController : ControllerBase
         if (HasFullCrmAccess())
             return query;
         if (User.IsInRole("Agent"))
-            return query.Where(lead => lead.AssignedAgentId == userId);
+            return query.Where(lead =>
+                lead.AssignedAgentId == userId ||
+                lead.CreatedByUserId == userId ||
+                (lead.Apartment != null &&
+                 lead.Apartment.UploadedByUserId == userId));
 
         return query.Where(lead =>
             lead.CreatedByUserId == userId ||
