@@ -17,6 +17,25 @@ public class Apartment
 
     public string? PhoneNumber { get; set; }
 
+    // Private owner contact (only returned to the owner, agents, managers and admins)
+    // and the public agent contact shown on the listing.
+    public string? OwnerName { get; set; }
+
+    public string? OwnerPhoneNumber { get; set; }
+
+    public string? AgentName { get; set; }
+
+    public string? AgentPhoneNumber { get; set; }
+
+    // Listing options chosen in the upload form.
+    public string? ParkingCondition { get; set; }
+
+    public int? ParkingPoints { get; set; }
+
+    public string? ViewType { get; set; }
+
+    public string? MinimumRentalPeriod { get; set; }
+
     public string? ImageUrl { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -61,6 +80,8 @@ public class Apartment
     // apartamentis detalebi
 
     public List<ApartmentImage> Images { get; set; } = [];
+    public int Rooms { get; set; }
+
     public int Bedrooms { get; set; }
 
     public int Bathrooms { get; set; }

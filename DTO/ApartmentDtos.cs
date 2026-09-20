@@ -23,6 +23,15 @@ public class CreateApartmentDto
     [Phone]
     public string? PhoneNumber { get; set; }
 
+    public string? OwnerName { get; set; }
+    public string? OwnerPhoneNumber { get; set; }
+    public string? AgentName { get; set; }
+    public string? AgentPhoneNumber { get; set; }
+    public string? ParkingCondition { get; set; }
+    public int? ParkingPoints { get; set; }
+    public string? ViewType { get; set; }
+    public string? MinimumRentalPeriod { get; set; }
+
     // Upload up to 15 apartment images.
     public List<IFormFile> Images { get; set; } = [];
 
@@ -50,6 +59,9 @@ public class CreateApartmentDto
     public double? PropertyLongitude { get; set; }
 
     // Apartment details
+    [Range(0, int.MaxValue)]
+    public int Rooms { get; set; }
+
     [Range(0, int.MaxValue)]
     public int Bedrooms { get; set; }
 
@@ -106,6 +118,15 @@ public class UpdateApartmentDto
     public string? PhoneNumber { get; set; }
 
     // New images that will be added to the existing gallery.
+    public string? OwnerName { get; set; }
+    public string? OwnerPhoneNumber { get; set; }
+    public string? AgentName { get; set; }
+    public string? AgentPhoneNumber { get; set; }
+    public string? ParkingCondition { get; set; }
+    public int? ParkingPoints { get; set; }
+    public string? ViewType { get; set; }
+    public string? MinimumRentalPeriod { get; set; }
+
     public List<IFormFile> Images { get; set; } = [];
 
     // Compatibility with the current controller while gallery support
@@ -132,6 +153,9 @@ public class UpdateApartmentDto
     public double? PropertyLongitude { get; set; }
 
     // Apartment details
+    [Range(0, int.MaxValue)]
+    public int? Rooms { get; set; }
+
     [Range(0, int.MaxValue)]
     public int? Bedrooms { get; set; }
 

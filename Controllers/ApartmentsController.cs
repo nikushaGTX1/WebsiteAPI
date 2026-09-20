@@ -294,6 +294,15 @@ public class ApartmentsController : ControllerBase
                 PropertyLongitude = null,
 
                 // Apartment details
+                Rooms = dto.Rooms,
+                OwnerName = dto.OwnerName?.Trim(),
+                OwnerPhoneNumber = dto.OwnerPhoneNumber?.Trim(),
+                AgentName = dto.AgentName?.Trim(),
+                AgentPhoneNumber = dto.AgentPhoneNumber?.Trim(),
+                ParkingCondition = dto.ParkingCondition,
+                ParkingPoints = dto.ParkingPoints,
+                ViewType = dto.ViewType,
+                MinimumRentalPeriod = dto.MinimumRentalPeriod,
                 Bedrooms = dto.Bedrooms,
                 Bathrooms = dto.Bathrooms,
                 SizeSquareMeters = dto.SizeSquareMeters,
@@ -364,7 +373,8 @@ public class ApartmentsController : ControllerBase
             "Source: https://home.ss.ge/",
             StringComparison.OrdinalIgnoreCase) == true;
 
-    [Authorize(Roles = "Admin")]
+    // Admins can edit any listing; other signed-in users only the listings they uploaded.
+    [Authorize]
     [HttpPut("{id:int}")]
     public async Task<IActionResult> UpdateApartment(
         int id,
@@ -383,6 +393,13 @@ public class ApartmentsController : ControllerBase
             {
                 message = "Apartment not found"
             });
+        }
+
+        if (!User.IsInRole("Admin") &&
+            (string.IsNullOrEmpty(apartment.UploadedByUserId) ||
+             apartment.UploadedByUserId != User.FindFirstValue(ClaimTypes.NameIdentifier)))
+        {
+            return Forbid();
         }
 
         CanonicalStreet? canonicalStreet = null;
@@ -459,6 +476,18 @@ public class ApartmentsController : ControllerBase
             dto.PropertyLongitude ?? apartment.PropertyLongitude;
 
         // Apartment details
+        apartment.Rooms =
+            dto.Rooms ?? apartment.Rooms;
+
+        apartment.OwnerName = dto.OwnerName?.Trim() ?? apartment.OwnerName;
+        apartment.OwnerPhoneNumber = dto.OwnerPhoneNumber?.Trim() ?? apartment.OwnerPhoneNumber;
+        apartment.AgentName = dto.AgentName?.Trim() ?? apartment.AgentName;
+        apartment.AgentPhoneNumber = dto.AgentPhoneNumber?.Trim() ?? apartment.AgentPhoneNumber;
+        apartment.ParkingCondition = dto.ParkingCondition ?? apartment.ParkingCondition;
+        apartment.ParkingPoints = dto.ParkingPoints ?? apartment.ParkingPoints;
+        apartment.ViewType = dto.ViewType ?? apartment.ViewType;
+        apartment.MinimumRentalPeriod = dto.MinimumRentalPeriod ?? apartment.MinimumRentalPeriod;
+
         apartment.Bedrooms =
             dto.Bedrooms ?? apartment.Bedrooms;
 
@@ -755,6 +784,14 @@ public class ApartmentsController : ControllerBase
         bool includeGallery,
         CancellationToken cancellationToken)
     {
+        var canSeeOwnerContact =
+            User.Identity?.IsAuthenticated == true &&
+            (User.IsInRole("Admin") ||
+             User.IsInRole("Agent") ||
+             User.IsInRole("Manager") ||
+             (!string.IsNullOrEmpty(apartment.UploadedByUserId) &&
+              apartment.UploadedByUserId == User.FindFirstValue(ClaimTypes.NameIdentifier)));
+
         var orderedImages = apartment.Images
             .OrderBy(image => image.SortOrder)
             .ThenBy(image => image.Id)
@@ -796,6 +833,16 @@ public class ApartmentsController : ControllerBase
             apartment.Address,
             apartment.PhoneNumber,
 
+            // Owner contact is private: only the owner, agents, managers and admins receive it.
+            OwnerName = canSeeOwnerContact ? apartment.OwnerName : null,
+            OwnerPhoneNumber = canSeeOwnerContact ? apartment.OwnerPhoneNumber : null,
+            apartment.AgentName,
+            apartment.AgentPhoneNumber,
+            apartment.ParkingCondition,
+            apartment.ParkingPoints,
+            apartment.ViewType,
+            apartment.MinimumRentalPeriod,
+
             // Return a temporary signed URL, not the stored object path.
             ImageUrl = signedImageUrl,
             Images = images,
@@ -813,6 +860,7 @@ public class ApartmentsController : ControllerBase
             apartment.PropertyLatitude,
             apartment.PropertyLongitude,
 
+            apartment.Rooms,
             apartment.Bedrooms,
             apartment.Bathrooms,
             apartment.SizeSquareMeters,
