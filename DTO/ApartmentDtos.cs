@@ -31,6 +31,8 @@ public class CreateApartmentDto
     public int? ParkingPoints { get; set; }
     public string? ViewType { get; set; }
     public string? MinimumRentalPeriod { get; set; }
+    public DateTime? AvailableFrom { get; set; }
+    public int? MaxOccupants { get; set; }
 
     // Upload up to 15 apartment images.
     public List<IFormFile> Images { get; set; } = [];
@@ -126,6 +128,8 @@ public class UpdateApartmentDto
     public int? ParkingPoints { get; set; }
     public string? ViewType { get; set; }
     public string? MinimumRentalPeriod { get; set; }
+    public DateTime? AvailableFrom { get; set; }
+    public int? MaxOccupants { get; set; }
 
     public List<IFormFile> Images { get; set; } = [];
 

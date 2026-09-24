@@ -303,6 +303,8 @@ public class ApartmentsController : ControllerBase
                 ParkingPoints = dto.ParkingPoints,
                 ViewType = dto.ViewType,
                 MinimumRentalPeriod = dto.MinimumRentalPeriod,
+                AvailableFrom = dto.AvailableFrom,
+                MaxOccupants = dto.MaxOccupants,
                 Bedrooms = dto.Bedrooms,
                 Bathrooms = dto.Bathrooms,
                 SizeSquareMeters = dto.SizeSquareMeters,
@@ -487,6 +489,8 @@ public class ApartmentsController : ControllerBase
         apartment.ParkingPoints = dto.ParkingPoints ?? apartment.ParkingPoints;
         apartment.ViewType = dto.ViewType ?? apartment.ViewType;
         apartment.MinimumRentalPeriod = dto.MinimumRentalPeriod ?? apartment.MinimumRentalPeriod;
+        apartment.AvailableFrom = dto.AvailableFrom ?? apartment.AvailableFrom;
+        apartment.MaxOccupants = dto.MaxOccupants ?? apartment.MaxOccupants;
 
         apartment.Bedrooms =
             dto.Bedrooms ?? apartment.Bedrooms;
@@ -842,6 +846,8 @@ public class ApartmentsController : ControllerBase
             apartment.ParkingPoints,
             apartment.ViewType,
             apartment.MinimumRentalPeriod,
+            apartment.AvailableFrom,
+            apartment.MaxOccupants,
 
             // Return a temporary signed URL, not the stored object path.
             ImageUrl = signedImageUrl,

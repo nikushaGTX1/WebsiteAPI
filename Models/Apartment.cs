@@ -36,6 +36,12 @@ public class Apartment
 
     public string? MinimumRentalPeriod { get; set; }
 
+    // Earliest date the property can be moved into. Null means available now.
+    public DateTime? AvailableFrom { get; set; }
+
+    // Maximum number of occupants the owner/landlord allows. Null means unspecified.
+    public int? MaxOccupants { get; set; }
+
     public string? ImageUrl { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
