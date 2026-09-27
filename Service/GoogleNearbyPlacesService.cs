@@ -79,6 +79,8 @@ public class GoogleNearbyPlacesService
             origin, "subway_station", cancellationToken);
         var universityTask = FindWalkingMinutesAsync(
             origin, "university", cancellationToken);
+        var evChargerTask = FindWalkingMinutesAsync(
+            origin, "electric_vehicle_charging_station", cancellationToken);
 
         await Task.WhenAll(
             schoolTask,
@@ -86,7 +88,8 @@ public class GoogleNearbyPlacesService
             gymTask,
             parkTask,
             metroTask,
-            universityTask);
+            universityTask,
+            evChargerTask);
 
         apartment.SchoolDistanceMinutes = await schoolTask;
         apartment.KindergartenDistanceMinutes = await kindergartenTask;
@@ -94,6 +97,7 @@ public class GoogleNearbyPlacesService
         apartment.ParkDistanceMinutes = await parkTask;
         apartment.MetroDistanceMinutes = await metroTask;
         apartment.UniversityDistanceMinutes = await universityTask;
+        apartment.EvChargerDistanceMinutes = await evChargerTask;
 
         _logger.LogInformation(
             "Nearby-place information updated for apartment {ApartmentId}. " +
@@ -109,6 +113,19 @@ public class GoogleNearbyPlacesService
             apartment.UniversityDistanceMinutes
         );
     }
+
+    /// <summary>
+    /// Walking minutes from the given point to the nearest EV charging station,
+    /// or null when none is found within 5 km.
+    /// </summary>
+    public Task<int?> FindEvChargerWalkingMinutesAsync(
+        double latitude,
+        double longitude,
+        CancellationToken cancellationToken = default) =>
+        FindWalkingMinutesAsync(
+            new Coordinates(latitude, longitude),
+            "electric_vehicle_charging_station",
+            cancellationToken);
 
     private async Task GeocodeApartmentAsync(
         Apartment apartment,

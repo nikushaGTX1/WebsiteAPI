@@ -33,6 +33,8 @@ public class HomeMatchProfileRequest
     public List<string> Transportation { get; set; } = [];
     public int? MetroDistanceMinutes { get; set; }
     public bool ParkingAutomaticallyPrioritized { get; set; }
+    // "Electric" or "Fuel" when Car is selected.
+    public string? CarFuelType { get; set; }
 
     public List<string> Lifestyles { get; set; } = [];
 

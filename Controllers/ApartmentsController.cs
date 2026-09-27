@@ -345,7 +345,8 @@ public class ApartmentsController : ControllerBase
                     dto.UniversityDistanceMinutes,
                 GroceryDistanceMinutes = dto.GroceryDistanceMinutes,
                 PharmacyDistanceMinutes = dto.PharmacyDistanceMinutes,
-                CafeDistanceMinutes = dto.CafeDistanceMinutes
+                CafeDistanceMinutes = dto.CafeDistanceMinutes,
+                EvChargerDistanceMinutes = dto.EvChargerDistanceMinutes
             };
 
             _context.Apartments.Add(apartment);
@@ -616,6 +617,8 @@ public class ApartmentsController : ControllerBase
             dto.PharmacyDistanceMinutes ?? apartment.PharmacyDistanceMinutes;
         apartment.CafeDistanceMinutes =
             dto.CafeDistanceMinutes ?? apartment.CafeDistanceMinutes;
+        apartment.EvChargerDistanceMinutes =
+            dto.EvChargerDistanceMinutes ?? apartment.EvChargerDistanceMinutes;
 
         List<string> newImagePaths = [];
         List<string> removedImagePaths = [];
@@ -789,10 +792,87 @@ public class ApartmentsController : ControllerBase
                     ?? apartment.UploadedByUser?.UserName
                     ?? "Unknown user",
                 submittedByEmail = apartment.UploadedByUser?.Email ?? string.Empty,
+                submittedByPhone = apartment.UploadedByUser?.PhoneNumber,
+                submittedByPicture = apartment.UploadedByUser?.ProfilePicture,
+                submittedByIsAgent = apartment.UploadedByUser?.IsAgent ?? false,
             });
         }
 
         return Ok(result);
+    }
+
+    // Fills in the walking time to the nearest EV charger for listings that
+    // were uploaded before chargers were tracked.
+    [Authorize(Roles = "Admin,Manager")]
+    [HttpPost("refresh-ev-chargers")]
+    public async Task<IActionResult> RefreshEvChargerDistances(
+        CancellationToken cancellationToken)
+    {
+        var apartments = await _context.Apartments
+            .Where(apartment =>
+                apartment.EvChargerDistanceMinutes == null &&
+                (apartment.PropertyLatitude != null || apartment.Latitude != null))
+            .OrderByDescending(apartment => apartment.CreatedAt)
+            .Take(60)
+            .ToListAsync(cancellationToken);
+
+        var updated = 0;
+        foreach (var apartment in apartments)
+        {
+            var latitude = apartment.PropertyLatitude ?? apartment.Latitude;
+            var longitude = apartment.PropertyLongitude ?? apartment.Longitude;
+            if (latitude is null || longitude is null) continue;
+
+            var minutes = await _nearbyPlacesService.FindEvChargerWalkingMinutesAsync(
+                (double)latitude.Value,
+                (double)longitude.Value,
+                cancellationToken);
+            if (minutes is null) continue;
+
+            apartment.EvChargerDistanceMinutes = minutes;
+            updated++;
+        }
+
+        if (updated > 0)
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+            await InvalidateApartmentCacheAsync(cancellationToken);
+        }
+
+        return Ok(new
+        {
+            message = $"EV charger walking times updated for {updated} of {apartments.Count} listing(s).",
+            updated,
+            checkedCount = apartments.Count,
+        });
+    }
+
+    // Staff-only uploader details for published listings. Kept out of the
+    // public (output-cached) list response so uploader contacts never leak.
+    [Authorize(Roles = "Admin,Manager")]
+    [HttpGet("uploaders")]
+    public async Task<IActionResult> GetApartmentUploaders(
+        CancellationToken cancellationToken)
+    {
+        var rows = await _context.Apartments
+            .AsNoTracking()
+            .Where(apartment => apartment.IsApproved)
+            .Select(apartment => new
+            {
+                apartmentId = apartment.Id,
+                userId = apartment.UploadedByUserId,
+                name = apartment.UploadedByUser != null
+                    ? apartment.UploadedByUser.FullName ?? apartment.UploadedByUser.UserName
+                    : null,
+                email = apartment.UploadedByUser != null ? apartment.UploadedByUser.Email : null,
+                phone = apartment.UploadedByUser != null ? apartment.UploadedByUser.PhoneNumber : null,
+                picture = apartment.UploadedByUser != null ? apartment.UploadedByUser.ProfilePicture : null,
+                isAgent = apartment.UploadedByUser != null && apartment.UploadedByUser.IsAgent,
+                imageCount = apartment.Images.Count,
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(rows);
     }
 
     [Authorize(Roles = "Admin,Manager")]
@@ -995,7 +1075,8 @@ public class ApartmentsController : ControllerBase
             apartment.UniversityDistanceMinutes,
             apartment.GroceryDistanceMinutes,
             apartment.PharmacyDistanceMinutes,
-            apartment.CafeDistanceMinutes
+            apartment.CafeDistanceMinutes,
+            apartment.EvChargerDistanceMinutes
         };
     }
 

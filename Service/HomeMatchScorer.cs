@@ -334,8 +334,27 @@ public class HomeMatchScorer
         HomeMatchProfileRequest profile,
         HomeMatchResultDto result)
     {
-        const int available = 10;
+        var drivesElectric =
+            profile.Transportation.Contains("Car") &&
+            string.Equals(profile.CarFuelType, "Electric", StringComparison.OrdinalIgnoreCase);
+        var available = drivesElectric ? 13 : 10;
         var earned = 0;
+
+        if (drivesElectric)
+        {
+            if (apartment.EvChargerDistanceMinutes is <= 10)
+            {
+                earned += 3;
+
+                AddReason(
+                    result,
+                    $"Electric charger in {apartment.EvChargerDistanceMinutes} min",
+                    "An EV charging station is within a 10-minute walk because you have an electric car.",
+                    3,
+                    3
+                );
+            }
+        }
 
         if (profile.Transportation.Contains("Car"))
         {

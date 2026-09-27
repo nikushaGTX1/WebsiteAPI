@@ -153,6 +153,9 @@ public class Apartment
 
     public int? CafeDistanceMinutes { get; set; }
 
+    // Walking minutes to the nearest electric-vehicle charging station.
+    public int? EvChargerDistanceMinutes { get; set; }
+
     [JsonIgnore]
     public List<FavoriteApartment> FavoritedBy { get; set; } = [];
 

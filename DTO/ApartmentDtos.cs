@@ -106,6 +106,7 @@ public class CreateApartmentDto
     public int? GroceryDistanceMinutes { get; set; }
     public int? PharmacyDistanceMinutes { get; set; }
     public int? CafeDistanceMinutes { get; set; }
+    public int? EvChargerDistanceMinutes { get; set; }
 }
 
 public class UpdateApartmentDto
@@ -205,4 +206,5 @@ public class UpdateApartmentDto
     public int? GroceryDistanceMinutes { get; set; }
     public int? PharmacyDistanceMinutes { get; set; }
     public int? CafeDistanceMinutes { get; set; }
+    public int? EvChargerDistanceMinutes { get; set; }
 }
