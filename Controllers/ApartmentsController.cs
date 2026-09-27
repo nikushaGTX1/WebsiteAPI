@@ -18,13 +18,16 @@ public class ApartmentsController : ControllerBase
     private readonly SupabaseStorageService _storageService;
     private readonly GoogleNearbyPlacesService _nearbyPlacesService;
     private readonly IOutputCacheStore _outputCache;
+    private readonly ILogger<ApartmentsController> _logger;
 
     public ApartmentsController(
         AppDbContext context,
         GoogleNearbyPlacesService nearbyPlacesService,
         SupabaseStorageService storageService,
-        IOutputCacheStore outputCache)
+        IOutputCacheStore outputCache,
+        ILogger<ApartmentsController> logger)
     {
+        _logger = logger;
         _context = context;
         _nearbyPlacesService = nearbyPlacesService;
         _storageService = storageService;
@@ -305,7 +308,7 @@ public class ApartmentsController : ControllerBase
                 ParkingPoints = dto.ParkingPoints,
                 ViewType = dto.ViewType,
                 MinimumRentalPeriod = dto.MinimumRentalPeriod,
-                AvailableFrom = dto.AvailableFrom,
+                AvailableFrom = ToUtcDate(dto.AvailableFrom),
                 MaxOccupants = dto.MaxOccupants,
                 Bedrooms = dto.Bedrooms,
                 Bathrooms = dto.Bathrooms,
@@ -359,7 +362,7 @@ public class ApartmentsController : ControllerBase
                     cancellationToken)
             });
         }
-        catch
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             foreach (var storedImagePath in storedImagePaths)
             {
@@ -368,9 +371,18 @@ public class ApartmentsController : ControllerBase
                     CancellationToken.None);
             }
 
-            throw;
+            _logger.LogError(exception, "Apartment upload failed.");
+            return StatusCode(500, new
+            {
+                message = "The apartment could not be saved. Please try again or contact support.",
+                detail = exception.GetBaseException().Message
+            });
         }
     }
+
+    // Dates arrive as plain "yyyy-MM-dd" (Kind=Unspecified); PostgreSQL timestamptz only accepts UTC.
+    private static DateTime? ToUtcDate(DateTime? value) =>
+        value.HasValue ? DateTime.SpecifyKind(value.Value.Date, DateTimeKind.Utc) : null;
 
     private static bool IsScrapedSource(string? description) =>
         description?.Contains(
@@ -494,7 +506,7 @@ public class ApartmentsController : ControllerBase
         apartment.ParkingPoints = dto.ParkingPoints ?? apartment.ParkingPoints;
         apartment.ViewType = dto.ViewType ?? apartment.ViewType;
         apartment.MinimumRentalPeriod = dto.MinimumRentalPeriod ?? apartment.MinimumRentalPeriod;
-        apartment.AvailableFrom = dto.AvailableFrom ?? apartment.AvailableFrom;
+        apartment.AvailableFrom = ToUtcDate(dto.AvailableFrom) ?? apartment.AvailableFrom;
         apartment.MaxOccupants = dto.MaxOccupants ?? apartment.MaxOccupants;
 
         apartment.Bedrooms =
