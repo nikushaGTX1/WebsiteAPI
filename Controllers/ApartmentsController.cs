@@ -79,6 +79,7 @@ public class ApartmentsController : ControllerBase
 
         var query = _context.Apartments
             .AsNoTracking()
+            .Where(apartment => apartment.IsApproved)
             .Where(apartment =>
                 !EF.Functions.ILike(apartment.Description, "%Source: https://www.myhome.ge/%") &&
                 !EF.Functions.ILike(apartment.Description, "%Source: https://home.ss.ge/%"));
@@ -272,6 +273,7 @@ public class ApartmentsController : ControllerBase
                     : dto.PhoneNumber.Trim(),
                 ImageUrl = storedImagePaths.FirstOrDefault(),
                 UploadedByUserId = uploadedByUserId,
+                IsApproved = User.IsInRole("Admin") || User.IsInRole("Manager"),
                 Images = storedImagePaths
                     .Select((path, index) => new ApartmentImage
                     {
@@ -337,7 +339,10 @@ public class ApartmentsController : ControllerBase
                 KindergartenDistanceMinutes =
                     dto.KindergartenDistanceMinutes,
                 UniversityDistanceMinutes =
-                    dto.UniversityDistanceMinutes
+                    dto.UniversityDistanceMinutes,
+                GroceryDistanceMinutes = dto.GroceryDistanceMinutes,
+                PharmacyDistanceMinutes = dto.PharmacyDistanceMinutes,
+                CafeDistanceMinutes = dto.CafeDistanceMinutes
             };
 
             _context.Apartments.Add(apartment);
@@ -580,6 +585,12 @@ public class ApartmentsController : ControllerBase
         apartment.UniversityDistanceMinutes =
             dto.UniversityDistanceMinutes ??
             apartment.UniversityDistanceMinutes;
+        apartment.GroceryDistanceMinutes =
+            dto.GroceryDistanceMinutes ?? apartment.GroceryDistanceMinutes;
+        apartment.PharmacyDistanceMinutes =
+            dto.PharmacyDistanceMinutes ?? apartment.PharmacyDistanceMinutes;
+        apartment.CafeDistanceMinutes =
+            dto.CafeDistanceMinutes ?? apartment.CafeDistanceMinutes;
 
         List<string> newImagePaths = [];
         List<string> removedImagePaths = [];
@@ -726,7 +737,62 @@ public class ApartmentsController : ControllerBase
         });
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Manager")]
+    [HttpGet("pending")]
+    public async Task<IActionResult> GetPendingApartments(
+        CancellationToken cancellationToken)
+    {
+        var apartments = await _context.Apartments
+            .Include(apartment => apartment.Images)
+            .Include(apartment => apartment.UploadedByUser)
+            .AsNoTracking()
+            .Where(apartment => !apartment.IsApproved)
+            .OrderByDescending(apartment => apartment.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var result = new List<object>();
+        foreach (var apartment in apartments)
+        {
+            result.Add(new
+            {
+                id = apartment.Id,
+                apartment = await ToResponseAsync(apartment, includeGallery: true, cancellationToken),
+                status = "pending",
+                submittedAt = apartment.CreatedAt,
+                submittedByUserId = apartment.UploadedByUserId,
+                submittedByName = apartment.UploadedByUser?.FullName
+                    ?? apartment.UploadedByUser?.UserName
+                    ?? "Unknown user",
+                submittedByEmail = apartment.UploadedByUser?.Email ?? string.Empty,
+            });
+        }
+
+        return Ok(result);
+    }
+
+    [Authorize(Roles = "Admin,Manager")]
+    [HttpPost("{id:int}/approve")]
+    public async Task<IActionResult> ApproveApartment(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var apartment = await _context.Apartments
+            .Include(apartment => apartment.Images)
+            .FirstOrDefaultAsync(apartment => apartment.Id == id, cancellationToken);
+        if (apartment is null) return NotFound(new { message = "Apartment not found" });
+
+        apartment.IsApproved = true;
+        await _context.SaveChangesAsync(cancellationToken);
+        await InvalidateApartmentCacheAsync(cancellationToken);
+
+        return Ok(new
+        {
+            message = "Apartment confirmed and published.",
+            apartment = await ToResponseAsync(apartment, includeGallery: true, cancellationToken)
+        });
+    }
+
+    [Authorize(Roles = "Admin,Manager")]
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> DeleteApartment(
         int id,
@@ -744,6 +810,12 @@ public class ApartmentsController : ControllerBase
             {
                 message = "Apartment not found"
             });
+        }
+
+        // Managers may only decline listings still waiting for approval.
+        if (!User.IsInRole("Admin") && apartment.IsApproved)
+        {
+            return Forbid();
         }
 
         var storedImagePaths = apartment.Images
@@ -852,6 +924,7 @@ public class ApartmentsController : ControllerBase
             // Return a temporary signed URL, not the stored object path.
             ImageUrl = signedImageUrl,
             Images = images,
+            apartment.IsApproved,
 
             apartment.CreatedAt,
 
@@ -894,7 +967,10 @@ public class ApartmentsController : ControllerBase
             apartment.ParkDistanceMinutes,
             apartment.SchoolDistanceMinutes,
             apartment.KindergartenDistanceMinutes,
-            apartment.UniversityDistanceMinutes
+            apartment.UniversityDistanceMinutes,
+            apartment.GroceryDistanceMinutes,
+            apartment.PharmacyDistanceMinutes,
+            apartment.CafeDistanceMinutes
         };
     }
 

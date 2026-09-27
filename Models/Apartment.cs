@@ -53,6 +53,9 @@ public class Apartment
     [JsonIgnore]
     public AppUser? UploadedByUser { get; set; }
 
+    // Agent uploads wait for a manager/admin to confirm; admin and manager uploads publish at once.
+    public bool IsApproved { get; set; } = true;
+
 
     // Location
     public string City { get; set; } = "Tbilisi";
@@ -143,6 +146,12 @@ public class Apartment
     public int? KindergartenDistanceMinutes { get; set; }
 
     public int? UniversityDistanceMinutes { get; set; }
+
+    public int? GroceryDistanceMinutes { get; set; }
+
+    public int? PharmacyDistanceMinutes { get; set; }
+
+    public int? CafeDistanceMinutes { get; set; }
 
     [JsonIgnore]
     public List<FavoriteApartment> FavoritedBy { get; set; } = [];
