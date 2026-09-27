@@ -268,7 +268,7 @@ public class ApartmentsController : ControllerBase
             {
                 // Basic information
                 Title = dto.Title,
-                Description = dto.Description,
+                Description = SanitizeVerifiedTag(dto.Description),
                 Price = dto.Price,
                 Address = null,
                 PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber)
@@ -384,6 +384,19 @@ public class ApartmentsController : ControllerBase
     private static DateTime? ToUtcDate(DateTime? value) =>
         value.HasValue ? DateTime.SpecifyKind(value.Value.Date, DateTimeKind.Utc) : null;
 
+    // The "Verified listing" badge is read from this tag, so only staff may set it;
+    // anyone else's copy is stripped instead of trusted.
+    private string SanitizeVerifiedTag(string description)
+    {
+        if (User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Agent"))
+            return description;
+        return System.Text.RegularExpressions.Regex.Replace(
+            description,
+            @"\|?\s*Verified listing:\s*\w+",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    }
+
     private static bool IsScrapedSource(string? description) =>
         description?.Contains(
             "Source: https://www.myhome.ge/",
@@ -452,7 +465,7 @@ public class ApartmentsController : ControllerBase
             dto.Title ?? apartment.Title;
 
         apartment.Description =
-            dto.Description ?? apartment.Description;
+            (dto.Description is null ? null : SanitizeVerifiedTag(dto.Description)) ?? apartment.Description;
 
         apartment.Price =
             dto.Price ?? apartment.Price;
