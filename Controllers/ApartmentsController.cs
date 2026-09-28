@@ -803,6 +803,58 @@ public class ApartmentsController : ControllerBase
 
     // Fills in the walking time to the nearest EV charger for listings that
     // were uploaded before chargers were tracked.
+    // Re-measures the walking time to the nearest gym now that fitness centers count
+    // as gyms. Only shorter times are saved. Pass skip to continue with the next page.
+    [Authorize(Roles = "Admin,Manager")]
+    [HttpPost("refresh-gym-distances")]
+    public async Task<IActionResult> RefreshGymDistances(
+        [FromQuery] int skip = 0,
+        CancellationToken cancellationToken = default)
+    {
+        const int pageSize = 60;
+        var query = _context.Apartments
+            .Where(apartment => apartment.PropertyLatitude != null || apartment.Latitude != null);
+        var total = await query.CountAsync(cancellationToken);
+        var apartments = await query
+            .OrderBy(apartment => apartment.Id)
+            .Skip(Math.Max(0, skip))
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var updated = 0;
+        foreach (var apartment in apartments)
+        {
+            var latitude = apartment.PropertyLatitude ?? apartment.Latitude;
+            var longitude = apartment.PropertyLongitude ?? apartment.Longitude;
+            if (latitude is null || longitude is null) continue;
+
+            var minutes = await _nearbyPlacesService.FindGymWalkingMinutesAsync(
+                latitude.Value,
+                longitude.Value,
+                cancellationToken);
+            if (minutes is null) continue;
+            if (apartment.GymDistanceMinutes is not null && minutes >= apartment.GymDistanceMinutes) continue;
+
+            apartment.GymDistanceMinutes = minutes;
+            updated++;
+        }
+
+        if (updated > 0)
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+            await InvalidateApartmentCacheAsync(cancellationToken);
+        }
+
+        var nextSkip = skip + apartments.Count;
+        return Ok(new
+        {
+            message = $"Gym walking times improved for {updated} of {apartments.Count} listing(s).",
+            updated,
+            checkedCount = apartments.Count,
+            nextSkip = nextSkip < total ? nextSkip : (int?)null,
+        });
+    }
+
     [Authorize(Roles = "Admin,Manager")]
     [HttpPost("refresh-ev-chargers")]
     public async Task<IActionResult> RefreshEvChargerDistances(

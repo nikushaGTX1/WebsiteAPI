@@ -118,6 +118,15 @@ public class GoogleNearbyPlacesService
     /// Walking minutes from the given point to the nearest EV charging station,
     /// or null when none is found within 5 km.
     /// </summary>
+    public Task<int?> FindGymWalkingMinutesAsync(
+        double latitude,
+        double longitude,
+        CancellationToken cancellationToken = default) =>
+        FindWalkingMinutesAsync(
+            new Coordinates(latitude, longitude),
+            "gym",
+            cancellationToken);
+
     public Task<int?> FindEvChargerWalkingMinutesAsync(
         double latitude,
         double longitude,
@@ -326,7 +335,8 @@ public class GoogleNearbyPlacesService
     {
         var body = new NearbySearchRequest
         {
-            IncludedPrimaryTypes = [placeType],
+            // Gyms are often listed as fitness centers on Google; search both.
+            IncludedPrimaryTypes = placeType == "gym" ? ["gym", "fitness_center"] : [placeType],
             MaxResultCount = 5,
             RankPreference = "DISTANCE",
             LocationRestriction = new LocationRestriction
