@@ -491,13 +491,41 @@ public class GoogleNearbyPlacesService
                 _jsonOptions
             );
 
-        var duration = routesResponse?
-            .Routes
-            .FirstOrDefault()?
-            .Duration;
+        var route = routesResponse?.Routes.FirstOrDefault();
+        var routeMinutes = ParseDurationMinutes(route?.Duration);
 
-        return ParseDurationMinutes(duration);
+        // A pin placed beside a highway, river or closed block can make Google snap
+        // to a far-away road and route a 60 m walk as 1 km. When the route is far
+        // longer than the straight-line distance, estimate from the straight line.
+        var straightMeters = StraightLineMeters(origin, destination);
+        var straightMinutes = Math.Max(1, (int)Math.Ceiling(straightMeters * 1.3 / 80));
+        if (route is not null &&
+            route.DistanceMeters > Math.Max(400, straightMeters * 2.5))
+        {
+            return routeMinutes is null ? straightMinutes : Math.Min(routeMinutes.Value, straightMinutes);
+        }
+
+        return routeMinutes ?? (route is null ? null : straightMinutes);
     }
+
+    private static double StraightLineMeters(Coordinates a, Coordinates b)
+    {
+        static double Rad(double value) => value * Math.PI / 180;
+        var dLat = Rad(b.Latitude - a.Latitude);
+        var dLng = Rad(b.Longitude - a.Longitude);
+        var h = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+            Math.Cos(Rad(a.Latitude)) * Math.Cos(Rad(b.Latitude)) *
+            Math.Sin(dLng / 2) * Math.Sin(dLng / 2);
+        return 6371000 * 2 * Math.Atan2(Math.Sqrt(h), Math.Sqrt(1 - h));
+    }
+
+    /// <summary>Walking minutes from a point to the nearest place of a Google type.</summary>
+    public Task<int?> FindWalkingMinutesToTypeAsync(
+        double latitude,
+        double longitude,
+        string placeType,
+        CancellationToken cancellationToken = default) =>
+        FindWalkingMinutesAsync(new Coordinates(latitude, longitude), placeType, cancellationToken);
 
     private static int? ParseDurationMinutes(string? duration)
     {

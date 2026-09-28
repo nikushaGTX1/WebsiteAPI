@@ -803,15 +803,18 @@ public class ApartmentsController : ControllerBase
 
     // Fills in the walking time to the nearest EV charger for listings that
     // were uploaded before chargers were tracked.
-    // Re-measures the walking time to the nearest gym now that fitness centers count
-    // as gyms. Only shorter times are saved. Pass skip to continue with the next page.
+    // Re-measures nearby walking times (metro, gym, park, school, kindergarten,
+    // university, EV charger) from each listing's pin. Only shorter times are saved,
+    // so a bad earlier measurement is corrected and nothing gets worse.
+    // Pass skip to continue with the next page.
     [Authorize(Roles = "Admin,Manager")]
     [HttpPost("refresh-gym-distances")]
-    public async Task<IActionResult> RefreshGymDistances(
+    [HttpPost("refresh-nearby-distances")]
+    public async Task<IActionResult> RefreshNearbyDistances(
         [FromQuery] int skip = 0,
         CancellationToken cancellationToken = default)
     {
-        const int pageSize = 60;
+        const int pageSize = 8;
         var query = _context.Apartments
             .Where(apartment => apartment.PropertyLatitude != null || apartment.Latitude != null);
         var total = await query.CountAsync(cancellationToken);
@@ -821,6 +824,20 @@ public class ApartmentsController : ControllerBase
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
+        var fields = new (string Type, Func<Apartment, int?> Get, Action<Apartment, int> Set)[]
+        {
+            ("subway_station", a => a.MetroDistanceMinutes, (a, v) => a.MetroDistanceMinutes = v),
+            ("gym", a => a.GymDistanceMinutes, (a, v) => a.GymDistanceMinutes = v),
+            ("park", a => a.ParkDistanceMinutes, (a, v) => a.ParkDistanceMinutes = v),
+            ("school", a => a.SchoolDistanceMinutes, (a, v) => a.SchoolDistanceMinutes = v),
+            ("preschool", a => a.KindergartenDistanceMinutes, (a, v) => a.KindergartenDistanceMinutes = v),
+            ("university", a => a.UniversityDistanceMinutes, (a, v) => a.UniversityDistanceMinutes = v),
+            ("electric_vehicle_charging_station", a => a.EvChargerDistanceMinutes, (a, v) => a.EvChargerDistanceMinutes = v),
+            ("supermarket", a => a.GroceryDistanceMinutes, (a, v) => a.GroceryDistanceMinutes = v),
+            ("pharmacy", a => a.PharmacyDistanceMinutes, (a, v) => a.PharmacyDistanceMinutes = v),
+            ("cafe", a => a.CafeDistanceMinutes, (a, v) => a.CafeDistanceMinutes = v),
+        };
+
         var updated = 0;
         foreach (var apartment in apartments)
         {
@@ -828,15 +845,21 @@ public class ApartmentsController : ControllerBase
             var longitude = apartment.PropertyLongitude ?? apartment.Longitude;
             if (latitude is null || longitude is null) continue;
 
-            var minutes = await _nearbyPlacesService.FindGymWalkingMinutesAsync(
-                latitude.Value,
-                longitude.Value,
-                cancellationToken);
-            if (minutes is null) continue;
-            if (apartment.GymDistanceMinutes is not null && minutes >= apartment.GymDistanceMinutes) continue;
+            var results = await Task.WhenAll(fields.Select(field =>
+                _nearbyPlacesService.FindWalkingMinutesToTypeAsync(
+                    latitude.Value, longitude.Value, field.Type, cancellationToken)));
 
-            apartment.GymDistanceMinutes = minutes;
-            updated++;
+            var changed = false;
+            for (var i = 0; i < fields.Length; i++)
+            {
+                var minutes = results[i];
+                if (minutes is null) continue;
+                var current = fields[i].Get(apartment);
+                if (current is not null && minutes >= current) continue;
+                fields[i].Set(apartment, minutes.Value);
+                changed = true;
+            }
+            if (changed) updated++;
         }
 
         if (updated > 0)
@@ -848,7 +871,7 @@ public class ApartmentsController : ControllerBase
         var nextSkip = skip + apartments.Count;
         return Ok(new
         {
-            message = $"Gym walking times improved for {updated} of {apartments.Count} listing(s).",
+            message = $"Nearby walking times improved for {updated} of {apartments.Count} listing(s).",
             updated,
             checkedCount = apartments.Count,
             nextSkip = nextSkip < total ? nextSkip : (int?)null,
