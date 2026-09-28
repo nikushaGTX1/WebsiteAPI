@@ -100,7 +100,11 @@ public class OwnerListingsController : ControllerBase
     {
         var query = AccessibleSubmissions().OrderByDescending(x => x.CreatedAt);
         var rows = await query.ToListAsync(cancellationToken);
-        return Ok(await Task.WhenAll(rows.Select(x => ToResponse(x, cancellationToken))));
+        // Sequential on purpose: ToResponse queries the shared DbContext (agent lookup),
+        // and EF Core throws when two queries run on one context at the same time.
+        var result = new List<object>(rows.Count);
+        foreach (var row in rows) result.Add(await ToResponse(row, cancellationToken));
+        return Ok(result);
     }
 
     [Authorize(Roles = StaffRoles)]
