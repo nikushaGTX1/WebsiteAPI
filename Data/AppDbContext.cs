@@ -27,11 +27,30 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<LocationArea> LocationAreas => Set<LocationArea>();
     public DbSet<CanonicalStreet> CanonicalStreets => Set<CanonicalStreet>();
     public DbSet<CrmQuestionnaireLink> CrmQuestionnaireLinks { get; set; }
+    public DbSet<OwnerListingLink> OwnerListingLinks => Set<OwnerListingLink>();
+    public DbSet<OwnerSubmission> OwnerSubmissions => Set<OwnerSubmission>();
 
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<OwnerListingLink>(link =>
+        {
+            link.Property(item => item.Token).HasMaxLength(64);
+            link.Property(item => item.DealType).HasMaxLength(10);
+            link.HasIndex(item => item.Token).IsUnique();
+        });
+
+        builder.Entity<OwnerSubmission>(submission =>
+        {
+            submission.Property(item => item.DealType).HasMaxLength(10);
+            submission.Property(item => item.Status).HasMaxLength(20);
+            submission.Property(item => item.OwnerName).HasMaxLength(120);
+            submission.Property(item => item.OwnerPhone).HasMaxLength(40);
+            submission.Property(item => item.OwnerEmail).HasMaxLength(160);
+            submission.HasIndex(item => item.AgentUserId);
+        });
 
         builder.Entity<CrmQuestionnaireLink>(link =>
         {

@@ -56,6 +56,9 @@ public class Apartment
     // Agent uploads wait for a manager/admin to confirm; admin and manager uploads publish at once.
     public bool IsApproved { get; set; } = true;
 
+    // When staff last confirmed this listing (approval, or a direct staff upload).
+    public DateTime? LastConfirmedAt { get; set; }
+
 
     // Location
     public string City { get; set; } = "Tbilisi";

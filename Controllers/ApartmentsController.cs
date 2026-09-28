@@ -277,6 +277,7 @@ public class ApartmentsController : ControllerBase
                 ImageUrl = storedImagePaths.FirstOrDefault(),
                 UploadedByUserId = uploadedByUserId,
                 IsApproved = User.IsInRole("Admin") || User.IsInRole("Manager"),
+                LastConfirmedAt = User.IsInRole("Admin") || User.IsInRole("Manager") ? DateTime.UtcNow : null,
                 Images = storedImagePaths
                     .Select((path, index) => new ApartmentImage
                     {
@@ -962,6 +963,7 @@ public class ApartmentsController : ControllerBase
         if (apartment is null) return NotFound(new { message = "Apartment not found" });
 
         apartment.IsApproved = true;
+        apartment.LastConfirmedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         await InvalidateApartmentCacheAsync(cancellationToken);
 
@@ -1105,6 +1107,7 @@ public class ApartmentsController : ControllerBase
             ImageUrl = signedImageUrl,
             Images = images,
             apartment.IsApproved,
+            LastConfirmedAt = apartment.LastConfirmedAt ?? (apartment.IsApproved ? apartment.CreatedAt : (DateTime?)null),
 
             apartment.CreatedAt,
 
