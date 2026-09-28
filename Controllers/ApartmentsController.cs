@@ -256,6 +256,32 @@ public class ApartmentsController : ControllerBase
             return BadRequest(new { message = "Uploader user is not valid." });
         }
 
+        // Reject exact copies, including listings still waiting for review. This also stops
+        // a double-clicked Publish from creating two identical apartments.
+        var district = dto.District.Trim();
+        var duplicate = await _context.Apartments
+            .AsNoTracking()
+            .Where(apartment =>
+                apartment.District == district &&
+                apartment.Price == dto.Price &&
+                apartment.SizeSquareMeters == dto.SizeSquareMeters &&
+                apartment.Rooms == dto.Rooms &&
+                apartment.Bedrooms == dto.Bedrooms &&
+                apartment.Floor == dto.Floor &&
+                apartment.TotalFloors == dto.TotalFloors)
+            .Select(apartment => new { apartment.Id, apartment.IsApproved })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (duplicate is not null)
+        {
+            return Conflict(new
+            {
+                message = duplicate.IsApproved
+                    ? $"Duplicate Found. This apartment is already listed (#{duplicate.Id})."
+                    : $"Duplicate Found. This apartment is already waiting for review (#{duplicate.Id}).",
+                duplicateId = duplicate.Id
+            });
+        }
+
         List<string> storedImagePaths = [];
 
         try
