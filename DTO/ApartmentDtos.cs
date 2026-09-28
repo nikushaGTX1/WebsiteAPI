@@ -8,6 +8,9 @@ public class CreateApartmentDto
     // Admin-only publishing metadata used to preserve the original uploader.
     public string? UploadedByUserId { get; set; }
 
+    // Owner-link submission the agent verified this listing from; publishes without admin review.
+    public long? OwnerSubmissionId { get; set; }
+
     // Basic information
     [Required]
     public string Title { get; set; } = string.Empty;

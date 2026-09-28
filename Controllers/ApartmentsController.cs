@@ -282,6 +282,22 @@ public class ApartmentsController : ControllerBase
             });
         }
 
+        // A listing verified from an owner link goes live straight away: the owner
+        // supplied it and the assigned agent checked it, so it skips the admin queue.
+        var isElevated = User.IsInRole("Admin") || User.IsInRole("Manager");
+        OwnerSubmission? ownerSubmission = null;
+        if (dto.OwnerSubmissionId is long submissionId)
+        {
+            ownerSubmission = await _context.OwnerSubmissions.FirstOrDefaultAsync(
+                submission => submission.Id == submissionId &&
+                    (isElevated || submission.AgentUserId == currentUserId) &&
+                    submission.Status != "published" &&
+                    submission.Status != "rejected",
+                cancellationToken);
+            if (ownerSubmission is null)
+                return BadRequest(new { message = "This owner submission is not available for publishing." });
+        }
+
         List<string> storedImagePaths = [];
 
         try
@@ -302,8 +318,8 @@ public class ApartmentsController : ControllerBase
                     : dto.PhoneNumber.Trim(),
                 ImageUrl = storedImagePaths.FirstOrDefault(),
                 UploadedByUserId = uploadedByUserId,
-                IsApproved = User.IsInRole("Admin") || User.IsInRole("Manager"),
-                LastConfirmedAt = User.IsInRole("Admin") || User.IsInRole("Manager") ? DateTime.UtcNow : null,
+                IsApproved = isElevated || ownerSubmission is not null,
+                LastConfirmedAt = isElevated || ownerSubmission is not null ? DateTime.UtcNow : null,
                 Images = storedImagePaths
                     .Select((path, index) => new ApartmentImage
                     {
@@ -378,6 +394,14 @@ public class ApartmentsController : ControllerBase
 
             _context.Apartments.Add(apartment);
             await _context.SaveChangesAsync(cancellationToken);
+
+            if (ownerSubmission is not null)
+            {
+                ownerSubmission.Status = "published";
+                ownerSubmission.PublishedApartmentId = apartment.Id;
+                ownerSubmission.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync(cancellationToken);
+            }
 
             await InvalidateApartmentCacheAsync(cancellationToken);
 
