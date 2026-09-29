@@ -973,6 +973,28 @@ public class ApartmentsController : ControllerBase
         });
     }
 
+    // The signed-in user's own uploads, published and awaiting review, for "My listings".
+    // The public list hides the uploader, so the client cannot work this out itself.
+    [Authorize]
+    [HttpGet("mine")]
+    public async Task<IActionResult> GetMyApartments(CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId)) return Unauthorized();
+
+        var apartments = await _context.Apartments
+            .AsNoTracking()
+            .Include(apartment => apartment.Images)
+            .Where(apartment => apartment.UploadedByUserId == userId)
+            .OrderByDescending(apartment => apartment.Id)
+            .ToListAsync(cancellationToken);
+
+        var result = new List<object>(apartments.Count);
+        foreach (var apartment in apartments)
+            result.Add(await ToResponseAsync(apartment, includeGallery: false, cancellationToken));
+        return Ok(result);
+    }
+
     // Staff-only uploader details for published listings. Kept out of the
     // public (output-cached) list response so uploader contacts never leak.
     [Authorize(Roles = "Admin,Manager")]
