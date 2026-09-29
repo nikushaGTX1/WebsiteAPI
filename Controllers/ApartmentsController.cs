@@ -1000,6 +1000,29 @@ public class ApartmentsController : ControllerBase
         return Ok(result);
     }
 
+    // Public: an agent's published listings for their profile page. The public list hides
+    // the uploader, so the profile could only guess by name and missed most listings.
+    [HttpGet("by-agent/{userId}")]
+    public async Task<IActionResult> GetAgentApartments(string userId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(userId)) return BadRequest();
+
+        var apartments = await _context.Apartments
+            .AsNoTracking()
+            .Include(apartment => apartment.Images)
+            .Where(apartment => apartment.IsApproved && apartment.UploadedByUserId == userId)
+            .Where(apartment =>
+                !EF.Functions.ILike(apartment.Description, "%Source: https://www.myhome.ge/%") &&
+                !EF.Functions.ILike(apartment.Description, "%Source: https://home.ss.ge/%"))
+            .OrderByDescending(apartment => apartment.Id)
+            .ToListAsync(cancellationToken);
+
+        var result = new List<object>(apartments.Count);
+        foreach (var apartment in apartments)
+            result.Add(await ToResponseAsync(apartment, includeGallery: false, cancellationToken));
+        return Ok(result);
+    }
+
     // Staff-only uploader details for published listings. Kept out of the
     // public (output-cached) list response so uploader contacts never leak.
     [Authorize(Roles = "Admin,Manager")]
