@@ -40,13 +40,6 @@ public class HomeMatchScorer
         result.RecommendationCategory =
             GetRecommendationCategory(apartment, profile);
 
-        if (profile.HasPet && !apartment.IsPetFriendly)
-        {
-            result.Warnings.Add(
-                "Landlord confirmation may be required for pets."
-            );
-        }
-
         return result;
     }
 

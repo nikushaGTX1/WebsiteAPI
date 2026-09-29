@@ -986,6 +986,11 @@ public class ApartmentsController : ControllerBase
             .AsNoTracking()
             .Include(apartment => apartment.Images)
             .Where(apartment => apartment.UploadedByUserId == userId)
+            // Same exclusion as the public list: scraped myhome/ss imports saved under the
+            // agent's account are not the agent's own listings.
+            .Where(apartment =>
+                !EF.Functions.ILike(apartment.Description, "%Source: https://www.myhome.ge/%") &&
+                !EF.Functions.ILike(apartment.Description, "%Source: https://home.ss.ge/%"))
             .OrderByDescending(apartment => apartment.Id)
             .ToListAsync(cancellationToken);
 
