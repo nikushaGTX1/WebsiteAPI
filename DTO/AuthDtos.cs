@@ -78,3 +78,39 @@ public class RatingDto
 
     public string? Comment { get; set; }
 }
+
+public class EmailOnlyDto
+{
+    [Required, EmailAddress]
+    public string Email { get; set; } = "";
+}
+
+public class VerifyEmailDto
+{
+    [Required, EmailAddress]
+    public string Email { get; set; } = "";
+
+    [Required]
+    public string Code { get; set; } = "";
+}
+
+public class ResetPasswordWithCodeDto
+{
+    [Required, EmailAddress]
+    public string Email { get; set; } = "";
+
+    [Required]
+    public string Code { get; set; } = "";
+
+    [Required, MinLength(6)]
+    public string NewPassword { get; set; } = "";
+}
+
+public class ChangePasswordWithCodeDto
+{
+    [Required]
+    public string Code { get; set; } = "";
+
+    [Required, MinLength(6)]
+    public string NewPassword { get; set; } = "";
+}

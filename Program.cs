@@ -81,6 +81,7 @@ builder.Services.Configure<GzipCompressionProviderOptions>(options =>
 
 builder.Services.AddHttpClient<GoogleNearbyPlacesService>();
 builder.Services.AddHttpClient<SupabaseStorageService>();
+builder.Services.AddHttpClient<ResendEmailService>();
 builder.Services.AddHttpClient("OpenStreetMap", client =>
 {
     client.Timeout = TimeSpan.FromMinutes(4);
