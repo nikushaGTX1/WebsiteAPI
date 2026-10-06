@@ -142,7 +142,9 @@ public class AuthController : ControllerBase
         var user = await _userManager.FindByEmailAsync(dto.Email.Trim());
         // Same response whether or not the account exists, so emails can't be probed.
         if (user != null && !user.EmailConfirmed)
-            await SendCodeAsync(user, VerifyPurpose, cancellationToken);
+            if (!await SendCodeAsync(user, VerifyPurpose, cancellationToken))
+                return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                    new { message = "Could not send the code. Please try again later." });
         return Ok(new { message = "If the account exists, a new code has been sent." });
     }
 
@@ -153,7 +155,9 @@ public class AuthController : ControllerBase
     {
         var user = await _userManager.FindByEmailAsync(dto.Email.Trim());
         if (user != null)
-            await SendCodeAsync(user, ResetPurpose, cancellationToken);
+            if (!await SendCodeAsync(user, ResetPurpose, cancellationToken))
+                return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                    new { message = "Could not send the code. Please try again later." });
         return Ok(new { message = "If the account exists, a reset code has been sent." });
     }
 
