@@ -457,7 +457,8 @@ public class ApartmentsController : ControllerBase
             "Source: https://home.ss.ge/",
             StringComparison.OrdinalIgnoreCase) == true;
 
-    // Admins can edit any listing; other signed-in users only the listings they uploaded.
+    // Admins and Managers can edit any listing; other signed-in users (incl. agents) only the
+    // listings they uploaded. The row is updated in place: same Id, owner and approval state.
     [Authorize]
     [HttpPut("{id:int}")]
     public async Task<IActionResult> UpdateApartment(
@@ -479,7 +480,7 @@ public class ApartmentsController : ControllerBase
             });
         }
 
-        if (!User.IsInRole("Admin") &&
+        if (!User.IsInRole("Admin") && !User.IsInRole("Manager") &&
             (string.IsNullOrEmpty(apartment.UploadedByUserId) ||
              apartment.UploadedByUserId != User.FindFirstValue(ClaimTypes.NameIdentifier)))
         {
@@ -542,7 +543,7 @@ public class ApartmentsController : ControllerBase
             canonicalStreet?.District.NameEn ?? dto.District ?? apartment.District;
 
         apartment.Street =
-            canonicalStreet?.NameEn ?? apartment.Street;
+            canonicalStreet?.NameEn ?? (string.IsNullOrWhiteSpace(dto.Street) ? apartment.Street : dto.Street.Trim());
 
         if (canonicalStreet is not null) apartment.StreetId = canonicalStreet.Id;
         apartment.BuildingNumber = dto.BuildingNumber ?? apartment.BuildingNumber;
