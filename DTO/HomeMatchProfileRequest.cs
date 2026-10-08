@@ -38,7 +38,8 @@ public class HomeMatchProfileRequest
 
     public List<string> Lifestyles { get; set; } = [];
 
-    public bool HasPet { get; set; }
+    // Nullable: the Buy questionnaire never asks about pets and sends null.
+    public bool? HasPet { get; set; }
 
     public List<string> MainPreferences { get; set; } = [];
     public List<string> AdditionalRequirements { get; set; } = [];

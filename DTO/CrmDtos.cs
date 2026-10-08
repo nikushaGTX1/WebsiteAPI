@@ -348,3 +348,17 @@ public class CrmMetricsDto
     public double ConversionRate { get; set; }
     public CrmLeadStatusCountsDto StatusCounts { get; set; } = new();
 }
+
+/// <summary>A viewing the signed-in customer requested, as shown on their "My viewings" page.</summary>
+public class MyViewingDto
+{
+    public int Id { get; set; }
+    public int? ApartmentId { get; set; }
+    public string? ApartmentTitle { get; set; }
+    public string? ApartmentAddress { get; set; }
+    public DateTime RequestedViewingAt { get; set; }
+    public string? Message { get; set; }
+    /// <summary>Pending, Visited, DealDone, Past (date passed, agent has not updated it yet) or Cancelled.</summary>
+    public string Status { get; set; } = "Pending";
+    public DateTime CreatedAt { get; set; }
+}

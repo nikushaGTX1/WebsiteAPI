@@ -24,15 +24,75 @@ public class CrmController : ControllerBase
     private readonly AppDbContext _context;
     private readonly UserManager<AppUser> _userManager;
     private readonly IWebHostEnvironment _environment;
+    private readonly Website_API.Services.ResendEmailService _email;
+    private readonly ILogger<CrmController> _logger;
 
     public CrmController(
         AppDbContext context,
         UserManager<AppUser> userManager,
-        IWebHostEnvironment environment)
+        IWebHostEnvironment environment,
+        Website_API.Services.ResendEmailService email,
+        ILogger<CrmController> logger)
     {
         _context = context;
         _userManager = userManager;
         _environment = environment;
+        _email = email;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// The signed-in customer's own viewing requests with a simple status, so they can track
+    /// what they booked (VELVEN-027).
+    /// </summary>
+    [Authorize]
+    [HttpGet("my-viewings")]
+    public async Task<ActionResult<List<MyViewingDto>>> GetMyViewings(CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId();
+        if (userId is null) return Unauthorized();
+
+        var now = DateTime.UtcNow;
+        var leads = await _context.CrmLeads
+            .AsNoTracking()
+            .Where(lead => lead.CustomerUserId == userId && lead.RequestedViewingAt != null)
+            .OrderByDescending(lead => lead.RequestedViewingAt)
+            .Select(lead => new
+            {
+                lead.Id,
+                lead.ApartmentId,
+                ApartmentTitle = lead.Apartment != null ? lead.Apartment.Title : null,
+                ApartmentAddress = lead.Apartment != null ? lead.Apartment.Address : null,
+                RequestedViewingAt = lead.RequestedViewingAt!.Value,
+                lead.Message,
+                lead.Status,
+                lead.CreatedAt,
+                ViewingCompleted = lead.Tasks.Any(task => task.Type == CrmTaskType.Viewing && task.CompletedAt != null)
+            })
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        return leads.Select(lead => new MyViewingDto
+        {
+            Id = lead.Id,
+            ApartmentId = lead.ApartmentId,
+            ApartmentTitle = lead.ApartmentTitle,
+            ApartmentAddress = lead.ApartmentAddress,
+            RequestedViewingAt = DateTime.SpecifyKind(lead.RequestedViewingAt, DateTimeKind.Utc),
+            Message = lead.Message,
+            Status = ViewingStatus(lead.Status, lead.ViewingCompleted, lead.RequestedViewingAt, now),
+            CreatedAt = DateTime.SpecifyKind(lead.CreatedAt, DateTimeKind.Utc)
+        }).ToList();
+    }
+
+    /// <summary>Customer-facing status of a viewing request.</summary>
+    public static string ViewingStatus(CrmLeadStatus status, bool viewingCompleted, DateTime viewingAtUtc, DateTime nowUtc)
+    {
+        if (status == CrmLeadStatus.Won) return "DealDone";
+        if (status == CrmLeadStatus.Lost) return "Cancelled";
+        if (viewingCompleted || status == CrmLeadStatus.Negotiation) return "Visited";
+        if (viewingAtUtc < nowUtc) return "Past";
+        return "Pending";
     }
 
     [AllowAnonymous]
@@ -667,6 +727,28 @@ public class CrmController : ControllerBase
         });
     }
 
+
+    /// <summary>
+    /// Whether a questionnaire short link (velven.ge/{slug}) is live. The site asks before
+    /// rendering the form, so unknown paths get a 404 page instead (VELVEN-012).
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("questionnaire-links/{token}/status")]
+    public async Task<IActionResult> GetQuestionnaireLinkStatus(
+        string token,
+        CancellationToken cancellationToken)
+    {
+        token = NormalizeQuestionnaireToken(token);
+        var now = DateTime.UtcNow;
+        var active = !string.IsNullOrWhiteSpace(token) &&
+            await _context.CrmQuestionnaireLinks.AnyAsync(
+                item =>
+                    (item.Token == token || item.Slug == token) &&
+                    item.IsActive &&
+                    (!item.ExpiresAt.HasValue || item.ExpiresAt.Value > now),
+                cancellationToken);
+        return Ok(new { active });
+    }
 
     // =========================================================
     // PUBLIC QUESTIONNAIRE SUBMISSION
@@ -1589,6 +1671,42 @@ public class CrmController : ControllerBase
 
         _context.CrmLeads.Add(lead);
         await _context.SaveChangesAsync(cancellationToken);
+
+        // Confirmation email for a viewing request; a delivery failure never fails the request.
+        if (requestedViewingAt.HasValue && !string.IsNullOrWhiteSpace(lead.Email) && _email.IsConfigured)
+        {
+            try
+            {
+                var title = dto.ApartmentId.HasValue
+                    ? await _context.Apartments
+                        .Where(apartment => apartment.Id == dto.ApartmentId.Value)
+                        .Select(apartment => apartment.Title)
+                        .FirstOrDefaultAsync(cancellationToken)
+                    : null;
+                var tbilisi = TimeZoneInfo.FindSystemTimeZoneById(
+                    OperatingSystem.IsWindows() ? "Georgian Standard Time" : "Asia/Tbilisi");
+                var local = TimeZoneInfo.ConvertTimeFromUtc(requestedViewingAt.Value, tbilisi);
+                var safeTitle = System.Net.WebUtility.HtmlEncode(title ?? "the property");
+                await _email.SendAsync(
+                    lead.Email,
+                    "Your Velven viewing request",
+                    $"""
+                    <div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:28px 24px;color:#1b1626">
+                      <div style="font-size:20px;font-weight:700;color:#451a8f;margin-bottom:18px">VELVEN</div>
+                      <h1 style="font-size:20px;margin:0 0 10px">We received your viewing request</h1>
+                      <p style="font-size:15px;line-height:1.6;color:#4b4560;margin:0 0 16px">
+                        Property: <b>{safeTitle}</b><br/>Requested time: <b>{local:dd MMM yyyy, HH:mm}</b> (Tbilisi)
+                      </p>
+                      <p style="font-size:14px;line-height:1.6;color:#4b4560;margin:0">An agent will contact you to confirm. You can follow the status under <b>My viewings</b> on velven.ge.</p>
+                    </div>
+                    """,
+                    cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(exception, "Viewing confirmation email failed for lead {LeadId}.", lead.Id);
+            }
+        }
 
         return Accepted(new PublicCrmInquiryResponseDto
         {

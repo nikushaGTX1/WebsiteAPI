@@ -27,8 +27,10 @@ public class CreateApartmentDto
     public string? PhoneNumber { get; set; }
 
     public string? OwnerName { get; set; }
+    [RegularExpression(ContactPhone.Pattern, ErrorMessage = ContactPhone.Message)]
     public string? OwnerPhoneNumber { get; set; }
     public string? AgentName { get; set; }
+    [RegularExpression(ContactPhone.Pattern, ErrorMessage = ContactPhone.Message)]
     public string? AgentPhoneNumber { get; set; }
     public string? ParkingCondition { get; set; }
     public int? ParkingPoints { get; set; }
@@ -128,8 +130,10 @@ public class UpdateApartmentDto
 
     // New images that will be added to the existing gallery.
     public string? OwnerName { get; set; }
+    [RegularExpression(ContactPhone.Pattern, ErrorMessage = ContactPhone.Message)]
     public string? OwnerPhoneNumber { get; set; }
     public string? AgentName { get; set; }
+    [RegularExpression(ContactPhone.Pattern, ErrorMessage = ContactPhone.Message)]
     public string? AgentPhoneNumber { get; set; }
     public string? ParkingCondition { get; set; }
     public int? ParkingPoints { get; set; }
@@ -210,4 +214,11 @@ public class UpdateApartmentDto
     public int? PharmacyDistanceMinutes { get; set; }
     public int? CafeDistanceMinutes { get; set; }
     public int? EvChargerDistanceMinutes { get; set; }
+}
+
+/// <summary>Owner/agent phone format: digits with optional +, spaces, dashes, dots or brackets.</summary>
+public static class ContactPhone
+{
+    public const string Pattern = @"^\+?[0-9][0-9\s().-]{5,23}$";
+    public const string Message = "Enter a valid phone number, e.g. 555 12 34 56.";
 }

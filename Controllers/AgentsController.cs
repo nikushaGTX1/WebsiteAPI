@@ -24,6 +24,10 @@ public class AgentsController : ControllerBase
         _storageService = storageService;
     }
 
+    /// <summary>Profile phone, else the public contact phone on the agent's latest listing.</summary>
+    public static string? ContactPhone(string? profilePhone, string? listingPhone) =>
+        string.IsNullOrWhiteSpace(profilePhone) ? listingPhone?.Trim() : profilePhone.Trim();
+
     [HttpGet]
     public async Task<IActionResult> GetAgents()
     {
@@ -41,7 +45,21 @@ public class AgentsController : ControllerBase
                     .Where(r => r.AgentId == u.Id)
                     .Average(r => (double?)r.Stars) ?? 0,
                 RatingCount = _context.AgentRatings
-                    .Count(r => r.AgentId == u.Id)
+                    .Count(r => r.AgentId == u.Id),
+                ClosedDeals = _context.CrmLeads
+                    .Count(l => l.AssignedAgentId == u.Id && l.Status == CrmLeadStatus.Won),
+                ListingCount = _context.Apartments
+                    .Where(a => a.IsApproved && a.UploadedByUserId == u.Id)
+                    .Where(a => !EF.Functions.ILike(a.Description, "%Source: https://www.myhome.ge/%")
+                        && !EF.Functions.ILike(a.Description, "%Source: https://home.ss.ge/%")).Count(),
+                ListingPhone = _context.Apartments
+                    .Where(a => a.IsApproved && a.UploadedByUserId == u.Id)
+                    .Where(a => !EF.Functions.ILike(a.Description, "%Source: https://www.myhome.ge/%")
+                        && !EF.Functions.ILike(a.Description, "%Source: https://home.ss.ge/%"))
+                    .Where(a => a.PhoneNumber != null && a.PhoneNumber != "")
+                    .OrderByDescending(a => a.Id)
+                    .Select(a => a.PhoneNumber)
+                    .FirstOrDefault()
             })
             .ToListAsync();
 
@@ -58,12 +76,14 @@ public class AgentsController : ControllerBase
                 agent.UserName,
                 agent.FullName,
                 agent.Bio,
-                agent.PhoneNumber,
+                PhoneNumber = ContactPhone(agent.PhoneNumber, agent.ListingPhone),
                 ProfilePicture = profilePicture,
                 ProfilePictureUrl = profilePicture,
                 agent.ProfilePicturePath,
                 agent.AverageRating,
-                agent.RatingCount
+                agent.RatingCount,
+                agent.ClosedDeals,
+                agent.ListingCount
             };
         }));
 
@@ -88,6 +108,20 @@ public class AgentsController : ControllerBase
                     .Average(r => (double?)r.Stars) ?? 0,
                 RatingCount = _context.AgentRatings
                     .Count(r => r.AgentId == u.Id),
+                ClosedDeals = _context.CrmLeads
+                    .Count(l => l.AssignedAgentId == u.Id && l.Status == CrmLeadStatus.Won),
+                ListingCount = _context.Apartments
+                    .Where(a => a.IsApproved && a.UploadedByUserId == u.Id)
+                    .Where(a => !EF.Functions.ILike(a.Description, "%Source: https://www.myhome.ge/%")
+                        && !EF.Functions.ILike(a.Description, "%Source: https://home.ss.ge/%")).Count(),
+                ListingPhone = _context.Apartments
+                    .Where(a => a.IsApproved && a.UploadedByUserId == u.Id)
+                    .Where(a => !EF.Functions.ILike(a.Description, "%Source: https://www.myhome.ge/%")
+                        && !EF.Functions.ILike(a.Description, "%Source: https://home.ss.ge/%"))
+                    .Where(a => a.PhoneNumber != null && a.PhoneNumber != "")
+                    .OrderByDescending(a => a.Id)
+                    .Select(a => a.PhoneNumber)
+                    .FirstOrDefault(),
                 Ratings = _context.AgentRatings
                     .Where(r => r.AgentId == u.Id)
                     .OrderByDescending(r => r.CreatedAt)
@@ -116,12 +150,14 @@ public class AgentsController : ControllerBase
             agent.UserName,
             agent.FullName,
             agent.Bio,
-            agent.PhoneNumber,
+            PhoneNumber = ContactPhone(agent.PhoneNumber, agent.ListingPhone),
             ProfilePicture = profilePicture,
             ProfilePictureUrl = profilePicture,
             agent.ProfilePicturePath,
             agent.AverageRating,
             agent.RatingCount,
+            agent.ClosedDeals,
+            agent.ListingCount,
             agent.Ratings
         });
     }
