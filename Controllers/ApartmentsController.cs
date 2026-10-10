@@ -389,7 +389,10 @@ public class ApartmentsController : ControllerBase
                 GroceryDistanceMinutes = dto.GroceryDistanceMinutes,
                 PharmacyDistanceMinutes = dto.PharmacyDistanceMinutes,
                 CafeDistanceMinutes = dto.CafeDistanceMinutes,
-                EvChargerDistanceMinutes = dto.EvChargerDistanceMinutes
+                EvChargerDistanceMinutes = dto.EvChargerDistanceMinutes,
+                PetStoreDistanceMinutes = dto.PetStoreDistanceMinutes,
+                VeterinaryDistanceMinutes = dto.VeterinaryDistanceMinutes,
+                NearbyPlaceNames = dto.NearbyPlaceNames
             };
 
             _context.Apartments.Add(apartment);
@@ -671,6 +674,12 @@ public class ApartmentsController : ControllerBase
             dto.CafeDistanceMinutes ?? apartment.CafeDistanceMinutes;
         apartment.EvChargerDistanceMinutes =
             dto.EvChargerDistanceMinutes ?? apartment.EvChargerDistanceMinutes;
+        apartment.PetStoreDistanceMinutes =
+            dto.PetStoreDistanceMinutes ?? apartment.PetStoreDistanceMinutes;
+        apartment.VeterinaryDistanceMinutes =
+            dto.VeterinaryDistanceMinutes ?? apartment.VeterinaryDistanceMinutes;
+        apartment.NearbyPlaceNames =
+            dto.NearbyPlaceNames ?? apartment.NearbyPlaceNames;
 
         List<string> newImagePaths = [];
         List<string> removedImagePaths = [];
@@ -876,18 +885,20 @@ public class ApartmentsController : ControllerBase
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        var fields = new (string Type, Func<Apartment, int?> Get, Action<Apartment, int> Set)[]
+        var fields = new (string Type, string Key, Func<Apartment, int?> Get, Action<Apartment, int> Set)[]
         {
-            ("subway_station", a => a.MetroDistanceMinutes, (a, v) => a.MetroDistanceMinutes = v),
-            ("gym", a => a.GymDistanceMinutes, (a, v) => a.GymDistanceMinutes = v),
-            ("park", a => a.ParkDistanceMinutes, (a, v) => a.ParkDistanceMinutes = v),
-            ("school", a => a.SchoolDistanceMinutes, (a, v) => a.SchoolDistanceMinutes = v),
-            ("preschool", a => a.KindergartenDistanceMinutes, (a, v) => a.KindergartenDistanceMinutes = v),
-            ("university", a => a.UniversityDistanceMinutes, (a, v) => a.UniversityDistanceMinutes = v),
-            ("electric_vehicle_charging_station", a => a.EvChargerDistanceMinutes, (a, v) => a.EvChargerDistanceMinutes = v),
-            ("supermarket", a => a.GroceryDistanceMinutes, (a, v) => a.GroceryDistanceMinutes = v),
-            ("pharmacy", a => a.PharmacyDistanceMinutes, (a, v) => a.PharmacyDistanceMinutes = v),
-            ("cafe", a => a.CafeDistanceMinutes, (a, v) => a.CafeDistanceMinutes = v),
+            ("subway_station", "metroDistanceMinutes", a => a.MetroDistanceMinutes, (a, v) => a.MetroDistanceMinutes = v),
+            ("gym", "gymDistanceMinutes", a => a.GymDistanceMinutes, (a, v) => a.GymDistanceMinutes = v),
+            ("park", "parkDistanceMinutes", a => a.ParkDistanceMinutes, (a, v) => a.ParkDistanceMinutes = v),
+            ("school", "schoolDistanceMinutes", a => a.SchoolDistanceMinutes, (a, v) => a.SchoolDistanceMinutes = v),
+            ("preschool", "kindergartenDistanceMinutes", a => a.KindergartenDistanceMinutes, (a, v) => a.KindergartenDistanceMinutes = v),
+            ("university", "universityDistanceMinutes", a => a.UniversityDistanceMinutes, (a, v) => a.UniversityDistanceMinutes = v),
+            ("electric_vehicle_charging_station", "evChargerDistanceMinutes", a => a.EvChargerDistanceMinutes, (a, v) => a.EvChargerDistanceMinutes = v),
+            ("supermarket", "groceryDistanceMinutes", a => a.GroceryDistanceMinutes, (a, v) => a.GroceryDistanceMinutes = v),
+            ("pharmacy", "pharmacyDistanceMinutes", a => a.PharmacyDistanceMinutes, (a, v) => a.PharmacyDistanceMinutes = v),
+            ("cafe", "cafeDistanceMinutes", a => a.CafeDistanceMinutes, (a, v) => a.CafeDistanceMinutes = v),
+            ("pet_store", "petStoreDistanceMinutes", a => a.PetStoreDistanceMinutes, (a, v) => a.PetStoreDistanceMinutes = v),
+            ("veterinary_care", "veterinaryDistanceMinutes", a => a.VeterinaryDistanceMinutes, (a, v) => a.VeterinaryDistanceMinutes = v),
         };
 
         var updated = 0;
@@ -898,19 +909,22 @@ public class ApartmentsController : ControllerBase
             if (latitude is null || longitude is null) continue;
 
             var results = await Task.WhenAll(fields.Select(field =>
-                _nearbyPlacesService.FindWalkingMinutesToTypeAsync(
+                _nearbyPlacesService.FindNearestWalkAsync(
                     latitude.Value, longitude.Value, field.Type, cancellationToken)));
 
+            var names = NearbyPlaceNamesJson.Read(apartment.NearbyPlaceNames);
             var changed = false;
             for (var i = 0; i < fields.Length; i++)
             {
-                var minutes = results[i];
+                var minutes = results[i]?.Minutes;
                 if (minutes is null) continue;
                 var current = fields[i].Get(apartment);
                 if (current is not null && minutes >= current) continue;
                 fields[i].Set(apartment, minutes.Value);
+                if (!string.IsNullOrWhiteSpace(results[i]!.Name)) names[fields[i].Key] = results[i]!.Name!;
                 changed = true;
             }
+            if (changed) apartment.NearbyPlaceNames = NearbyPlaceNamesJson.Write(names);
             if (changed) updated++;
         }
 
@@ -1255,7 +1269,10 @@ public class ApartmentsController : ControllerBase
             apartment.GroceryDistanceMinutes,
             apartment.PharmacyDistanceMinutes,
             apartment.CafeDistanceMinutes,
-            apartment.EvChargerDistanceMinutes
+            apartment.EvChargerDistanceMinutes,
+            apartment.PetStoreDistanceMinutes,
+            apartment.VeterinaryDistanceMinutes,
+            apartment.NearbyPlaceNames
         };
     }
 

@@ -356,6 +356,10 @@ namespace Website_API.Migrations
                     b.Property<string>("MinimumRentalPeriod")
                         .HasColumnType("text");
 
+                    b.Property<string>("NearbyPlaceNames")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
                     b.Property<string>("NoiseLevel")
                         .IsRequired()
                         .HasColumnType("text");
@@ -373,6 +377,9 @@ namespace Website_API.Migrations
                         .HasColumnType("text");
 
                     b.Property<int?>("ParkingPoints")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("PetStoreDistanceMinutes")
                         .HasColumnType("integer");
 
                     b.Property<int?>("PharmacyDistanceMinutes")
@@ -426,6 +433,9 @@ namespace Website_API.Migrations
 
                     b.Property<string>("UploadedByUserId")
                         .HasColumnType("text");
+
+                    b.Property<int?>("VeterinaryDistanceMinutes")
+                        .HasColumnType("integer");
 
                     b.Property<string>("ViewType")
                         .HasColumnType("text");

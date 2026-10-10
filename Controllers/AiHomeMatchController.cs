@@ -60,7 +60,18 @@ public class AiHomeMatchController : ControllerBase
                 !EF.Functions.ILike(apartment.Description, "%Source: https://home.ss.ge/%"))
             .ToListAsync(cancellationToken);
 
+        // Hard filters shared with the website: the budget ceiling (with the rental tolerance)
+        // and listings that explicitly refuse the user's pets.
+        var pets = request.PetTypes.Count > 0
+            ? request.PetTypes
+            : request.HasPet == true && !string.IsNullOrWhiteSpace(request.PetType) && request.PetType != "None"
+                ? [request.PetType]
+                : request.HasPet == true ? ["Other"] : [];
+        var rent = string.Equals(request.PropertyGoal, "Rent", StringComparison.OrdinalIgnoreCase);
         var allMatches = apartments
+            .Where(apartment =>
+                RentalBudgetPolicy.IsWithinCeiling(apartment.Price, request.BudgetMax, request.PropertyGoal))
+            .Where(apartment => !rent || !PetPolicy.IsProhibited(apartment, pets, request.DogSize))
             .Select(apartment => _scorer.Score(apartment, request))
             .OrderByDescending(match => match.MatchScore)
             .ToList();

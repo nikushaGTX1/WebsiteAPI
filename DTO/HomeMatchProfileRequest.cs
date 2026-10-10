@@ -40,6 +40,10 @@ public class HomeMatchProfileRequest
 
     // Nullable: the Buy questionnaire never asks about pets and sends null.
     public bool? HasPet { get; set; }
+    // Every pet the user lives with ("Dog", "Cat", "Other"); a dog also has a size.
+    public List<string> PetTypes { get; set; } = [];
+    public string? PetType { get; set; }
+    public string? DogSize { get; set; }
 
     public List<string> MainPreferences { get; set; } = [];
     public List<string> AdditionalRequirements { get; set; } = [];

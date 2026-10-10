@@ -78,15 +78,18 @@ public class HomeMatchScorer
         }
         else
         {
+            // Rentals over $1,000 may be up to 25% above the maximum (RentalBudgetPolicy);
+            // they score lower than homes inside the budget. Anything else over is a high trade-off.
             var difference = apartment.Price - profile.BudgetMax;
-            var tolerance = profile.BudgetMax * 0.10m;
+            var withinTolerance = apartment.Price <=
+                RentalBudgetPolicy.MaxRecommendedPrice(profile.BudgetMax, profile.PropertyGoal);
 
-            earned = difference <= tolerance ? 10 : 0;
+            earned = withinTolerance ? 10 : 0;
 
             AddTradeOff(
                 result,
                 "Above budget",
-                $"The apartment is {difference:C0} above your maximum budget.",
+                $"The apartment is ${difference:N0}{(string.Equals(profile.PropertyGoal, "Rent", StringComparison.OrdinalIgnoreCase) ? " per month" : "")} above your maximum budget.",
                 earned == 0 ? "High" : "Medium",
                 available - earned
             );

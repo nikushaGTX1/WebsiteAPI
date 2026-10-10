@@ -1,5 +1,6 @@
 ﻿namespace Website_API.Models;
 
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 public class Apartment
@@ -158,6 +159,15 @@ public class Apartment
 
     // Walking minutes to the nearest electric-vehicle charging station.
     public int? EvChargerDistanceMinutes { get; set; }
+
+    // Walking minutes to the nearest pet shop and veterinary clinic.
+    public int? PetStoreDistanceMinutes { get; set; }
+    public int? VeterinaryDistanceMinutes { get; set; }
+
+    // Names of the nearest places as JSON, keyed like the minutes fields
+    // ({"groceryDistanceMinutes":"Carrefour", ...}). Measured once, at upload.
+    [MaxLength(4000)]
+    public string? NearbyPlaceNames { get; set; }
 
     [JsonIgnore]
     public List<FavoriteApartment> FavoritedBy { get; set; } = [];

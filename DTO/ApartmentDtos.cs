@@ -112,6 +112,10 @@ public class CreateApartmentDto
     public int? PharmacyDistanceMinutes { get; set; }
     public int? CafeDistanceMinutes { get; set; }
     public int? EvChargerDistanceMinutes { get; set; }
+    public int? PetStoreDistanceMinutes { get; set; }
+    public int? VeterinaryDistanceMinutes { get; set; }
+    [MaxLength(4000)]
+    public string? NearbyPlaceNames { get; set; }
 }
 
 public class UpdateApartmentDto
@@ -214,6 +218,10 @@ public class UpdateApartmentDto
     public int? PharmacyDistanceMinutes { get; set; }
     public int? CafeDistanceMinutes { get; set; }
     public int? EvChargerDistanceMinutes { get; set; }
+    public int? PetStoreDistanceMinutes { get; set; }
+    public int? VeterinaryDistanceMinutes { get; set; }
+    [MaxLength(4000)]
+    public string? NearbyPlaceNames { get; set; }
 }
 
 /// <summary>Owner/agent phone format: digits with optional +, spaces, dashes, dots or brackets.</summary>

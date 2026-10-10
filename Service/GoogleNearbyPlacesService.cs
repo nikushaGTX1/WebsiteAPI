@@ -265,6 +265,20 @@ public class GoogleNearbyPlacesService
     private async Task<int?> FindWalkingMinutesAsync(
         Coordinates origin,
         string placeType,
+        CancellationToken cancellationToken) =>
+        (await FindNearestWalkAsync(origin, placeType, cancellationToken))?.Minutes;
+
+    /// <summary>Name of and walking minutes to the nearest place of a Google type.</summary>
+    public Task<NearestPlaceWalk?> FindNearestWalkAsync(
+        double latitude,
+        double longitude,
+        string placeType,
+        CancellationToken cancellationToken = default) =>
+        FindNearestWalkAsync(new Coordinates(latitude, longitude), placeType, cancellationToken);
+
+    private async Task<NearestPlaceWalk?> FindNearestWalkAsync(
+        Coordinates origin,
+        string placeType,
         CancellationToken cancellationToken)
     {
         try
@@ -304,7 +318,9 @@ public class GoogleNearbyPlacesService
                 walkingMinutes
             );
 
-            return walkingMinutes;
+            return walkingMinutes is null
+                ? null
+                : new NearestPlaceWalk(place.DisplayName?.Text, walkingMinutes.Value);
         }
         catch (HttpRequestException exception)
         {
