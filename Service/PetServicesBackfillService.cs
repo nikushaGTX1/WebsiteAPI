@@ -79,12 +79,17 @@ public sealed class PetServicesBackfillService : BackgroundService
             .ToListAsync(cancellationToken);
         if (apartments.Count == 0) return -1;
 
+        var measured = 0;
         foreach (var apartment in apartments)
         {
             var latitude = (double)(apartment.PropertyLatitude ?? apartment.Latitude)!;
             var longitude = (double)(apartment.PropertyLongitude ?? apartment.Longitude)!;
             var petStore = await places.FindNearestWalkAsync(latitude, longitude, "pet_store", cancellationToken);
             var vet = await places.FindNearestWalkAsync(latitude, longitude, "veterinary_care", cancellationToken);
+            // Nothing at all usually means Google refused the request (key not allowed for
+            // Places API (New) / Routes API); leave the listing unmarked so it is retried.
+            if (petStore is null && vet is null) continue;
+            measured++;
 
             var names = NearbyPlaceNamesJson.Read(apartment.NearbyPlaceNames);
             if (petStore is not null)
@@ -101,8 +106,16 @@ public sealed class PetServicesBackfillService : BackgroundService
             apartment.NearbyPlaceNames = NearbyPlaceNamesJson.Write(names);
         }
 
+        if (measured == 0)
+        {
+            // A whole batch without a single result: stop instead of retrying the same listings.
+            _logger.LogWarning(
+                "Pet services backfill stopped: Google returned no pet shop or vet for {Count} listing(s). " +
+                "Check that GoogleMaps:ApiKey allows Places API (New) and Routes API.", apartments.Count);
+            return -1;
+        }
         await context.SaveChangesAsync(cancellationToken);
         await scope.ServiceProvider.GetRequiredService<IOutputCacheStore>().EvictByTagAsync("apartments", cancellationToken);
-        return apartments.Count;
+        return measured;
     }
 }
