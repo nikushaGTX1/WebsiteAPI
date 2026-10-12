@@ -80,6 +80,8 @@ builder.Services.Configure<GzipCompressionProviderOptions>(options =>
 });
 
 builder.Services.AddHttpClient<GoogleNearbyPlacesService>();
+// Fills pet shop / vet walking times once for listings uploaded before they were measured.
+builder.Services.AddHostedService<PetServicesBackfillService>();
 builder.Services.AddHttpClient<SupabaseStorageService>();
 builder.Services.AddHttpClient<ResendEmailService>();
 builder.Services.AddHttpClient("OpenStreetMap", client =>
