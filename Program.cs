@@ -17,6 +17,8 @@ using Website_API.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+builder.Services.AddHttpClient<MyHomeVerifier>(client => { client.Timeout = TimeSpan.FromSeconds(20); client.DefaultRequestHeaders.UserAgent.ParseAdd("VelvenListingVerification/1.0"); }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddHostedService<MyHomeWorker>();
 builder.Services.AddMemoryCache();
 builder.Services.AddRateLimiter(options =>
 {

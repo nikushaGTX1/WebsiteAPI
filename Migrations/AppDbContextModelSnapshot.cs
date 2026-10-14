@@ -356,6 +356,16 @@ namespace Website_API.Migrations
                     b.Property<string>("MinimumRentalPeriod")
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("MyHomeCheckedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MyHomeId")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<string>("MyHomeStatus")
+                        .HasColumnType("text");
+
                     b.Property<string>("NearbyPlaceNames")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
@@ -443,6 +453,8 @@ namespace Website_API.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
+
+                    b.HasIndex("MyHomeId");
 
                     b.HasIndex("StreetId");
 
@@ -1126,6 +1138,90 @@ namespace Website_API.Migrations
                     b.ToTable("LocationAreas");
                 });
 
+            modelBuilder.Entity("Website_API.Models.MyHomeCheck", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Address")
+                        .HasColumnType("text");
+
+                    b.Property<int>("ApartmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CheckedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Detail")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("HttpStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("MyHomeId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId", "ApartmentId")
+                        .IsUnique();
+
+                    b.HasIndex("JobId", "Status");
+
+                    b.ToTable("MyHomeChecks");
+                });
+
+            modelBuilder.Entity("Website_API.Models.MyHomeJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("text");
+
+                    b.Property<int>("MissingIds")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RequestedBy")
+                        .HasColumnType("text");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("TotalApartments")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("State")
+                        .IsUnique()
+                        .HasFilter("\"State\" = 'RUNNING'");
+
+                    b.ToTable("MyHomeJobs");
+                });
+
             modelBuilder.Entity("Website_API.Models.OwnerListingLink", b =>
                 {
                     b.Property<long>("Id")
@@ -1518,6 +1614,15 @@ namespace Website_API.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Parent");
+                });
+
+            modelBuilder.Entity("Website_API.Models.MyHomeCheck", b =>
+                {
+                    b.HasOne("Website_API.Models.MyHomeJob", null)
+                        .WithMany()
+                        .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Website_API.Models.Apartment", b =>

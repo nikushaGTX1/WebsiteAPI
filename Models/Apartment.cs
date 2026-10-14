@@ -6,6 +6,9 @@ using System.Text.Json.Serialization;
 public class Apartment
 {
     public int Id { get; set; }
+    public string? MyHomeId { get; set; }
+    public string? MyHomeStatus { get; set; }
+    public DateTime? MyHomeCheckedAt { get; set; }
 
     // Basic informacia
     public string Title { get; set; } = string.Empty;

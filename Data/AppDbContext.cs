@@ -12,6 +12,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     }
 
     public DbSet<AgentRating> AgentRatings => Set<AgentRating>();
+    public DbSet<MyHomeJob> MyHomeJobs => Set<MyHomeJob>();
+    public DbSet<MyHomeCheck> MyHomeChecks => Set<MyHomeCheck>();
     public DbSet<Apartment> Apartments => Set<Apartment>();
     public DbSet<ApartmentImage> ApartmentImages => Set<ApartmentImage>();
     public DbSet<ListingUpload> ListingUploads => Set<ListingUpload>();
@@ -34,6 +36,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+ builder.Entity<Apartment>().Property(a => a.MyHomeId).HasMaxLength(8);
+ builder.Entity<Apartment>().HasIndex(a => a.MyHomeId);
+ builder.Entity<MyHomeJob>().HasIndex(j => j.State).IsUnique().HasFilter("\"State\" = 'RUNNING'");
+ builder.Entity<MyHomeCheck>().HasIndex(c => new { c.JobId, c.ApartmentId }).IsUnique();
+ builder.Entity<MyHomeCheck>().HasIndex(c => new { c.JobId, c.Status });
+ builder.Entity<MyHomeCheck>().HasOne<MyHomeJob>().WithMany().HasForeignKey(c => c.JobId).OnDelete(DeleteBehavior.Cascade);
 
         builder.Entity<OwnerListingLink>(link =>
         {

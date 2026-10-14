@@ -309,6 +309,7 @@ public class ApartmentsController : ControllerBase
             var apartment = new Apartment
             {
                 // Basic information
+                MyHomeId = string.IsNullOrWhiteSpace(dto.MyHomeId) ? null : dto.MyHomeId.Trim(),
                 Title = dto.Title,
                 Description = SanitizeVerifiedTag(dto.Description),
                 Price = dto.Price,
@@ -517,6 +518,11 @@ public class ApartmentsController : ControllerBase
             return BadRequest(new { message = "Property latitude and longitude must be supplied together and be valid." });
         }
 
+        if (Request.Form.ContainsKey("MyHomeId")) {
+ var myHomeId = string.IsNullOrWhiteSpace(dto.MyHomeId) ? null : dto.MyHomeId.Trim();
+ if (apartment.MyHomeId != myHomeId) { apartment.MyHomeStatus = null; apartment.MyHomeCheckedAt = null; }
+ apartment.MyHomeId = myHomeId;
+ }
         apartment.Title =
             dto.Title ?? apartment.Title;
 
@@ -1205,6 +1211,9 @@ public class ApartmentsController : ControllerBase
             apartment.Price,
             apartment.Address,
             apartment.PhoneNumber,
+            apartment.MyHomeId,
+            apartment.MyHomeStatus,
+            apartment.MyHomeCheckedAt,
 
             // Owner contact is private: only the owner, agents, managers and admins receive it.
             OwnerName = canSeeOwnerContact ? apartment.OwnerName : null,

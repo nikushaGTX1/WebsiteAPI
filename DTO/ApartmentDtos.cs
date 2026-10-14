@@ -25,6 +25,8 @@ public class CreateApartmentDto
 
     [Phone]
     public string? PhoneNumber { get; set; }
+    [RegularExpression(@"^\s*[1-9][0-9]{4,7}\s*$", ErrorMessage = "MyHome ID must contain 5 to 8 digits.")]
+    public string? MyHomeId { get; set; }
 
     public string? OwnerName { get; set; }
     [RegularExpression(ContactPhone.Pattern, ErrorMessage = ContactPhone.Message)]
@@ -131,6 +133,8 @@ public class UpdateApartmentDto
 
     [Phone]
     public string? PhoneNumber { get; set; }
+    [RegularExpression(@"^\s*[1-9][0-9]{4,7}\s*$", ErrorMessage = "MyHome ID must contain 5 to 8 digits.")]
+    public string? MyHomeId { get; set; }
 
     // New images that will be added to the existing gallery.
     public string? OwnerName { get; set; }
