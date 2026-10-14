@@ -147,6 +147,36 @@ public class MyHomeJobTests
                 Assert.Null(apartment.MyHomeId); Assert.Null(apartment.MyHomeStatus); Assert.Null(apartment.MyHomeCheckedAt);
                 Assert.Equal("Original copy", apartment.Description); Assert.Equal(987, apartment.Price);
             }
+            client.DefaultRequestHeaders.Remove("X-Test-Role"); client.DefaultRequestHeaders.Add("X-Test-Role", "Manager");
+            var browserStart = await client.PostAsJsonAsync("/api/MyHomeVerification/jobs?mode=browser", new {});
+            var browserJob = (await browserStart.Content.ReadFromJsonAsync<MyHomeJob>())!;
+            Assert.Equal("BROWSER", browserJob.Mode);
+            var browserPath = $"/api/MyHomeVerification/jobs/{browserJob.Id}/browser";
+            using var claim = JsonDocument.Parse(await (await client.PostAsJsonAsync(browserPath + "/claim", new {})).Content.ReadAsStringAsync());
+            var lease = claim.RootElement.GetProperty("leaseToken").GetString()!;
+            var listingId = claim.RootElement.GetProperty("myHomeId").GetString()!;
+            Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync(browserPath + "/claim", new {})).StatusCode);
+            Assert.DoesNotContain(lease, await client.GetStringAsync("/api/MyHomeVerification/latest"));
+            using (var scope = app.Services.CreateScope()) {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var job = (await db.MyHomeJobs.FindAsync(browserJob.Id))!;
+                job.BrowserLeaseExpiresAt = DateTime.UtcNow.AddSeconds(-1); await db.SaveChangesAsync();
+            }
+            var evidence = new BrowserEvidence { LeaseToken = lease, MyHomeId = listingId, Status = "ACTIVE", DetectedId = listingId, Evidence = "HYDRATED_STATEMENT", PageUrl = "https://www.myhome.ge/ka/pr/" + listingId };
+            Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync(browserPath + "/result", evidence)).StatusCode);
+            using var reclaimed = JsonDocument.Parse(await (await client.PostAsJsonAsync(browserPath + "/claim", new {})).Content.ReadAsStringAsync());
+            evidence.LeaseToken = reclaimed.RootElement.GetProperty("leaseToken").GetString();
+            Assert.NotEqual(lease, evidence.LeaseToken);
+            Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(browserPath + "/result", evidence)).StatusCode);
+            using (var scope = app.Services.CreateScope()) {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                Assert.Equal(55, await db.MyHomeChecks.CountAsync(c => c.JobId == browserJob.Id && c.Status == "ACTIVE"));
+                Assert.False(await db.MyHomeChecks.AnyAsync(c => c.JobId == browserJob.Id && c.Status == "REMOVED"));
+            }
+            Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(browserPath + "/pause", new BrowserClaim { LeaseToken = evidence.LeaseToken })).StatusCode);
+            client.DefaultRequestHeaders.Remove("X-Test-Role"); client.DefaultRequestHeaders.Add("X-Test-Role", "Agent");
+            foreach (var endpoint in new[] { "claim", "result", "pause" })
+                Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(browserPath + "/" + endpoint, evidence)).StatusCode);
         }
         finally {
             if (app != null) await app.DisposeAsync();

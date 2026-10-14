@@ -83,48 +83,64 @@ public sealed class SupabaseStorageService
             image.FileName,
             objectPath);
 
-        await using var imageStream = image.OpenReadStream();
-        using var content = new StreamContent(imageStream);
-
-        content.Headers.ContentType =
-            new MediaTypeHeaderValue(image.ContentType);
-
-        using var request =
-            new HttpRequestMessage(HttpMethod.Post, requestUrl);
-
-        ApplyAuthentication(request);
-
-        request.Headers.TryAddWithoutValidation(
-            "x-upsert",
-            "false");
-
-        request.Content = content;
-
-        using var response = await _httpClient.SendAsync(
-            request,
-            cancellationToken);
-
-        var responseText =
-            await response.Content.ReadAsStringAsync(
-                cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            _logger.LogError(
-                "Supabase upload failed. Status: {Status}. Response: {Response}",
-                response.StatusCode,
-                responseText);
-
-            throw new InvalidOperationException(
-                $"Supabase upload failed with status " +
-                $"{(int)response.StatusCode}: {responseText}");
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    // Open a fresh stream and request for every attempt. Reusing a sent
+                    // HttpRequestMessage or consumed stream would corrupt the retry.
+                    await using var imageStream = image.OpenReadStream();
+                    using var request = new HttpRequestMessage(HttpMethod.Post, requestUrl);
+                    ApplyAuthentication(request);
+                    // This UUID path belongs solely to this upload. A retry may replace
+                    // its own object if an earlier attempt stored it but lost the response.
+                    request.Headers.TryAddWithoutValidation("x-upsert", attempt == 0 ? "false" : "true");
+                    request.Content = new StreamContent(imageStream);
+                    request.Content.Headers.ContentType = new MediaTypeHeaderValue(image.ContentType);
+                    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    deadline.CancelAfter(TimeSpan.FromSeconds(10));
+                    using var response = await _httpClient.SendAsync(request, deadline.Token);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        _logger.LogInformation("Supabase upload succeeded. Stored path: {ObjectPath}", objectPath);
+                        return objectPath;
+                    }
+                    var status = (int)response.StatusCode;
+                    var transient = status is 408 or 429 or 500 or 502 or 503 or 504;
+                    _logger.LogWarning("Supabase upload attempt {Attempt} failed with HTTP {Status} for {ObjectPath}", attempt + 1, status, objectPath);
+                    if (!transient || attempt == 2) throw new StorageUploadException(transient, status);
+                    // Honor short rate-limit backoffs; avoid unbounded upload waits.
+                    var retryAfter = response.Headers.RetryAfter?.Delta ??
+                        (response.Headers.RetryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : TimeSpan.Zero);
+                    var delay = TimeSpan.FromMilliseconds(500 * Math.Pow(2, attempt) + Random.Shared.Next(100));
+                    await Task.Delay(retryAfter > delay ? TimeSpan.FromSeconds(Math.Min(5, retryAfter.TotalSeconds)) : delay, cancellationToken);
+                }
+                catch (Exception error) when (error is HttpRequestException || error is OperationCanceledException && !cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning("Supabase upload attempt {Attempt} failed with {FailureType} for {ObjectPath}", attempt + 1, error.GetType().Name, objectPath);
+                    if (attempt == 2) throw new StorageUploadException(true, inner: error);
+                    await Task.Delay(TimeSpan.FromMilliseconds(500 * Math.Pow(2, attempt)), cancellationToken);
+                }
+            }
+            throw new StorageUploadException(true);
         }
-
-        _logger.LogInformation(
-            "Supabase upload succeeded. Stored path: {ObjectPath}",
-            objectPath);
-
-        return objectPath;
+        catch
+        {
+            // The final response may have been lost after the object was stored.
+            // Cleanup is limited to this newly generated path and cannot mask the cause.
+            try
+            {
+                using var cleanupDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await DeleteImageAsync(objectPath, cleanupDeadline.Token);
+            }
+            catch (Exception cleanupError)
+            {
+                _logger.LogWarning(cleanupError, "Could not clean up incomplete upload {ObjectPath}", objectPath);
+            }
+            throw;
+        }
     }
 
     public async Task<string?> CreateSignedUrlAsync(

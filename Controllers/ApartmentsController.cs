@@ -418,14 +418,14 @@ public class ApartmentsController : ControllerBase
                     cancellationToken)
             });
         }
+        catch (StorageUploadException exception)
+        {
+            await CleanupUploadPathsAsync(storedImagePaths);
+            return PhotoUploadFailure(exception);
+        }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            foreach (var storedImagePath in storedImagePaths)
-            {
-                await _storageService.DeleteImageAsync(
-                    storedImagePath,
-                    CancellationToken.None);
-            }
+            await CleanupUploadPathsAsync(storedImagePaths);
 
             _logger.LogError(exception, "Apartment upload failed.");
             return StatusCode(500, new
@@ -782,17 +782,12 @@ public class ApartmentsController : ControllerBase
                     cancellationToken)
             });
         }
-        catch
+        catch (StorageUploadException exception)
         {
-            foreach (var newImagePath in newImagePaths)
-            {
-                await _storageService.DeleteImageAsync(
-                    newImagePath,
-                    CancellationToken.None);
-            }
-
-            throw;
+            await CleanupUploadPathsAsync(newImagePaths);
+            return PhotoUploadFailure(exception);
         }
+        catch { await CleanupUploadPathsAsync(newImagePaths); throw; }
     }
 
     [Authorize(Roles = "Admin")]
@@ -1320,13 +1315,7 @@ public class ApartmentsController : ControllerBase
         }
         catch
         {
-            foreach (var path in paths.Where(
-                         path => !string.IsNullOrWhiteSpace(path)))
-            {
-                await _storageService.DeleteImageAsync(
-                    path,
-                    CancellationToken.None);
-            }
+            await CleanupUploadPathsAsync(paths.Where(path => !string.IsNullOrWhiteSpace(path)).Select(path => path!));
 
             throw;
         }
@@ -1335,5 +1324,25 @@ public class ApartmentsController : ControllerBase
             .Where(path => !string.IsNullOrWhiteSpace(path))
             .Select(path => path!)
             .ToList();
+    }
+    private ObjectResult PhotoUploadFailure(StorageUploadException exception)
+    {
+        _logger.LogError(exception, "Apartment photo upload failed; transient: {Transient}, HTTP {Status}", exception.IsTransient, exception.StatusCode);
+        return StatusCode(exception.IsTransient ? 503 : 502, new {
+            code = exception.IsTransient ? "PHOTO_UPLOAD_UNAVAILABLE" : "PHOTO_UPLOAD_FAILED",
+            message = exception.IsTransient
+                ? "Photo uploads are temporarily unavailable. Your form is unchanged. Please try publishing again shortly."
+                : "Photos could not be uploaded. Please try again or contact support."
+        });
+    }
+    private async Task CleanupUploadPathsAsync(IEnumerable<string> paths)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        foreach (var path in paths)
+        {
+            if (deadline.IsCancellationRequested) break;
+            try { await _storageService.DeleteImageAsync(path, deadline.Token); }
+            catch (Exception exception) { _logger.LogWarning(exception, "Could not clean up uploaded image {ObjectPath}", path); }
+        }
     }
 }

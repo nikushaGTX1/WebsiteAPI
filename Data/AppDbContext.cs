@@ -39,6 +39,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
  builder.Entity<Apartment>().Property(a => a.MyHomeId).HasMaxLength(8);
  builder.Entity<Apartment>().HasIndex(a => a.MyHomeId);
  builder.Entity<MyHomeJob>().HasIndex(j => j.State).IsUnique().HasFilter("\"State\" = 'RUNNING'");
+ builder.Entity<MyHomeJob>().Property(j => j.Mode).HasDefaultValue("SERVER");
  builder.Entity<MyHomeCheck>().HasIndex(c => new { c.JobId, c.ApartmentId }).IsUnique();
  builder.Entity<MyHomeCheck>().HasIndex(c => new { c.JobId, c.Status });
  builder.Entity<MyHomeCheck>().HasOne<MyHomeJob>().WithMany().HasForeignKey(c => c.JobId).OnDelete(DeleteBehavior.Cascade);

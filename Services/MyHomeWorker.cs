@@ -24,7 +24,7 @@ public class MyHomeWorker(IServiceScopeFactory scopes, IConfiguration config, IL
         if (!(bool)(await command.ExecuteScalarAsync(token))!) return;
         try
         {
-            var job = await db.MyHomeJobs.FirstOrDefaultAsync(j => j.State == "RUNNING", token);
+            var job = await db.MyHomeJobs.FirstOrDefaultAsync(j => j.State == "RUNNING" && j.Mode == "SERVER", token);
             if (job == null) return;
             job.Error = null;
             await db.SaveChangesAsync(token);
@@ -63,7 +63,7 @@ public class MyHomeWorker(IServiceScopeFactory scopes, IConfiguration config, IL
         catch (Exception error) when (error is not OperationCanceledException)
         {
             log.LogError(error, "MyHome job interrupted");
-            await db.MyHomeJobs.Where(j => j.State == "RUNNING").ExecuteUpdateAsync(s => s.SetProperty(j => j.Error, "Processing interrupted; retrying automatically."), token);
+            await db.MyHomeJobs.Where(j => j.State == "RUNNING" && j.Mode == "SERVER").ExecuteUpdateAsync(s => s.SetProperty(j => j.Error, "Processing interrupted; retrying automatically."), token);
         }
         finally
         {

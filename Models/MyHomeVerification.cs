@@ -2,6 +2,11 @@ namespace Website_API.Models;
 public class MyHomeJob {
  public Guid Id { get; set; } = Guid.NewGuid();
  public string State { get; set; } = "RUNNING";
+ public string Mode { get; set; } = "SERVER";
+ [System.Text.Json.Serialization.JsonIgnore] public string? BrowserLeaseToken { get; set; }
+ [System.Text.Json.Serialization.JsonIgnore] public string? BrowserUserId { get; set; }
+ [System.Text.Json.Serialization.JsonIgnore] public DateTime? BrowserLeaseExpiresAt { get; set; }
+ [System.Text.Json.Serialization.JsonIgnore] public string? BrowserListingId { get; set; }
  public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
  public DateTime? CompletedAt { get; set; }
  public string? RequestedBy { get; set; }

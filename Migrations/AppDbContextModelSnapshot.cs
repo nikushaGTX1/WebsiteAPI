@@ -1191,6 +1191,18 @@ namespace Website_API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("BrowserLeaseExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("BrowserLeaseToken")
+                        .HasColumnType("text");
+
+                    b.Property<string>("BrowserListingId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("BrowserUserId")
+                        .HasColumnType("text");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1202,6 +1214,12 @@ namespace Website_API.Migrations
 
                     b.Property<int>("MissingIds")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("SERVER");
 
                     b.Property<string>("RequestedBy")
                         .HasColumnType("text");

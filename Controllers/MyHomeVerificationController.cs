@@ -10,13 +10,14 @@ namespace Website_API.Controllers;
 public class MyHomeVerificationController(AppDbContext db, SupabaseStorageService storage) : ControllerBase
 {
     [HttpPost("jobs")]
-    public async Task<IActionResult> Start(CancellationToken token)
+    public async Task<IActionResult> Start(CancellationToken token, string mode = "server")
     {
+        if (mode != "server" && mode != "browser") return BadRequest(new { message = "Unsupported verification mode." });
         await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, token);
         await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(78452119)", token);
         var existing = await db.MyHomeJobs.FirstOrDefaultAsync(j => j.State == "RUNNING", token);
         if (existing != null) return Ok(existing);
-        var job = new MyHomeJob { RequestedBy = User.FindFirstValue(ClaimTypes.NameIdentifier) };
+        var job = new MyHomeJob { RequestedBy = User.FindFirstValue(ClaimTypes.NameIdentifier), Mode = mode.ToUpperInvariant() };
         db.MyHomeJobs.Add(job);
         await db.SaveChangesAsync(token);
         // SQL snapshot includes all apartments, including unpublished records, without loading them into memory.
