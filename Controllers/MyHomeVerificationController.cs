@@ -20,16 +20,16 @@ public class MyHomeVerificationController(AppDbContext db, SupabaseStorageServic
         var job = new MyHomeJob { RequestedBy = User.FindFirstValue(ClaimTypes.NameIdentifier), Mode = mode.ToUpperInvariant() };
         db.MyHomeJobs.Add(job);
         await db.SaveChangesAsync(token);
-        // SQL snapshot includes all apartments, including unpublished records, without loading them into memory.
-        await db.Database.ExecuteSqlInterpolatedAsync($"""
+        // Snapshot every page of the published Velven catalogue, excluding raw imports.
+        await db.Database.ExecuteSqlRawAsync("""
             INSERT INTO "MyHomeChecks" ("JobId", "ApartmentId", "MyHomeId", "Address", "ImageUrl", "Status")
-            SELECT {job.Id}, "Id", COALESCE("MyHomeId", ''), "Address", "ImageUrl",
+            SELECT {0}, "Id", COALESCE("MyHomeId", ''), COALESCE(NULLIF("Address", ''), NULLIF(CONCAT_WS(', ', NULLIF("Street", ''), NULLIF("District", ''), NULLIF("City", '')), ''), "Title"), "ImageUrl",
                 CASE WHEN "MyHomeId" IS NULL OR "MyHomeId" = '' THEN 'NO_MYHOME_ID' ELSE 'PENDING' END
-            FROM "Apartments"
-            """, token);
+            FROM "Apartments" WHERE
+            """ + "\n" + ApartmentCatalogue.PublishedSqlPredicate, new object[] { job.Id }, token);
         job.TotalApartments = await db.MyHomeChecks.CountAsync(c => c.JobId == job.Id, token);
         job.MissingIds = await db.MyHomeChecks.CountAsync(c => c.JobId == job.Id && c.Status == "NO_MYHOME_ID", token);
-        await db.Apartments.Where(a => a.MyHomeId == null || a.MyHomeId == "").ExecuteUpdateAsync(s => s.SetProperty(a => a.MyHomeStatus, "NO_MYHOME_ID"), token);
+        await ApartmentCatalogue.Published(db.Apartments).Where(a => a.MyHomeId == null || a.MyHomeId == "").ExecuteUpdateAsync(s => s.SetProperty(a => a.MyHomeStatus, "NO_MYHOME_ID"), token);
         await db.SaveChangesAsync(token);
         await transaction.CommitAsync(token);
         return Accepted(job);
@@ -39,13 +39,18 @@ public class MyHomeVerificationController(AppDbContext db, SupabaseStorageServic
     {
         var job = await db.MyHomeJobs.AsNoTracking().OrderByDescending(j => j.CreatedAt).FirstOrDefaultAsync(token);
         if (job == null) return Ok(new { job = (object?)null });
-        var counts = await db.MyHomeChecks.Where(c => c.JobId == job.Id).GroupBy(c => c.Status).Select(g => new { status = g.Key, count = g.Count() }).ToListAsync(token);
+        var checks = CatalogueChecks(job.Id);
+        // Old runs keep their original history; the current dashboard only displays
+        // records which are still part of its published catalogue.
+        job.TotalApartments = await checks.CountAsync(token);
+        job.MissingIds = await checks.CountAsync(c => c.Status == "NO_MYHOME_ID", token);
+        var counts = await checks.GroupBy(c => c.Status).Select(g => new { status = g.Key, count = g.Count() }).ToListAsync(token);
         return Ok(new { job, counts });
     }
     [HttpGet("jobs/{id:guid}/results")]
     public async Task<IActionResult> Results(Guid id, string? status, string? search, int page = 1, CancellationToken token = default)
     {
-        var query = db.MyHomeChecks.AsNoTracking().Where(c => c.JobId == id);
+        var query = CatalogueChecks(id);
         if (!string.IsNullOrWhiteSpace(status) && status != "ALL") query = query.Where(c => c.Status == status);
         if (!string.IsNullOrWhiteSpace(search)) {
             var term = search.Trim();
@@ -59,5 +64,10 @@ public class MyHomeVerificationController(AppDbContext db, SupabaseStorageServic
             item.ImageUrl = await storage.CreateSignedUrlAsync(item.ImageUrl, 3600, ct);
         });
         return Ok(new { total, items });
+    }
+    private IQueryable<MyHomeCheck> CatalogueChecks(Guid id)
+    {
+        var apartments = ApartmentCatalogue.Published(db.Apartments);
+        return db.MyHomeChecks.AsNoTracking().Where(c => c.JobId == id && apartments.Any(a => a.Id == c.ApartmentId));
     }
 }

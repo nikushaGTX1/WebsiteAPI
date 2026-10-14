@@ -80,12 +80,7 @@ public class ApartmentsController : ControllerBase
             });
         }
 
-        var query = _context.Apartments
-            .AsNoTracking()
-            .Where(apartment => apartment.IsApproved)
-            .Where(apartment =>
-                !EF.Functions.ILike(apartment.Description, "%Source: https://www.myhome.ge/%") &&
-                !EF.Functions.ILike(apartment.Description, "%Source: https://home.ss.ge/%"));
+        var query = ApartmentCatalogue.Published(_context.Apartments.AsNoTracking());
 
         if (!string.IsNullOrWhiteSpace(city))
         {

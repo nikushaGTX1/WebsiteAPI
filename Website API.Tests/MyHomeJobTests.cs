@@ -58,7 +58,10 @@ public class MyHomeJobTests
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 await db.Database.MigrateAsync();
                 db.Users.Add(new AppUser { Id = "test-user", UserName = "test", Email = "test@example.invalid" });
-                for (var i = 0; i < 120; i++) db.Apartments.Add(new Apartment { Title = "Preserve title", Description = "Preserve description", Address = "Tbilisi " + i, Price = 1234, IsApproved = false, MyHomeId = i < 5 ? null : i < 60 ? "12345678" : i < 90 ? "22222222" : "33333333" });
+                for (var i = 0; i < 120; i++) db.Apartments.Add(new Apartment { Title = "Preserve title", Description = "Preserve description", Address = "Tbilisi " + i, Price = 1234, IsApproved = true, MyHomeId = i < 5 ? null : i < 60 ? "12345678" : i < 90 ? "22222222" : "33333333" });
+                foreach (var description in new[] { "Source: https://www.myhome.ge/ka/pr/99999999", "Source: https://home.ss.ge/real-estate/99999999", "SOURCE: HTTPS://WWW.MYHOME.GE/ka/pr/99999999" })
+                    db.Apartments.Add(new Apartment { Title = "Excluded record", Description = description, IsApproved = true });
+                db.Apartments.Add(new Apartment { Title = "Excluded record", Description = "Awaiting review", IsApproved = false });
                 await db.SaveChangesAsync();
             }
             await app.StartAsync();
@@ -106,14 +109,26 @@ public class MyHomeJobTests
                 Assert.Equal(30, await db.MyHomeChecks.CountAsync(c => c.Status == "UNCERTAIN"));
                 Assert.Equal(5, await db.MyHomeChecks.CountAsync(c => c.Status == "NO_MYHOME_ID"));
                 Assert.Equal(2, calls); Assert.InRange(peak, 1, 2);
-                Assert.All(await db.Apartments.ToListAsync(), a => { Assert.Equal(1234, a.Price); Assert.Equal("Preserve description", a.Description); Assert.False(a.IsApproved); });
+                Assert.All(await db.Apartments.Where(a => a.Title == "Preserve title").ToListAsync(), a => { Assert.Equal(1234, a.Price); Assert.Equal("Preserve description", a.Description); Assert.True(a.IsApproved); });
+                Assert.All(await db.Apartments.Where(a => a.Title == "Excluded record").ToListAsync(), a => Assert.Null(a.MyHomeStatus));
                 Assert.Null((await db.Apartments.FirstAsync(a => a.MyHomeId == "44444444")).MyHomeStatus);
                 Assert.Equal(55, await db.Apartments.CountAsync(a => a.MyHomeStatus == "ACTIVE" && a.MyHomeId == "12345678"));
+                // Simulate an old full-database report. Its history remains stored,
+                // while the current dashboard filters it to the published catalogue.
+                foreach (var hidden in await db.Apartments.Where(a => a.Title == "Excluded record").ToListAsync())
+                    db.MyHomeChecks.Add(new MyHomeCheck { JobId = jobId, ApartmentId = hidden.Id, Status = "NO_MYHOME_ID" });
+                var legacyJob = (await db.MyHomeJobs.FindAsync(jobId))!;
+                legacyJob.TotalApartments = 124; legacyJob.MissingIds = 9;
+                await db.SaveChangesAsync();
             }
+            using var overview = JsonDocument.Parse(await client.GetStringAsync("/api/MyHomeVerification/latest"));
+            Assert.Equal(120, overview.RootElement.GetProperty("job").GetProperty("totalApartments").GetInt32());
+            Assert.Equal(5, overview.RootElement.GetProperty("job").GetProperty("missingIds").GetInt32());
             using var report = JsonDocument.Parse(await client.GetStringAsync($"/api/MyHomeVerification/jobs/{jobId}/results?status=UNCERTAIN"));
             Assert.Equal(30, report.RootElement.GetProperty("total").GetInt32());
             using var all = JsonDocument.Parse(await client.GetStringAsync($"/api/MyHomeVerification/jobs/{jobId}/results?page=2"));
             Assert.Equal(50, all.RootElement.GetProperty("items").GetArrayLength());
+            Assert.Equal(120, all.RootElement.GetProperty("total").GetInt32());
             using var search = JsonDocument.Parse(await client.GetStringAsync($"/api/MyHomeVerification/jobs/{jobId}/results?search=22222222"));
             Assert.Equal(30, search.RootElement.GetProperty("total").GetInt32());
             // Real upload/edit endpoints: optional field, trimming, preservation, clearing,

@@ -27,7 +27,8 @@ public class MyHomeBrowserController(AppDbContext db) : ControllerBase
             job.BrowserLeaseToken = Guid.NewGuid().ToString("N");
             job.BrowserUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         }
-        var next = await db.MyHomeChecks.Where(c => c.JobId == id && c.Status == "PENDING")
+        var published = ApartmentCatalogue.Published(db.Apartments);
+        var next = await db.MyHomeChecks.Where(c => c.JobId == id && c.Status == "PENDING" && published.Any(a => a.Id == c.ApartmentId))
             .OrderBy(c => c.ApartmentId).Select(c => c.MyHomeId).FirstOrDefaultAsync(token);
         if (next == null)
         {
@@ -58,7 +59,8 @@ public class MyHomeBrowserController(AppDbContext db) : ControllerBase
         await db.Apartments.Where(a => ids.Contains(a.Id) && a.MyHomeId == request.MyHomeId)
             .ExecuteUpdateAsync(s => s.SetProperty(a => a.MyHomeStatus, status).SetProperty(a => a.MyHomeCheckedAt, now), token);
         job.BrowserListingId = null;
-        if (!await db.MyHomeChecks.AnyAsync(c => c.JobId == id && c.Status == "PENDING", token))
+        var published = ApartmentCatalogue.Published(db.Apartments);
+        if (!await db.MyHomeChecks.AnyAsync(c => c.JobId == id && c.Status == "PENDING" && published.Any(a => a.Id == c.ApartmentId), token))
         { job.State = "COMPLETED"; job.CompletedAt = now; }
         await db.SaveChangesAsync(token); await transaction.CommitAsync(token);
         return Ok(new { status, done = job.State == "COMPLETED" });

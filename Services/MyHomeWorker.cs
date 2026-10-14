@@ -31,7 +31,8 @@ public class MyHomeWorker(IServiceScopeFactory scopes, IConfiguration config, IL
             var concurrency = Math.Clamp(config.GetValue<int?>("MyHome:Concurrency") ?? 2, 1, 8);
             while (!token.IsCancellationRequested)
             {
-                var ids = await db.MyHomeChecks.AsNoTracking().Where(c => c.JobId == job.Id && c.Status == "PENDING").Select(c => c.MyHomeId).Distinct().Take(concurrency).ToListAsync(token);
+                var published = ApartmentCatalogue.Published(db.Apartments);
+                var ids = await db.MyHomeChecks.AsNoTracking().Where(c => c.JobId == job.Id && c.Status == "PENDING" && published.Any(a => a.Id == c.ApartmentId)).Select(c => c.MyHomeId).Distinct().Take(concurrency).ToListAsync(token);
                 if (ids.Count == 0) break;
                 var rateLimited = 0;
                 await Task.WhenAll(ids.Select(async id =>
