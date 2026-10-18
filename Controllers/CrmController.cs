@@ -573,7 +573,8 @@ public class CrmController : ControllerBase
     /// more commission earned), shown to every CRM user. Counts only leads won this month,
     /// so the board starts from zero on the 1st. agent is null when nobody has won yet.
     /// </summary>
-    [Authorize(Roles = CrmReadRoles)]
+    // Admins, managers and agents (not uploaders): includes another agent's name and earnings.
+    [Authorize(Roles = CrmWriteRoles)]
     [HttpGet("best-agent")]
     public async Task<IActionResult> GetBestAgent(
         [FromServices] Website_API.Services.SupabaseStorageService storage,
