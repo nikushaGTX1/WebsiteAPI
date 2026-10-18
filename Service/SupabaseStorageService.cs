@@ -143,6 +143,13 @@ public sealed class SupabaseStorageService
         }
     }
 
+    /// <summary>
+    /// Lifetime of listing photo URLs. Long and identical everywhere, so the cached signed URL
+    /// stays the same for days and browsers and the CDN can keep the photo instead of
+    /// downloading it again every hour (a new token is a new URL to every cache).
+    /// </summary>
+    public const int ListingPhotoUrlSeconds = 7 * 24 * 3600;
+
     public async Task<string?> CreateSignedUrlAsync(
         string? objectPath,
         int expiresInSeconds = 3600,

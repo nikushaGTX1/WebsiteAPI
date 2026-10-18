@@ -188,7 +188,7 @@ public class ApartmentsController : ControllerBase
                 apartment.ImageUrl =
                     await _storageService.CreateSignedUrlAsync(
                         apartment.ImageUrl,
-                        3600,
+                        SupabaseStorageService.ListingPhotoUrlSeconds,
                         token);
             });
 
@@ -1193,7 +1193,7 @@ public class ApartmentsController : ControllerBase
         var signedImageUrl =
             await _storageService.CreateSignedUrlAsync(
                 coverPath,
-                3600,
+                SupabaseStorageService.ListingPhotoUrlSeconds,
                 cancellationToken);
 
         object[] images = [];
@@ -1208,7 +1208,7 @@ public class ApartmentsController : ControllerBase
                     image.IsCover,
                     Url = await _storageService.CreateSignedUrlAsync(
                         image.StoragePath,
-                        3600,
+                        SupabaseStorageService.ListingPhotoUrlSeconds,
                         cancellationToken)
                 }));
         }

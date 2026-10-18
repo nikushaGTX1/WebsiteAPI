@@ -39,6 +39,7 @@ public class AgentsController : ControllerBase
                 u.UserName,
                 u.FullName,
                 u.Bio,
+                u.SpokenLanguages,
                 u.PhoneNumber,
                 ProfilePicturePath = u.ProfilePicture,
                 // Signed-in ratings plus reviews left through the agent's public review link.
@@ -80,6 +81,7 @@ public class AgentsController : ControllerBase
                 agent.UserName,
                 agent.FullName,
                 agent.Bio,
+                Languages = ParseLanguages(agent.SpokenLanguages),
                 PhoneNumber = ContactPhone(agent.PhoneNumber, agent.ListingPhone),
                 ProfilePicture = profilePicture,
                 ProfilePictureUrl = profilePicture,
@@ -105,6 +107,7 @@ public class AgentsController : ControllerBase
                 u.UserName,
                 u.FullName,
                 u.Bio,
+                u.SpokenLanguages,
                 u.PhoneNumber,
                 ProfilePicturePath = u.ProfilePicture,
                 // Signed-in ratings plus reviews left through the agent's public review link.
@@ -171,6 +174,7 @@ public class AgentsController : ControllerBase
             agent.UserName,
             agent.FullName,
             agent.Bio,
+            Languages = ParseLanguages(agent.SpokenLanguages),
             PhoneNumber = ContactPhone(agent.PhoneNumber, agent.ListingPhone),
             ProfilePicture = profilePicture,
             ProfilePictureUrl = profilePicture,
@@ -236,4 +240,60 @@ public class AgentsController : ControllerBase
 
         return Ok(new { message = "Rating added successfully" });
     }
+
+    /// <summary>Language codes an agent may list (shown as Ge, En, Ru, …).</summary>
+    public static readonly string[] SupportedLanguages =
+        ["ka", "en", "ru", "tr", "hy", "az", "uk", "de", "fr", "es", "it", "ar", "he", "zh", "fa"];
+
+    /// <summary>Agents who never had languages set keep showing Georgian, English and Russian.</summary>
+    private static readonly string[] DefaultLanguages = ["ka", "en", "ru"];
+
+    public static string[] ParseLanguages(string? stored)
+    {
+        if (string.IsNullOrWhiteSpace(stored)) return DefaultLanguages;
+        var codes = stored
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(code => SupportedLanguages.Contains(code))
+            .Distinct()
+            .ToArray();
+        return codes.Length == 0 ? DefaultLanguages : codes;
+    }
+
+    /// <summary>Admins and managers set which languages an agent speaks.</summary>
+    [Authorize(Roles = "Admin,Manager")]
+    [HttpPut("{agentId}/languages")]
+    public async Task<IActionResult> SetLanguages(
+        string agentId,
+        AgentLanguagesDto dto,
+        CancellationToken cancellationToken)
+    {
+        var codes = (dto.Languages ?? [])
+            .Select(code => (code ?? "").Trim().ToLowerInvariant())
+            .Where(code => code.Length > 0)
+            .Distinct()
+            .ToArray();
+        if (codes.Length == 0)
+            return BadRequest(new { message = "Choose at least one language." });
+        var unknown = codes.Where(code => !SupportedLanguages.Contains(code)).ToArray();
+        if (unknown.Length > 0)
+            return BadRequest(new { message = $"Unsupported language: {string.Join(", ", unknown)}." });
+
+        var agent = await _context.Users.FirstOrDefaultAsync(
+            user => user.Id == agentId && user.IsAgent,
+            cancellationToken);
+        if (agent is null)
+            return NotFound(new { message = "Agent not found" });
+
+        // Keep the order of the supported list so profiles read consistently (Ge, En, Ru, …).
+        var ordered = SupportedLanguages.Where(codes.Contains).ToArray();
+        agent.SpokenLanguages = string.Join(",", ordered);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { languages = ordered });
+    }
+}
+
+public class AgentLanguagesDto
+{
+    public List<string?>? Languages { get; set; }
 }

@@ -51,7 +51,7 @@ public class FavoritesController : ControllerBase
             favorite.Apartment.ImageUrl =
                 await _storageService.CreateSignedUrlAsync(
                     favorite.Apartment.ImageUrl,
-                    3600,
+                    SupabaseStorageService.ListingPhotoUrlSeconds,
                     cancellationToken);
 
             response.Add(new
