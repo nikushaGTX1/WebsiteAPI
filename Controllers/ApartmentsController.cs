@@ -293,6 +293,26 @@ public class ApartmentsController : ControllerBase
                 return BadRequest(new { message = "This owner submission is not available for publishing." });
         }
 
+        // Street and exact point are optional, but when the form sends them they must be kept:
+        // nearby walking times, the detail map and area search all read them.
+        CanonicalStreet? canonicalStreet = null;
+        if (dto.StreetId.HasValue)
+        {
+            canonicalStreet = await _context.CanonicalStreets
+                .AsNoTracking()
+                .FirstOrDefaultAsync(street =>
+                    street.Id == dto.StreetId.Value &&
+                    (street.GeometryStatus == "approved" ||
+                        street.Source == OfficialStreetCatalog.Source),
+                    cancellationToken);
+        }
+        if (dto.PropertyLatitude.HasValue != dto.PropertyLongitude.HasValue ||
+            dto.PropertyLatitude is < -90 or > 90 ||
+            dto.PropertyLongitude is < -180 or > 180)
+        {
+            return BadRequest(new { message = "Property latitude and longitude must be supplied together and be valid." });
+        }
+
         List<string> storedImagePaths = [];
 
         try
@@ -308,7 +328,7 @@ public class ApartmentsController : ControllerBase
                 Title = dto.Title,
                 Description = SanitizeVerifiedTag(dto.Description),
                 Price = dto.Price,
-                Address = null,
+                Address = string.IsNullOrWhiteSpace(dto.Address) ? null : dto.Address.Trim(),
                 PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber)
                     ? null
                     : dto.PhoneNumber.Trim(),
@@ -329,13 +349,13 @@ public class ApartmentsController : ControllerBase
                 City = dto.City.Trim(),
                 Region = dto.Region.Trim(),
                 District = dto.District.Trim(),
-                Street = string.Empty,
-                StreetId = null,
-                BuildingNumber = null,
-                Latitude = null,
-                Longitude = null,
-                PropertyLatitude = null,
-                PropertyLongitude = null,
+                Street = canonicalStreet?.NameEn ?? dto.Street?.Trim() ?? string.Empty,
+                StreetId = canonicalStreet?.Id,
+                BuildingNumber = string.IsNullOrWhiteSpace(dto.BuildingNumber) ? null : dto.BuildingNumber.Trim(),
+                Latitude = dto.Latitude ?? dto.PropertyLatitude,
+                Longitude = dto.Longitude ?? dto.PropertyLongitude,
+                PropertyLatitude = dto.PropertyLatitude,
+                PropertyLongitude = dto.PropertyLongitude,
 
                 // Apartment details
                 Rooms = dto.Rooms,
