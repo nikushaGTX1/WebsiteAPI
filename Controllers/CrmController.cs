@@ -568,6 +568,56 @@ public class CrmController : ControllerBase
         return Ok(ToLeadDetail(lead));
     }
 
+    /// <summary>
+    /// This calendar month's best agent across the whole company (most won leads, ties to
+    /// more commission earned), shown to every CRM user. Counts only leads won this month,
+    /// so the board starts from zero on the 1st. agent is null when nobody has won yet.
+    /// </summary>
+    [Authorize(Roles = CrmReadRoles)]
+    [HttpGet("best-agent")]
+    public async Task<IActionResult> GetBestAgent(
+        [FromServices] Website_API.Services.SupabaseStorageService storage,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var top = await _context.CrmLeads
+            .AsNoTracking()
+            .Where(lead => lead.Status == CrmLeadStatus.Won &&
+                lead.AssignedAgentId != null &&
+                lead.ClosedAt >= monthStart)
+            .GroupBy(lead => lead.AssignedAgentId!)
+            .Select(group => new
+            {
+                AgentId = group.Key,
+                Won = group.Count(),
+                Earned = group.Sum(lead => lead.DealAmountUsd ?? 0)
+            })
+            .OrderByDescending(row => row.Won)
+            .ThenByDescending(row => row.Earned)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (top is null)
+            return Ok(new { period = monthStart, agent = (object?)null });
+
+        var agent = await _context.Users.AsNoTracking()
+            .Where(user => user.Id == top.AgentId)
+            .Select(user => new { user.Id, user.FullName, user.UserName, user.ProfilePicture })
+            .FirstOrDefaultAsync(cancellationToken);
+        var photo = await storage.CreateSignedUrlAsync(agent?.ProfilePicture, 604800, cancellationToken);
+        return Ok(new
+        {
+            period = monthStart,
+            agent = new
+            {
+                id = top.AgentId,
+                name = agent?.FullName ?? agent?.UserName ?? "Agent",
+                photo,
+                won = top.Won,
+                earned = Math.Round(top.Earned)
+            }
+        });
+    }
+
     [Authorize(Roles = CrmReadRoles)]
     [HttpGet("metrics")]
     public async Task<ActionResult<CrmMetricsDto>> GetMetrics(

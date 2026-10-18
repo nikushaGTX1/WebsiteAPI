@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Website_API.Controllers;
@@ -36,6 +37,7 @@ public class DealAmountFlowTests
         {
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
+            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Supabase:Url"] = "https://example.invalid", ["Supabase:SecretKey"] = "test", ["Supabase:Bucket"] = "apartments" });
             builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(cs.ConnectionString));
             builder.Services.AddIdentityCore<AppUser>().AddRoles<IdentityRole>().AddEntityFrameworkStores<AppDbContext>();
             builder.Services.AddControllers().AddApplicationPart(typeof(CrmController).Assembly);
@@ -88,6 +90,15 @@ public class DealAmountFlowTests
             var item = list.EnumerateArray().First(x => x.GetProperty("id").GetInt32() == rentLeadId);
             Assert.Equal(1450.56m, item.GetProperty("dealAmountUsd").GetDecimal());
             Assert.NotEqual(JsonValueKind.Null, item.GetProperty("closedAt").ValueKind);
+
+            // Every CRM user, agents included, sees this month's company-wide best agent.
+            client.DefaultRequestHeaders.Remove("X-Test-Role");
+            client.DefaultRequestHeaders.Add("X-Test-Role", "Agent");
+            var best = await client.GetFromJsonAsync<JsonElement>("/api/Crm/best-agent");
+            var bestAgent = best.GetProperty("agent");
+            Assert.Equal("test-user", bestAgent.GetProperty("id").GetString());
+            Assert.Equal(2, bestAgent.GetProperty("won").GetInt32());
+            Assert.Equal(1451m, bestAgent.GetProperty("earned").GetDecimal());
         }
         finally
         {
