@@ -892,6 +892,9 @@ namespace Website_API.Migrations
                     b.Property<string>("CustomerUserId")
                         .HasColumnType("text");
 
+                    b.Property<decimal?>("DealAmountUsd")
+                        .HasColumnType("numeric");
+
                     b.Property<string>("Email")
                         .HasMaxLength(254)
                         .HasColumnType("character varying(254)");

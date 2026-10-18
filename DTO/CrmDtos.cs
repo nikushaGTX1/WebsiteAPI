@@ -99,6 +99,13 @@ public class UpdateCrmLeadDto
     public int? ApartmentId { get; set; }
 }
 
+public class UpdateCrmLeadDealAmountDto
+{
+    /// <summary>Commission earned in USD; null clears it.</summary>
+    [Range(0, 10_000_000)]
+    public decimal? AmountUsd { get; set; }
+}
+
 public class UpdateCrmLeadStatusDto
 {
     [Required]
@@ -257,6 +264,8 @@ public class CrmLeadListItemDto
     public DateTime? LastActivityAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public DateTime? ClosedAt { get; set; }
+    public decimal? DealAmountUsd { get; set; }
 }
 
 public class CrmLeadDetailDto
@@ -292,6 +301,7 @@ public class CrmLeadDetailDto
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public DateTime? ClosedAt { get; set; }
+    public decimal? DealAmountUsd { get; set; }
     public List<CrmActivityResponseDto> Activities { get; set; } = [];
     public List<CrmTaskResponseDto> Tasks { get; set; } = [];
 }

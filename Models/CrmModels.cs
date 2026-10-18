@@ -222,6 +222,12 @@ public class CrmLead
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ClosedAt { get; set; }
 
+    /// <summary>
+    /// Commission Velven earned on a won lead, in USD. Estimated from the linked listing when
+    /// the lead is won (rent: one month, sale: 3%) and editable by the agent or a manager.
+    /// </summary>
+    public decimal? DealAmountUsd { get; set; }
+
     public List<CrmActivity> Activities { get; set; } = [];
     public List<CrmTask> Tasks { get; set; } = [];
 }

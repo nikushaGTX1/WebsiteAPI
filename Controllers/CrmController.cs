@@ -493,13 +493,17 @@ public class CrmController : ControllerBase
                     .Select(activity => (DateTime?)activity.CreatedAt)
                     .FirstOrDefault(),
                 lead.CreatedAt,
-                lead.UpdatedAt
+                lead.UpdatedAt,
+                lead.ClosedAt,
+                lead.DealAmountUsd
             })
             .ToListAsync(cancellationToken);
 
         var response = rows.Select(row => new CrmLeadListItemDto
         {
             Id = row.Id,
+            ClosedAt = row.ClosedAt,
+            DealAmountUsd = row.DealAmountUsd,
             FullName = row.Name,
             Email = row.Email,
             PhoneNumber = row.Phone,
@@ -1241,6 +1245,11 @@ public class CrmController : ControllerBase
             lead.ClosedAt = status is CrmLeadStatus.Won or CrmLeadStatus.Lost
                 ? now
                 : null;
+            // A newly won lead gets an estimated commission the agent can correct.
+            if (status == CrmLeadStatus.Won && lead.DealAmountUsd is null)
+                lead.DealAmountUsd = EstimateCommissionUsd(lead.Apartment ?? (lead.ApartmentId is int apartmentId
+                    ? await _context.Apartments.AsNoTracking().FirstOrDefaultAsync(item => item.Id == apartmentId, cancellationToken)
+                    : null));
             lead.Activities.Add(new CrmActivity
             {
                 Type = CrmActivityType.Status,
@@ -1256,6 +1265,53 @@ public class CrmController : ControllerBase
 
         var updated = await LoadLeadDetailsAsync(id, userId, cancellationToken);
         return Ok(ToLeadDetail(updated!));
+    }
+
+    /// <summary>Agent (on their own lead) or manager sets the commission earned on a won lead.</summary>
+    [Authorize(Roles = CrmWriteRoles)]
+    [HttpPatch("leads/{id:int}/deal-amount")]
+    public async Task<ActionResult<CrmLeadDetailDto>> UpdateDealAmount(
+        int id,
+        [FromBody] UpdateCrmLeadDealAmountDto dto,
+        CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        var lead = await AccessibleLeads(userId)
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (lead is null)
+            return NotFound(new { message = "Lead not found." });
+        if (lead.Status != CrmLeadStatus.Won)
+            return BadRequest(new { message = "Only won leads have a deal amount." });
+
+        lead.DealAmountUsd = dto.AmountUsd is null ? null : Math.Round(dto.AmountUsd.Value, 2);
+        lead.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var updated = await LoadLeadDetailsAsync(id, userId, cancellationToken);
+        return Ok(ToLeadDetail(updated!));
+    }
+
+    /// <summary>Sale commission share used for the automatic estimate.</summary>
+    public const decimal SaleCommissionRate = 0.03m;
+
+    /// <summary>
+    /// Estimated commission from the linked listing: rentals earn one month of rent, sales 3%
+    /// of the price. Only for USD-priced listings; otherwise null (the agent enters it).
+    /// </summary>
+    public static decimal? EstimateCommissionUsd(Apartment? apartment)
+    {
+        if (apartment is null || apartment.Price <= 0) return null;
+        var description = apartment.Description ?? string.Empty;
+        var currency = System.Text.RegularExpressions.Regex.Match(description, @"Currency:\s*([^|\n]+)").Groups[1].Value.Trim();
+        if (currency.Length > 0 && currency != "$" && !currency.Equals("USD", StringComparison.OrdinalIgnoreCase))
+            return null;
+        var forSale = System.Text.RegularExpressions.Regex.IsMatch(description, @"Deal:\s*For Sale", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            || (apartment.Title ?? string.Empty).Contains("იყიდება");
+        var price = (decimal)apartment.Price;
+        return Math.Round(forSale ? price * SaleCommissionRate : price, 2);
     }
 
     [Authorize(Roles = CrmManagerRoles)]
@@ -1887,6 +1943,7 @@ public class CrmController : ControllerBase
             CreatedAt = lead.CreatedAt,
             UpdatedAt = lead.UpdatedAt,
             ClosedAt = lead.ClosedAt,
+            DealAmountUsd = lead.DealAmountUsd,
             Activities = lead.Activities
                 .OrderByDescending(activity => activity.CreatedAt)
                 .Select(activity => ToActivityDto(
