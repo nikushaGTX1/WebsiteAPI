@@ -41,10 +41,14 @@ public class AgentsController : ControllerBase
                 u.Bio,
                 u.PhoneNumber,
                 ProfilePicturePath = u.ProfilePicture,
-                AverageRating = _context.AgentRatings
+                // Signed-in ratings plus reviews left through the agent's public review link.
+                RatingSum = (_context.AgentRatings
                     .Where(r => r.AgentId == u.Id)
-                    .Average(r => (double?)r.Stars) ?? 0,
+                    .Sum(r => (int?)r.Stars) ?? 0) + (_context.AgentReviews
+                    .Where(r => r.AgentId == u.Id)
+                    .Sum(r => (int?)r.Rating) ?? 0),
                 RatingCount = _context.AgentRatings
+                    .Count(r => r.AgentId == u.Id) + _context.AgentReviews
                     .Count(r => r.AgentId == u.Id),
                 ClosedDeals = _context.CrmLeads
                     .Count(l => l.AssignedAgentId == u.Id && l.Status == CrmLeadStatus.Won),
@@ -80,7 +84,7 @@ public class AgentsController : ControllerBase
                 ProfilePicture = profilePicture,
                 ProfilePictureUrl = profilePicture,
                 agent.ProfilePicturePath,
-                agent.AverageRating,
+                AverageRating = agent.RatingCount == 0 ? 0 : agent.RatingSum / (double)agent.RatingCount,
                 agent.RatingCount,
                 agent.ClosedDeals,
                 agent.ListingCount
@@ -103,10 +107,14 @@ public class AgentsController : ControllerBase
                 u.Bio,
                 u.PhoneNumber,
                 ProfilePicturePath = u.ProfilePicture,
-                AverageRating = _context.AgentRatings
+                // Signed-in ratings plus reviews left through the agent's public review link.
+                RatingSum = (_context.AgentRatings
                     .Where(r => r.AgentId == u.Id)
-                    .Average(r => (double?)r.Stars) ?? 0,
+                    .Sum(r => (int?)r.Stars) ?? 0) + (_context.AgentReviews
+                    .Where(r => r.AgentId == u.Id)
+                    .Sum(r => (int?)r.Rating) ?? 0),
                 RatingCount = _context.AgentRatings
+                    .Count(r => r.AgentId == u.Id) + _context.AgentReviews
                     .Count(r => r.AgentId == u.Id),
                 ClosedDeals = _context.CrmLeads
                     .Count(l => l.AssignedAgentId == u.Id && l.Status == CrmLeadStatus.Won),
@@ -132,6 +140,19 @@ public class AgentsController : ControllerBase
                         r.Comment,
                         r.CreatedAt
                     })
+                    .ToList(),
+                LinkReviews = _context.AgentReviews
+                    .Where(r => r.AgentId == u.Id)
+                    .OrderByDescending(r => r.CreatedAt)
+                    .Take(50)
+                    .Select(r => new
+                    {
+                        r.Id,
+                        r.Rating,
+                        r.Comment,
+                        r.CustomerName,
+                        r.CreatedAt
+                    })
                     .ToList()
             })
             .FirstOrDefaultAsync();
@@ -154,13 +175,35 @@ public class AgentsController : ControllerBase
             ProfilePicture = profilePicture,
             ProfilePictureUrl = profilePicture,
             agent.ProfilePicturePath,
-            agent.AverageRating,
+            AverageRating = agent.RatingCount == 0 ? 0 : agent.RatingSum / (double)agent.RatingCount,
             agent.RatingCount,
             agent.ClosedDeals,
             agent.ListingCount,
-            agent.Ratings
+            // Public list: only the reviewer's first name is shown, never contact details.
+            Ratings = agent.Ratings
+                .Select(r => new
+                {
+                    Id = r.Id.ToString(),
+                    r.Stars,
+                    r.Comment,
+                    r.CreatedAt,
+                    ReviewerName = (string?)null
+                })
+                .Concat(agent.LinkReviews.Select(r => new
+                {
+                    Id = r.Id.ToString(),
+                    Stars = r.Rating,
+                    r.Comment,
+                    r.CreatedAt,
+                    ReviewerName = FirstName(r.CustomerName)
+                }))
+                .OrderByDescending(r => r.CreatedAt)
+                .ToList()
         });
     }
+
+    private static string? FirstName(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? null : name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
 
     [Authorize]
     [HttpPost("{agentId}/ratings")]

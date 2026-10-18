@@ -12,6 +12,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     }
 
     public DbSet<AgentRating> AgentRatings => Set<AgentRating>();
+    public DbSet<AgentReview> AgentReviews => Set<AgentReview>();
     public DbSet<MyHomeJob> MyHomeJobs => Set<MyHomeJob>();
     public DbSet<MyHomeCheck> MyHomeChecks => Set<MyHomeCheck>();
     public DbSet<Apartment> Apartments => Set<Apartment>();
@@ -146,6 +147,27 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<AgentRating>()
             .HasIndex(rating => new { rating.AgentId, rating.CreatedAt });
+
+        builder.Entity<AppUser>()
+            .HasIndex(user => user.ReviewSlug)
+            .IsUnique();
+
+        builder.Entity<AgentReview>(review =>
+        {
+            review.HasKey(item => item.Id);
+            review.Property(item => item.CustomerName).HasMaxLength(60);
+            review.Property(item => item.Comment).HasMaxLength(1000);
+            review.Property(item => item.IpHash).HasMaxLength(64);
+            review.ToTable(table => table.HasCheckConstraint(
+                "CK_AgentReviews_Rating", "\"Rating\" >= 1 AND \"Rating\" <= 5"));
+            review.HasOne(item => item.Agent)
+                .WithMany()
+                .HasForeignKey(item => item.AgentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            review.HasIndex(item => new { item.AgentId, item.CreatedAt });
+            review.HasIndex(item => new { item.AgentId, item.SubmissionId }).IsUnique();
+            review.HasIndex(item => new { item.IpHash, item.CreatedAt });
+        });
 
         builder.Entity<FavoriteApartment>(favorite =>
         {

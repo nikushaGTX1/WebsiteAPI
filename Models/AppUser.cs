@@ -12,5 +12,8 @@ public class AppUser : IdentityUser
 
     public string? Bio { get; set; }
 
+    /// <summary>Permanent public review link slug (velven.ge/review/{slug}); set once, never changed.</summary>
+    public string? ReviewSlug { get; set; }
+
     public List<FavoriteApartment> FavoriteApartments { get; set; } = [];
 }

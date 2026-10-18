@@ -46,6 +46,17 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(10)
             });
     });
+    // Public review links (no sign-in): a few submissions per client IP per 10 minutes.
+    options.AddPolicy("PublicReviews", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: Website_API.Controllers.ReviewsController.ClientIp(context),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 5,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(10)
+            }));
 });
 builder.Services.AddOutputCache(options =>
 {

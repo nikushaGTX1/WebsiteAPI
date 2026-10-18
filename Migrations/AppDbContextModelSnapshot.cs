@@ -233,6 +233,52 @@ namespace Website_API.Migrations
                     b.ToTable("AgentRatings");
                 });
 
+            modelBuilder.Entity("Website_API.Models.AgentReview", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AgentId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CustomerName")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("IpHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("Rating")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SubmissionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId", "CreatedAt");
+
+                    b.HasIndex("AgentId", "SubmissionId")
+                        .IsUnique();
+
+                    b.HasIndex("IpHash", "CreatedAt");
+
+                    b.ToTable("AgentReviews", t =>
+                        {
+                            t.HasCheckConstraint("CK_AgentReviews_Rating", "\"Rating\" >= 1 AND \"Rating\" <= 5");
+                        });
+                });
+
             modelBuilder.Entity("Website_API.Models.Apartment", b =>
                 {
                     b.Property<int>("Id")
@@ -550,6 +596,9 @@ namespace Website_API.Migrations
                     b.Property<string>("ProfilePicture")
                         .HasColumnType("text");
 
+                    b.Property<string>("ReviewSlug")
+                        .HasColumnType("text");
+
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("text");
 
@@ -568,6 +617,9 @@ namespace Website_API.Migrations
                     b.HasIndex("NormalizedUserName")
                         .IsUnique()
                         .HasDatabaseName("UserNameIndex");
+
+                    b.HasIndex("ReviewSlug")
+                        .IsUnique();
 
                     b.ToTable("AspNetUsers", (string)null);
                 });
@@ -1465,6 +1517,17 @@ namespace Website_API.Migrations
                     b.Navigation("Agent");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Website_API.Models.AgentReview", b =>
+                {
+                    b.HasOne("Website_API.Models.AppUser", "Agent")
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Agent");
                 });
 
             modelBuilder.Entity("Website_API.Models.Apartment", b =>
