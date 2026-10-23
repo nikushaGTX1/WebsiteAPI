@@ -164,6 +164,10 @@ public class HomeMatchRequirementsTests
         Assert.Equal(RequirementStatus.Confirm, Evaluate(Listing(a => a.MinimumRentalPeriod = "Minimum 6 months"), unsure));
 
         Assert.Equal(RequirementStatus.Alternative, Evaluate(Listing(a => a.AvailableFrom = Today.AddDays(20)), Profile()));
+        // "Immediately" accepts a home that is free within the next week (listing 657: free tomorrow).
+        Assert.Equal(RequirementStatus.Exact, Evaluate(Listing(a => a.AvailableFrom = Today.AddDays(1)), Profile()));
+        Assert.Equal(RequirementStatus.Exact, Evaluate(Listing(a => a.AvailableFrom = Today.AddDays(7)), Profile()));
+        Assert.Equal(RequirementStatus.Alternative, Evaluate(Listing(a => a.AvailableFrom = Today.AddDays(8)), Profile()));
         var withinMonth = Profile(p => p.MoveInTiming = "WithinOneMonth");
         Assert.Equal(RequirementStatus.Exact, Evaluate(Listing(a => a.AvailableFrom = Today.AddDays(20)), withinMonth));
     }

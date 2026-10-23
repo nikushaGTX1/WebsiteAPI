@@ -61,7 +61,7 @@ public class RequireClientRoleAttribute : Attribute, IAsyncAuthorizationFilter
             db.Roles.Any(role => role.Id == userRole.RoleId && role.NormalizedName == "CLIENT"));
         var isStaff = await db.UserRoles.AnyAsync(ur => ur.UserId == userId && db.Roles.Any(r =>
             r.Id == ur.RoleId && (r.NormalizedName == "ADMIN" || r.NormalizedName == "MANAGER" ||
-            r.NormalizedName == "AGENT" || r.NormalizedName == "UPLOADER" || r.NormalizedName == "CRM-MANAGER" || r.NormalizedName == "CRM_MANAGER")));
+            r.NormalizedName == "AGENT" || r.NormalizedName == "UPLOADER" || r.NormalizedName == "CRM-MANAGER" || r.NormalizedName == "CRM_MANAGER" || r.NormalizedName == "OWNER")));
         if (!isClient || isStaff)
             context.Result = new ObjectResult(new { message = "Velven Discover is available for client accounts." })
             {

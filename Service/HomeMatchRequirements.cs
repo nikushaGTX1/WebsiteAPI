@@ -300,9 +300,12 @@ public static class HomeMatchRequirements
         return requested >= minimum ? Check.Pass : Check.Fail;
     }
 
+    public const int ImmediateMoveInGraceDays = 7;
+
     private static DateTime? RequestedMoveInDate(SavedSearchProfile profile, DateTime today) => profile.MoveInTiming switch
     {
-        "Immediately" => today.Date,
+        // "Immediately" still fits a home that is free within the next week (website: IMMEDIATE_MOVE_IN_GRACE_DAYS).
+        "Immediately" => today.Date.AddDays(ImmediateMoveInGraceDays),
         "WithinOneWeek" => today.Date.AddDays(7),
         "WithinOneMonth" => today.Date.AddDays(30),
         "SpecificDate" => DateTime.TryParse(profile.MoveInDate, CultureInfo.InvariantCulture,

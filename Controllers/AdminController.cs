@@ -303,7 +303,7 @@ public class AdminController : ControllerBase
         }
 
         var remainingRoles = await _userManager.GetRolesAsync(user);
-        if (!remainingRoles.Any(r => r is "Admin" or "Manager" or "Agent" or "Uploader") && !remainingRoles.Contains("Client"))
+        if (!remainingRoles.Any(r => r is "Admin" or "Manager" or "Agent" or "Uploader" or "Owner") && !remainingRoles.Contains("Client"))
             await _userManager.AddToRoleAsync(user, "Client");
         return Ok(new { message = "User is no longer an agent" });
     }

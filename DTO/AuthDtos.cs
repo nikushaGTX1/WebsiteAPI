@@ -11,6 +11,8 @@ public class SetCrmRoleDto
 
 public class RegisterDto
 {
+    [Required, RegularExpression("^(Client|Owner)$")]
+    public string AccountType { get; set; } = "Client";
     /// <summary>Optional: client sign-up leaves it empty and the email address is used.</summary>
     public string? UserName { get; set; }
     public string Email { get; set; } = "";

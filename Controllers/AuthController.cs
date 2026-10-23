@@ -44,6 +44,8 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterDto dto)
     {
+        if (dto.AccountType is not ("Client" or "Owner"))
+            return BadRequest(new { message = "Choose a client or property owner account." });
         var existingEmail = await _userManager.FindByEmailAsync(dto.Email);
 
         if (existingEmail != null)
@@ -68,8 +70,13 @@ public class AuthController : ControllerBase
             return BadRequest(result.Errors);
 
         await _userManager.AddToRoleAsync(user, "User");
-        // Everyone who signs up on the website is a client; staff roles are given by admins.
-        await _userManager.AddToRoleAsync(user, "Client");
+        // Public registration grants only the selected nonstaff account role.
+        var accountRole = await _userManager.AddToRoleAsync(user, dto.AccountType);
+        if (!accountRole.Succeeded)
+        {
+            await _userManager.DeleteAsync(user);
+            return StatusCode(500, new { message = "Could not create your account. Please try again." });
+        }
         await _userManager.AddClaimAsync(user, new Claim(VerificationRequiredClaim, "true"));
         var sent = await SendCodeAsync(user, VerifyPurpose, HttpContext.RequestAborted);
 

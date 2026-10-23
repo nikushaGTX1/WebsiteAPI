@@ -351,7 +351,8 @@ using (var scope = app.Services.CreateScope())
             "Agent",
             "Uploader",
             "User",
-            "Client"
+            "Client",
+            "Owner"
         ];
 
         foreach (var role in roles)
@@ -387,7 +388,7 @@ using (var scope = app.Services.CreateScope())
                 SELECT 1 FROM "AspNetUserRoles" ur
                 JOIN "AspNetRoles" sr ON sr."Id" = ur."RoleId"
                 WHERE ur."UserId" = u."Id"
-                  AND sr."NormalizedName" IN ('ADMIN', 'MANAGER', 'AGENT', 'UPLOADER', 'CLIENT'))
+                  AND sr."NormalizedName" IN ('ADMIN', 'MANAGER', 'AGENT', 'UPLOADER', 'CLIENT', 'OWNER'))
             """);
         if (newClients > 0)
             app.Logger.LogInformation("Gave the Client role to {Count} existing account(s).", newClients);

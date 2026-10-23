@@ -60,7 +60,7 @@ public class SavedSearchMatcher
             .Where(search => _context.UserRoles.Any(ur => ur.UserId == search.UserId &&
                 _context.Roles.Any(r => r.Id == ur.RoleId && r.NormalizedName == "CLIENT")) &&
                 !_context.UserRoles.Any(ur => ur.UserId == search.UserId && _context.Roles.Any(r => r.Id == ur.RoleId &&
-                    (r.NormalizedName == "ADMIN" || r.NormalizedName == "MANAGER" || r.NormalizedName == "AGENT" || r.NormalizedName == "UPLOADER" || r.NormalizedName == "CRM-MANAGER" || r.NormalizedName == "CRM_MANAGER"))))
+                    (r.NormalizedName == "ADMIN" || r.NormalizedName == "MANAGER" || r.NormalizedName == "AGENT" || r.NormalizedName == "UPLOADER" || r.NormalizedName == "CRM-MANAGER" || r.NormalizedName == "CRM_MANAGER" || r.NormalizedName == "OWNER"))))
             .ToListAsync(cancellationToken);
         var existing = await _context.SavedSearchMatches
             .Where(match => match.ApartmentId == apartmentId)
@@ -254,7 +254,7 @@ public class SavedSearchMatchWorker : BackgroundService
             var user = pending[0].User;
             var roles = await (from ur in context.UserRoles join r in context.Roles on ur.RoleId equals r.Id
                                where ur.UserId == userId select r.NormalizedName).ToListAsync(cancellationToken);
-            var eligible = roles.Contains("CLIENT") && !roles.Any(r => r is "ADMIN" or "MANAGER" or "AGENT" or "UPLOADER" or "CRM-MANAGER" or "CRM_MANAGER");
+            var eligible = roles.Contains("CLIENT") && !roles.Any(r => r is "ADMIN" or "MANAGER" or "AGENT" or "UPLOADER" or "CRM-MANAGER" or "CRM_MANAGER" or "OWNER");
             var sendable = pending.Where(item => eligible && item.Apartment is not null && item.Apartment.IsApproved &&
                 item.SavedSearch is { NotificationsEnabled: true } &&
                 SavedSearchProfile.IsValid(item.SavedSearch.ProfileJson) &&
