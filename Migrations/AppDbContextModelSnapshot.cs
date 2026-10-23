@@ -453,6 +453,9 @@ namespace Website_API.Migrations
                     b.Property<double?>("PropertyLongitude")
                         .HasColumnType("double precision");
 
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Region")
                         .IsRequired()
                         .HasColumnType("text");
@@ -501,6 +504,8 @@ namespace Website_API.Migrations
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("MyHomeId");
+
+                    b.HasIndex("PublishedAt");
 
                     b.HasIndex("StreetId");
 
@@ -576,6 +581,14 @@ namespace Website_API.Migrations
                     b.Property<DateTimeOffset?>("LockoutEnd")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("MatchAlertsEmail")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("MatchAlertsInApp")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
@@ -592,6 +605,10 @@ namespace Website_API.Migrations
 
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("PreferredLanguage")
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)");
 
                     b.Property<string>("ProfilePicture")
                         .HasColumnType("text");
@@ -743,6 +760,57 @@ namespace Website_API.Migrations
                     b.HasIndex("DistrictId", "NameKa");
 
                     b.ToTable("CanonicalStreets");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ClientNotification", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("ApartmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("EmailPending")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("EmailedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("SavedSearchId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApartmentId");
+
+                    b.HasIndex("EmailPending")
+                        .HasFilter("\"EmailPending\"");
+
+                    b.HasIndex("SavedSearchId", "ApartmentId")
+                        .IsUnique()
+                        .HasFilter("\"SavedSearchId\" IS NOT NULL AND \"ApartmentId\" IS NOT NULL");
+
+                    b.HasIndex("UserId", "ReadAt");
+
+                    b.ToTable("ClientNotifications");
                 });
 
             modelBuilder.Entity("Website_API.Models.CrmActivity", b =>
@@ -1407,6 +1475,82 @@ namespace Website_API.Migrations
                     b.ToTable("OwnerSubmissions");
                 });
 
+            modelBuilder.Entity("Website_API.Models.SavedSearch", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CriteriaHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CriteriaSince")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<bool>("NotificationsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ProfileJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CriteriaHash")
+                        .IsUnique();
+
+                    b.ToTable("SavedSearches");
+                });
+
+            modelBuilder.Entity("Website_API.Models.SavedSearchMatch", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ApartmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("MatchedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("SavedSearchId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("SeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApartmentId");
+
+                    b.HasIndex("SavedSearchId", "ApartmentId")
+                        .IsUnique();
+
+                    b.ToTable("SavedSearchMatches");
+                });
+
             modelBuilder.Entity("Website_API.Models.StreetGeometry", b =>
                 {
                     b.Property<long>("Id")
@@ -1583,6 +1727,31 @@ namespace Website_API.Migrations
                     b.Navigation("District");
                 });
 
+            modelBuilder.Entity("Website_API.Models.ClientNotification", b =>
+                {
+                    b.HasOne("Website_API.Models.Apartment", "Apartment")
+                        .WithMany()
+                        .HasForeignKey("ApartmentId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("Website_API.Models.SavedSearch", "SavedSearch")
+                        .WithMany()
+                        .HasForeignKey("SavedSearchId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("Website_API.Models.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Apartment");
+
+                    b.Navigation("SavedSearch");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Website_API.Models.CrmActivity", b =>
                 {
                     b.HasOne("Website_API.Models.AppUser", "CreatedByUser")
@@ -1712,6 +1881,36 @@ namespace Website_API.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Website_API.Models.SavedSearch", b =>
+                {
+                    b.HasOne("Website_API.Models.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Website_API.Models.SavedSearchMatch", b =>
+                {
+                    b.HasOne("Website_API.Models.Apartment", "Apartment")
+                        .WithMany()
+                        .HasForeignKey("ApartmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Website_API.Models.SavedSearch", "SavedSearch")
+                        .WithMany("Matches")
+                        .HasForeignKey("SavedSearchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Apartment");
+
+                    b.Navigation("SavedSearch");
+                });
+
             modelBuilder.Entity("Website_API.Models.Apartment", b =>
                 {
                     b.Navigation("FavoritedBy");
@@ -1736,6 +1935,11 @@ namespace Website_API.Migrations
             modelBuilder.Entity("Website_API.Models.LocationArea", b =>
                 {
                     b.Navigation("Children");
+                });
+
+            modelBuilder.Entity("Website_API.Models.SavedSearch", b =>
+                {
+                    b.Navigation("Matches");
                 });
 #pragma warning restore 612, 618
         }

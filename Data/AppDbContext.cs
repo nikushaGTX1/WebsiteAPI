@@ -32,6 +32,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<CrmQuestionnaireLink> CrmQuestionnaireLinks { get; set; }
     public DbSet<OwnerListingLink> OwnerListingLinks => Set<OwnerListingLink>();
     public DbSet<OwnerSubmission> OwnerSubmissions => Set<OwnerSubmission>();
+    public DbSet<SavedSearch> SavedSearches => Set<SavedSearch>();
+    public DbSet<SavedSearchMatch> SavedSearchMatches => Set<SavedSearchMatch>();
+    public DbSet<ClientNotification> ClientNotifications => Set<ClientNotification>();
 
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -61,6 +64,62 @@ public class AppDbContext : IdentityDbContext<AppUser>
             submission.Property(item => item.OwnerEmail).HasMaxLength(160);
             submission.HasIndex(item => item.AgentUserId);
         });
+
+        // Velven Discover: saved searches, their new matches and the client's alerts.
+        // Everything belongs to one client and disappears with the account.
+        builder.Entity<SavedSearch>(search =>
+        {
+            search.Property(item => item.Name).HasMaxLength(80);
+            search.Property(item => item.CriteriaHash).HasMaxLength(64);
+            search.HasOne(item => item.User)
+                .WithMany()
+                .HasForeignKey(item => item.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // The same criteria are saved once per client.
+            search.HasIndex(item => new { item.UserId, item.CriteriaHash }).IsUnique();
+        });
+
+        builder.Entity<SavedSearchMatch>(match =>
+        {
+            match.HasOne(item => item.SavedSearch)
+                .WithMany(search => search.Matches)
+                .HasForeignKey(item => item.SavedSearchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            match.HasOne(item => item.Apartment)
+                .WithMany()
+                .HasForeignKey(item => item.ApartmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // A listing matches a search at most once, however often the job runs.
+            match.HasIndex(item => new { item.SavedSearchId, item.ApartmentId }).IsUnique();
+            match.HasIndex(item => item.ApartmentId);
+        });
+
+        builder.Entity<ClientNotification>(notification =>
+        {
+            notification.Property(item => item.Type).HasMaxLength(20);
+            notification.HasOne(item => item.User)
+                .WithMany()
+                .HasForeignKey(item => item.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            notification.HasOne(item => item.SavedSearch)
+                .WithMany()
+                .HasForeignKey(item => item.SavedSearchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            notification.HasOne(item => item.Apartment)
+                .WithMany()
+                .HasForeignKey(item => item.ApartmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // No second alert for the same listing and search.
+            notification.HasIndex(item => new { item.SavedSearchId, item.ApartmentId })
+                .IsUnique()
+                .HasFilter("\"SavedSearchId\" IS NOT NULL AND \"ApartmentId\" IS NOT NULL");
+            notification.HasIndex(item => new { item.UserId, item.ReadAt });
+            notification.HasIndex(item => item.EmailPending).HasFilter("\"EmailPending\"");
+        });
+
+        builder.Entity<AppUser>().Property(user => user.MatchAlertsInApp).HasDefaultValue(true);
+        builder.Entity<AppUser>().Property(user => user.PreferredLanguage).HasMaxLength(5);
+        builder.Entity<Apartment>().HasIndex(apartment => apartment.PublishedAt);
 
         builder.Entity<CrmQuestionnaireLink>(link =>
         {

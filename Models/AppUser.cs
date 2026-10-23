@@ -19,4 +19,13 @@ public class AppUser : IdentityUser
     public string? SpokenLanguages { get; set; }
 
     public List<FavoriteApartment> FavoriteApartments { get; set; } = [];
+
+    /// <summary>Velven Discover: show new-match alerts on the website (bell).</summary>
+    public bool MatchAlertsInApp { get; set; } = true;
+
+    /// <summary>Velven Discover: email new-match alerts (opt-in; grouped into one email).</summary>
+    public bool MatchAlertsEmail { get; set; }
+
+    /// <summary>"ka", "en" or "ru"; used for alert emails.</summary>
+    public string? PreferredLanguage { get; set; }
 }

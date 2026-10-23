@@ -19,15 +19,18 @@ public class ApartmentsController : ControllerBase
     private readonly GoogleNearbyPlacesService _nearbyPlacesService;
     private readonly IOutputCacheStore _outputCache;
     private readonly ILogger<ApartmentsController> _logger;
+    private readonly ApartmentMatchQueue _matchQueue;
 
     public ApartmentsController(
         AppDbContext context,
         GoogleNearbyPlacesService nearbyPlacesService,
         SupabaseStorageService storageService,
         IOutputCacheStore outputCache,
-        ILogger<ApartmentsController> logger)
+        ILogger<ApartmentsController> logger,
+        ApartmentMatchQueue matchQueue)
     {
         _logger = logger;
+        _matchQueue = matchQueue;
         _context = context;
         _nearbyPlacesService = nearbyPlacesService;
         _storageService = storageService;
@@ -336,6 +339,7 @@ public class ApartmentsController : ControllerBase
                 UploadedByUserId = uploadedByUserId,
                 IsApproved = isElevated || ownerSubmission is not null,
                 LastConfirmedAt = isElevated || ownerSubmission is not null ? DateTime.UtcNow : null,
+                PublishedAt = isElevated || ownerSubmission is not null ? DateTime.UtcNow : null,
                 Images = storedImagePaths
                     .Select((path, index) => new ApartmentImage
                     {
@@ -423,6 +427,8 @@ public class ApartmentsController : ControllerBase
             }
 
             await InvalidateApartmentCacheAsync(cancellationToken);
+            // Published right away: check it against clients' saved Velven Match searches.
+            if (apartment.IsApproved) _matchQueue.Enqueue(apartment.Id);
 
             return Ok(new
             {
@@ -780,6 +786,8 @@ public class ApartmentsController : ControllerBase
 
             await _context.SaveChangesAsync(cancellationToken);
             await InvalidateApartmentCacheAsync(cancellationToken);
+            // An edit can make a listing match a saved search, or stop matching one.
+            if (apartment.IsApproved) _matchQueue.Enqueue(apartment.Id);
 
             foreach (var removedImagePath in removedImagePaths)
             {
@@ -1095,8 +1103,11 @@ public class ApartmentsController : ControllerBase
 
         apartment.IsApproved = true;
         apartment.LastConfirmedAt = DateTime.UtcNow;
+        apartment.PublishedAt ??= DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         await InvalidateApartmentCacheAsync(cancellationToken);
+        // Now public: check it against clients' saved Velven Match searches.
+        _matchQueue.Enqueue(apartment.Id);
 
         return Ok(new
         {

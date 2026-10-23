@@ -49,9 +49,12 @@ public class AuthController : ControllerBase
         if (existingEmail != null)
             return BadRequest(new { message = "Email already exists" });
 
+        if (dto.ConfirmPassword is not null && dto.ConfirmPassword != dto.Password)
+            return BadRequest(new { message = "Passwords do not match." });
+
         var user = new AppUser
         {
-            UserName = dto.UserName,
+            UserName = string.IsNullOrWhiteSpace(dto.UserName) ? dto.Email.Trim() : dto.UserName.Trim(),
             Email = dto.Email,
             FullName = dto.FullName,
             PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber)
@@ -65,6 +68,8 @@ public class AuthController : ControllerBase
             return BadRequest(result.Errors);
 
         await _userManager.AddToRoleAsync(user, "User");
+        // Everyone who signs up on the website is a client; staff roles are given by admins.
+        await _userManager.AddToRoleAsync(user, "Client");
         await _userManager.AddClaimAsync(user, new Claim(VerificationRequiredClaim, "true"));
         var sent = await SendCodeAsync(user, VerifyPurpose, HttpContext.RequestAborted);
 

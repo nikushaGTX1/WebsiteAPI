@@ -275,6 +275,9 @@ public class AdminController : ControllerBase
         {
             await _userManager.AddToRoleAsync(user, "Agent");
         }
+        // Staff accounts are not client accounts (no Velven Discover).
+        if (await _userManager.IsInRoleAsync(user, "Client"))
+            await _userManager.RemoveFromRoleAsync(user, "Client");
 
         return Ok(new { message = "User is now an agent" });
     }
@@ -299,6 +302,9 @@ public class AdminController : ControllerBase
             await _userManager.RemoveFromRoleAsync(user, "Agent");
         }
 
+        var remainingRoles = await _userManager.GetRolesAsync(user);
+        if (!remainingRoles.Any(r => r is "Admin" or "Manager" or "Agent" or "Uploader") && !remainingRoles.Contains("Client"))
+            await _userManager.AddToRoleAsync(user, "Client");
         return Ok(new { message = "User is no longer an agent" });
     }
 
@@ -344,6 +350,9 @@ public class AdminController : ControllerBase
         var addResult = await _userManager.AddToRoleAsync(user, requestedRole);
         if (!addResult.Succeeded)
             return BadRequest(addResult.Errors);
+        // Staff accounts are not client accounts (no Velven Discover).
+        if (await _userManager.IsInRoleAsync(user, "Client"))
+            await _userManager.RemoveFromRoleAsync(user, "Client");
 
         user.IsAgent = requestedRole == "Agent";
         var updateResult = await _userManager.UpdateAsync(user);

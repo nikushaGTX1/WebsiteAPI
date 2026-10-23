@@ -11,9 +11,12 @@ public class SetCrmRoleDto
 
 public class RegisterDto
 {
-    public string UserName { get; set; } = "";
+    /// <summary>Optional: client sign-up leaves it empty and the email address is used.</summary>
+    public string? UserName { get; set; }
     public string Email { get; set; } = "";
     public string Password { get; set; } = "";
+    /// <summary>When sent, must equal Password.</summary>
+    public string? ConfirmPassword { get; set; }
     public string? FullName { get; set; }
 
     [Phone]

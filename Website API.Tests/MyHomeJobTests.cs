@@ -46,6 +46,7 @@ public class MyHomeJobTests
             builder.Services.AddHttpClient<SupabaseStorageService>();
             builder.Services.AddHttpClient<GoogleNearbyPlacesService>();
             builder.Services.AddOutputCache();
+            builder.Services.AddSingleton<ApartmentMatchQueue>();
             var calls = 0; var concurrent = 0; var peak = 0;
             var handler = new StubHandler(async (request, token) => {
                 Interlocked.Increment(ref calls); var count = Interlocked.Increment(ref concurrent); peak = Math.Max(peak, count);

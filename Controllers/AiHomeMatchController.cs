@@ -25,6 +25,7 @@ public class AiHomeMatchController : ControllerBase
     public async Task<ActionResult<HomeMatchResponseDto>> FindMatches(
         [FromBody] HomeMatchProfileRequest request,
         [FromQuery] int maxResults = 50,
+        [FromQuery] int page = 1,
         CancellationToken cancellationToken = default)
     {
         maxResults = Math.Clamp(maxResults, 1, 100);
@@ -53,11 +54,8 @@ public class AiHomeMatchController : ControllerBase
             });
         }
 
-        var apartments = await _context.Apartments
-            .AsNoTracking()
-            .Where(apartment =>
-                !EF.Functions.ILike(apartment.Description, "%Source: https://www.myhome.ge/%") &&
-                !EF.Functions.ILike(apartment.Description, "%Source: https://home.ss.ge/%"))
+        // Only public listings: one still waiting for approval is never a match.
+        var apartments = await ApartmentCatalogue.Published(_context.Apartments.AsNoTracking())
             .ToListAsync(cancellationToken);
 
         // Hard filters shared with the website: the budget ceiling (with the rental tolerance)
@@ -76,7 +74,8 @@ public class AiHomeMatchController : ControllerBase
             .OrderByDescending(match => match.MatchScore)
             .ToList();
 
-        var matches = allMatches.Take(maxResults).ToList();
+        page = Math.Clamp(page, 1, 100000);
+        var matches = allMatches.Skip((page - 1) * maxResults).Take(maxResults).ToList();
 
         return Ok(new HomeMatchResponseDto
         {

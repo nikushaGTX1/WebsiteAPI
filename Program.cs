@@ -107,6 +107,10 @@ builder.Services.AddHttpClient("OpenStreetMap", client =>
 // external map-data import from application startup or a public user request.
 builder.Services.AddScoped<CanonicalStreetImportService>();
 builder.Services.AddScoped<HomeMatchScorer>();
+// Velven Discover: published listings are checked against saved Velven Match searches in the background.
+builder.Services.AddSingleton<ApartmentMatchQueue>();
+builder.Services.AddScoped<SavedSearchMatcher>();
+builder.Services.AddHostedService<SavedSearchMatchWorker>();
 
 // =========================
 // CORS
@@ -346,7 +350,8 @@ using (var scope = app.Services.CreateScope())
             "Manager",
             "Agent",
             "Uploader",
-            "User"
+            "User",
+            "Client"
         ];
 
         foreach (var role in roles)
@@ -369,6 +374,23 @@ using (var scope = app.Services.CreateScope())
                 }
             }
         }
+
+        // Client accounts (Velven Discover): every existing account that is not staff and has no
+        // role yet besides "User". Staff (Admin/Manager/Agent/Uploader, or IsAgent) is never touched.
+        var newClients = await context.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "AspNetUserRoles" ("UserId", "RoleId")
+            SELECT u."Id", r."Id"
+            FROM "AspNetUsers" u CROSS JOIN "AspNetRoles" r
+            WHERE r."NormalizedName" = 'CLIENT'
+              AND NOT u."IsAgent"
+              AND NOT EXISTS (
+                SELECT 1 FROM "AspNetUserRoles" ur
+                JOIN "AspNetRoles" sr ON sr."Id" = ur."RoleId"
+                WHERE ur."UserId" = u."Id"
+                  AND sr."NormalizedName" IN ('ADMIN', 'MANAGER', 'AGENT', 'UPLOADER', 'CLIENT'))
+            """);
+        if (newClients > 0)
+            app.Logger.LogInformation("Gave the Client role to {Count} existing account(s).", newClients);
 
         var adminEmail =
             builder.Configuration["Admin:Email"]

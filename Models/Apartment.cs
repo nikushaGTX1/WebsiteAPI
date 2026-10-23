@@ -63,6 +63,10 @@ public class Apartment
     // When staff last confirmed this listing (approval, or a direct staff upload).
     public DateTime? LastConfirmedAt { get; set; }
 
+    // When the listing first became public (direct staff upload, or approval). Saved Velven
+    // Match searches count listings published after they were saved as "new" matches.
+    public DateTime? PublishedAt { get; set; }
+
 
     // Location
     public string City { get; set; } = "Tbilisi";
