@@ -762,6 +762,48 @@ namespace Website_API.Migrations
                     b.ToTable("CanonicalStreets");
                 });
 
+            modelBuilder.Entity("Website_API.Models.ClientIntakeLink", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AgentUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Slug")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentUserId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.ToTable("ClientIntakeLinks");
+                });
+
             modelBuilder.Entity("Website_API.Models.ClientNotification", b =>
                 {
                     b.Property<int>("Id")
@@ -811,6 +853,99 @@ namespace Website_API.Migrations
                     b.HasIndex("UserId", "ReadAt");
 
                     b.ToTable("ClientNotifications");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ClientProfile", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AgentUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("BudgetMaxUsd")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal>("BudgetMinUsd")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTime>("ConsentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.PrimitiveCollection<string[]>("Districts")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<bool>("HasPets")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IdentityVerified")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("IntakeLinkId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("LeadId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("MoveInDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("MoveInTiming")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Nationality")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("ProfileJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime?>("PublishConsentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Residents")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentUserId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("IntakeLinkId");
+
+                    b.HasIndex("LeadId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("Status", "CreatedAt", "Id");
+
+                    b.ToTable("ClientProfiles");
                 });
 
             modelBuilder.Entity("Website_API.Models.CrmActivity", b =>
@@ -1727,6 +1862,17 @@ namespace Website_API.Migrations
                     b.Navigation("District");
                 });
 
+            modelBuilder.Entity("Website_API.Models.ClientIntakeLink", b =>
+                {
+                    b.HasOne("Website_API.Models.AppUser", "Agent")
+                        .WithMany()
+                        .HasForeignKey("AgentUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Agent");
+                });
+
             modelBuilder.Entity("Website_API.Models.ClientNotification", b =>
                 {
                     b.HasOne("Website_API.Models.Apartment", "Apartment")
@@ -1750,6 +1896,33 @@ namespace Website_API.Migrations
                     b.Navigation("SavedSearch");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ClientProfile", b =>
+                {
+                    b.HasOne("Website_API.Models.AppUser", "Agent")
+                        .WithMany()
+                        .HasForeignKey("AgentUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Website_API.Models.ClientIntakeLink", "IntakeLink")
+                        .WithMany()
+                        .HasForeignKey("IntakeLinkId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Website_API.Models.CrmLead", "Lead")
+                        .WithMany()
+                        .HasForeignKey("LeadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Agent");
+
+                    b.Navigation("IntakeLink");
+
+                    b.Navigation("Lead");
                 });
 
             modelBuilder.Entity("Website_API.Models.CrmActivity", b =>

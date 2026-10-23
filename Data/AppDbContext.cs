@@ -33,6 +33,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<OwnerListingLink> OwnerListingLinks => Set<OwnerListingLink>();
     public DbSet<OwnerSubmission> OwnerSubmissions => Set<OwnerSubmission>();
     public DbSet<SavedSearch> SavedSearches => Set<SavedSearch>();
+    public DbSet<ClientIntakeLink> ClientIntakeLinks => Set<ClientIntakeLink>();
+    public DbSet<ClientProfile> ClientProfiles => Set<ClientProfile>();
     public DbSet<SavedSearchMatch> SavedSearchMatches => Set<SavedSearchMatch>();
     public DbSet<ClientNotification> ClientNotifications => Set<ClientNotification>();
 
@@ -40,6 +42,29 @@ public class AppDbContext : IdentityDbContext<AppUser>
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        builder.Entity<ClientIntakeLink>(link =>
+        {
+            link.Property(x => x.Token).HasMaxLength(64);
+            link.Property(x => x.Slug).HasMaxLength(80);
+            link.HasIndex(x => x.Token).IsUnique();
+            link.HasIndex(x => x.Slug).IsUnique();
+            link.HasIndex(x => x.CreatedAt);
+            link.HasOne(x => x.Agent).WithMany().HasForeignKey(x => x.AgentUserId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<ClientProfile>(profile =>
+        {
+            profile.Property(x => x.ProfileJson).HasColumnType("jsonb");
+            profile.Property(x => x.FirstName).HasMaxLength(80);
+            profile.Property(x => x.Phone).HasMaxLength(40);
+            profile.Property(x => x.Nationality).HasMaxLength(80);
+            profile.Property(x => x.Status).HasMaxLength(10);
+            profile.HasIndex(x => x.Status);
+            profile.HasIndex(x => x.CreatedAt);
+            profile.HasIndex(x => new { x.Status, x.CreatedAt, x.Id });
+            profile.HasOne(x => x.Agent).WithMany().HasForeignKey(x => x.AgentUserId).OnDelete(DeleteBehavior.Cascade);
+            profile.HasOne(x => x.IntakeLink).WithMany().HasForeignKey(x => x.IntakeLinkId).OnDelete(DeleteBehavior.Cascade);
+            profile.HasOne(x => x.Lead).WithMany().HasForeignKey(x => x.LeadId).OnDelete(DeleteBehavior.Cascade);
+        });
  builder.Entity<Apartment>().Property(a => a.MyHomeId).HasMaxLength(8);
  builder.Entity<Apartment>().HasIndex(a => a.MyHomeId);
  builder.Entity<MyHomeJob>().HasIndex(j => j.State).IsUnique().HasFilter("\"State\" = 'RUNNING'");
