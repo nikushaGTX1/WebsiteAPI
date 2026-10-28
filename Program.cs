@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
@@ -91,6 +91,13 @@ builder.Services.AddHttpClient("OpenStreetMap", client =>
 // external map-data import from application startup or a public user request.
 builder.Services.AddScoped<CanonicalStreetImportService>();
 builder.Services.AddScoped<HomeMatchScorer>();
+
+// AI image processing (Modal GPU). Off unless ImageAi__Enabled=true.
+builder.Services.Configure<ImageAiOptions>(
+    builder.Configuration.GetSection("ImageAi"));
+builder.Services.AddHttpClient<ModalImageAiClient>();
+builder.Services.AddScoped<ImageProcessingQueue>();
+builder.Services.AddHostedService<ImageProcessingWorker>();
 
 // =========================
 // CORS

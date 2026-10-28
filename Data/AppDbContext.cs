@@ -15,6 +15,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<Apartment> Apartments => Set<Apartment>();
     public DbSet<ApartmentImage> ApartmentImages => Set<ApartmentImage>();
     public DbSet<ListingUpload> ListingUploads => Set<ListingUpload>();
+    public DbSet<ImageProcessingJob> ImageProcessingJobs =>
+        Set<ImageProcessingJob>();
     public DbSet<BlogPost> BlogPosts => Set<BlogPost>();
     public DbSet<FavoriteApartment> FavoriteApartments =>
         Set<FavoriteApartment>();
@@ -75,6 +77,36 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<ApartmentImage>()
             .ToTable("ApartmentImage");
+
+        builder.Entity<ImageProcessingJob>(job =>
+        {
+            job.Property(item => item.Status)
+                .HasConversion<string>()
+                .HasMaxLength(24);
+            job.Property(item => item.AuthorizationBasis)
+                .HasConversion<string>()
+                .HasMaxLength(16);
+            job.Property(item => item.SourceStoragePath).HasMaxLength(1000);
+            job.Property(item => item.ProcessedStoragePath).HasMaxLength(1000);
+            job.Property(item => item.SourceSha256).HasMaxLength(64);
+            job.Property(item => item.ProcessedSha256).HasMaxLength(64);
+            job.Property(item => item.Mode).HasMaxLength(16);
+            job.Property(item => item.PermissionReference).HasMaxLength(500);
+            job.Property(item => item.Classification).HasMaxLength(24);
+            job.Property(item => item.WatermarkText).HasMaxLength(500);
+            job.Property(item => item.LastError).HasMaxLength(2000);
+            job.Property(item => item.EstimatedCostUsd).HasPrecision(12, 6);
+
+            job.HasOne(item => item.ApartmentImage)
+                .WithMany()
+                .HasForeignKey(item => item.ApartmentImageId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            job.HasIndex(item => new { item.Status, item.NextAttemptAt });
+            job.HasIndex(item => item.SourceSha256);
+            job.HasIndex(item => item.ApartmentImageId);
+            job.HasIndex(item => item.CreatedAt);
+        });
 
         builder.Entity<ListingUpload>(upload =>
         {
