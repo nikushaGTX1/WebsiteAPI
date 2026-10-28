@@ -41,7 +41,12 @@ public class PhotoChecksController : ControllerBase
     }
 
     [HttpGet("availability")]
-    public IActionResult Availability() => Ok(new { enabled = _options.Enabled });
+    public IActionResult Availability() =>
+        Ok(new { enabled = _options.Enabled, canRemove = _options.Enabled && CanRemoveWatermarks(User) });
+
+    private static bool CanRemoveWatermarks(ClaimsPrincipal user) =>
+        user.IsInRole("Admin") || user.IsInRole("Manager") ||
+        user.IsInRole("Agent") || user.IsInRole("Uploader");
 
     // mode=detect scans only. mode=clean also removes the watermark, but only our own
     // brand, and only when the uploader confirms they may edit the photo.
@@ -68,6 +73,13 @@ public class PhotoChecksController : ControllerBase
             image.ContentType is not ("image/jpeg" or "image/png" or "image/webp"))
         {
             return BadRequest(new { message = "Send one JPG, PNG or WebP image up to 8 MB." });
+        }
+
+        // Removal strips Velven branding, so only staff may do it; the checkbox is an
+        // extra attestation, not the authorization.
+        if (mode == "clean" && !CanRemoveWatermarks(User))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Only Velven staff can remove watermarks." });
         }
 
         if (mode == "clean" && !rightsConfirmed)
