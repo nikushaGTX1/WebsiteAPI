@@ -25,16 +25,8 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.AddPolicy("CrmInquiries", context =>
     {
-        // The public website proxies API calls, so the socket address belongs
-        // to that proxy. Use its forwarded client IP when it is a valid IP;
-        // direct callers fall back to their actual remote address.
-        var forwardedValue = context.Request.Headers["X-Forwarded-For"]
-            .ToString()
-            .Split(',', 2)[0]
-            .Trim();
-        var partitionKey = IPAddress.TryParse(forwardedValue, out var clientIp)
-            ? clientIp.ToString()
-            : context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        // The public website proxies API calls; see ClientIpResolver.
+        var partitionKey = ClientIpResolver.Resolve(context);
 
         return RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: partitionKey,

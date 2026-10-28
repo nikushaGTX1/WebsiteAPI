@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -44,17 +44,8 @@ public partial class ReviewsController : ControllerBase
         _configuration = configuration;
     }
 
-    /// <summary>
-    /// The site proxies API calls, so the socket address is the proxy's. Use the
-    /// forwarded client IP when it is valid; direct callers use their own address.
-    /// </summary>
-    public static string ClientIp(HttpContext context)
-    {
-        var forwarded = context.Request.Headers["X-Forwarded-For"].ToString().Split(',', 2)[0].Trim();
-        return IPAddress.TryParse(forwarded, out var ip)
-            ? ip.ToString()
-            : context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-    }
+    /// <summary>Visitor IP for rate limits; see <see cref="ClientIpResolver"/>.</summary>
+    public static string ClientIp(HttpContext context) => ClientIpResolver.Resolve(context);
 
     /// <summary>Public: who the review link belongs to (name and photo only).</summary>
     [AllowAnonymous]

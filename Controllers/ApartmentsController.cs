@@ -475,11 +475,20 @@ public class ApartmentsController : ControllerBase
     {
         if (User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Agent"))
             return description;
-        return System.Text.RegularExpressions.Regex.Replace(
-            description,
-            @"\|?\s*Verified listing:\s*\w+",
-            string.Empty,
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        // Repeat until stable: one pass can join fragments into a new tag
+        // (e.g. "Verified Verified listing: x listing: y").
+        string previous;
+        do
+        {
+            previous = description;
+            description = System.Text.RegularExpressions.Regex.Replace(
+                description,
+                @"\|?\s*Verified\s*listing\s*:\s*\w*",
+                string.Empty,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
+        while (description != previous);
+        return description;
     }
 
     private static bool IsScrapedSource(string? description) =>

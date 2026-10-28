@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -17,6 +18,7 @@ public class AuthController : ControllerBase
 {
     private const int ProfilePictureUrlLifetimeSeconds = 604800;
 
+    private readonly IMemoryCache _cache;
     private readonly UserManager<AppUser> _userManager;
     private readonly IConfiguration _config;
     private readonly SupabaseStorageService _storageService;
@@ -29,12 +31,18 @@ public class AuthController : ControllerBase
     private const string ResetPurpose = "ResetPassword";
     private const string ChangePurpose = "ChangePassword";
 
+    // Six-digit codes are guessable, so each account gets a few tries per window.
+    private const int MaxCodeAttempts = 5;
+    private static readonly TimeSpan CodeLockout = TimeSpan.FromMinutes(15);
+
     public AuthController(
         UserManager<AppUser> userManager,
         IConfiguration config,
         SupabaseStorageService storageService,
-        ResendEmailService email)
+        ResendEmailService email,
+        IMemoryCache cache)
     {
+        _cache = cache;
         _userManager = userManager;
         _config = config;
         _storageService = storageService;
@@ -251,8 +259,23 @@ public class AuthController : ControllerBase
         return await _email.SendCodeAsync(user.Email, subject, heading, intro, code, cancellationToken);
     }
 
-    private Task<bool> IsCodeValidAsync(AppUser user, string purpose, string code) =>
-        _userManager.VerifyUserTokenAsync(user, TokenOptions.DefaultEmailProvider, purpose, (code ?? "").Trim());
+    private async Task<bool> IsCodeValidAsync(AppUser user, string purpose, string code)
+    {
+        var key = $"auth-code-failures:{purpose}:{user.Id}";
+        var failures = _cache.Get<int>(key);
+        if (failures >= MaxCodeAttempts) return false;
+
+        if (await _userManager.VerifyUserTokenAsync(user, TokenOptions.DefaultEmailProvider, purpose, (code ?? "").Trim()))
+        {
+            _cache.Remove(key);
+            return true;
+        }
+
+        _cache.Set(key, ++failures, CodeLockout);
+        // Rotating the security stamp invalidates every outstanding code for this account.
+        if (failures >= MaxCodeAttempts) await _userManager.UpdateSecurityStampAsync(user);
+        return false;
+    }
 
     private async Task<IdentityResult> SetNewPasswordAsync(AppUser user, string newPassword)
     {
