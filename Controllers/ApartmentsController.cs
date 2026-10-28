@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using Website_API.Data;
 using Website_API.DTO;
@@ -20,6 +21,8 @@ public class ApartmentsController : ControllerBase
     private readonly IOutputCacheStore _outputCache;
     private readonly ILogger<ApartmentsController> _logger;
     private readonly ApartmentMatchQueue _matchQueue;
+    private readonly ImageProcessingQueue _imageQueue;
+    private readonly ImageAiOptions _imageAiOptions;
 
     public ApartmentsController(
         AppDbContext context,
@@ -27,7 +30,9 @@ public class ApartmentsController : ControllerBase
         SupabaseStorageService storageService,
         IOutputCacheStore outputCache,
         ILogger<ApartmentsController> logger,
-        ApartmentMatchQueue matchQueue)
+        ApartmentMatchQueue matchQueue,
+        ImageProcessingQueue imageQueue,
+        IOptions<ImageAiOptions> imageAiOptions)
     {
         _logger = logger;
         _matchQueue = matchQueue;
@@ -35,6 +40,8 @@ public class ApartmentsController : ControllerBase
         _nearbyPlacesService = nearbyPlacesService;
         _storageService = storageService;
         _outputCache = outputCache;
+        _imageQueue = imageQueue;
+        _imageAiOptions = imageAiOptions.Value;
     }
 
     [HttpGet]
@@ -429,6 +436,7 @@ public class ApartmentsController : ControllerBase
             await InvalidateApartmentCacheAsync(cancellationToken);
             // Published right away: check it against clients' saved Velven Match searches.
             if (apartment.IsApproved) _matchQueue.Enqueue(apartment.Id);
+            await QueueWatermarkScanAsync(apartment.Images);
 
             return Ok(new
             {
@@ -788,6 +796,8 @@ public class ApartmentsController : ControllerBase
             await InvalidateApartmentCacheAsync(cancellationToken);
             // An edit can make a listing match a saved search, or stop matching one.
             if (apartment.IsApproved) _matchQueue.Enqueue(apartment.Id);
+            await QueueWatermarkScanAsync(
+                apartment.Images.Where(image => newImagePaths.Contains(image.StoragePath)));
 
             foreach (var removedImagePath in removedImagePaths)
             {
@@ -1304,6 +1314,30 @@ public class ApartmentsController : ControllerBase
             apartment.VeterinaryDistanceMinutes,
             apartment.NearbyPlaceNames
         };
+    }
+
+    // Detection-only scan; only inserts job rows, so the upload never waits on the GPU.
+    private async Task QueueWatermarkScanAsync(IEnumerable<ApartmentImage> images)
+    {
+        if (!_imageAiOptions.Enabled || !_imageAiOptions.AutoEnqueueUploads)
+        {
+            return;
+        }
+
+        try
+        {
+            await _imageQueue.EnqueueAsync(
+                images,
+                "detect",
+                ImageAuthorizationBasis.Unknown,
+                permissionReference: null,
+                User.FindFirstValue(ClaimTypes.NameIdentifier),
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Could not queue watermark scan.");
+        }
     }
 
     private async Task<List<string>> UploadImagesAsync(

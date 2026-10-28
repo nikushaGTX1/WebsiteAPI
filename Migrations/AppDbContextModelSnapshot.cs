@@ -533,6 +533,9 @@ namespace Website_API.Migrations
                     b.Property<bool>("IsCover")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("OriginalStoragePath")
+                        .HasColumnType("text");
+
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");
 
@@ -1267,6 +1270,124 @@ namespace Website_API.Migrations
                     b.HasIndex("UserId", "CreatedAt");
 
                     b.ToTable("FavoriteApartments");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ImageProcessingJob", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int?>("ApartmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ApartmentImageId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AuthorizationBasis")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Classification")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<DateTime?>("CleanOriginalRequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DetectionsJson")
+                        .HasColumnType("text");
+
+                    b.Property<long?>("DuplicateOfJobId")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("EstimatedCostUsd")
+                        .HasPrecision(12, 6)
+                        .HasColumnType("numeric(12,6)");
+
+                    b.Property<double>("GpuSeconds")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("LockedUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PermissionReference")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("ProcessedSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ProcessedStoragePath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("RequestedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReviewedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceStoragePath")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("WatermarkText")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApartmentImageId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("SourceSha256");
+
+                    b.HasIndex("Status", "NextAttemptAt");
+
+                    b.ToTable("ImageProcessingJobs");
                 });
 
             modelBuilder.Entity("Website_API.Models.ListingUpload", b =>
@@ -2016,6 +2137,16 @@ namespace Website_API.Migrations
                     b.Navigation("Apartment");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ImageProcessingJob", b =>
+                {
+                    b.HasOne("Website_API.Models.ApartmentImage", "ApartmentImage")
+                        .WithMany()
+                        .HasForeignKey("ApartmentImageId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ApartmentImage");
                 });
 
             modelBuilder.Entity("Website_API.Models.ListingUpload", b =>

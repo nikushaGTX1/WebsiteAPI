@@ -9,6 +9,9 @@ public class ApartmentImage
     public Apartment Apartment { get; set; } = null!;
     public string StoragePath { get; set; } = string.Empty;
 
+    // Set when an approved processed version replaces StoragePath.
+    public string? OriginalStoragePath { get; set; }
+
     public int SortOrder { get; set; }
 
     public bool IsCover { get; set; }

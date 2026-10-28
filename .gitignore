@@ -7,3 +7,8 @@ obj/
 *.suo
 *.tmp
 WhiteTower.db
+
+# Image AI benchmark output
+ImageAi/modal/benchmark*
+ImageAi/modal/bench-*
+ImageAi/modal/__pycache__/

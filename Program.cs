@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
@@ -111,6 +111,13 @@ builder.Services.AddScoped<HomeMatchScorer>();
 builder.Services.AddSingleton<ApartmentMatchQueue>();
 builder.Services.AddScoped<SavedSearchMatcher>();
 builder.Services.AddHostedService<SavedSearchMatchWorker>();
+
+// AI image processing (Modal GPU). Off unless ImageAi__Enabled=true.
+builder.Services.Configure<ImageAiOptions>(
+    builder.Configuration.GetSection("ImageAi"));
+builder.Services.AddHttpClient<ModalImageAiClient>();
+builder.Services.AddScoped<ImageProcessingQueue>();
+builder.Services.AddHostedService<ImageProcessingWorker>();
 
 // =========================
 // CORS
