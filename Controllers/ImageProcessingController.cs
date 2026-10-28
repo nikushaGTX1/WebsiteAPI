@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
@@ -163,9 +163,11 @@ public class ImageProcessingController : ControllerBase
                 job.CreatedAt,
                 job.CompletedAt,
                 job.CleanOriginalRequestedAt,
-                OriginalUrl = await _storageService.CreateSignedUrlAsync(
-                    job.SourceStoragePath,
-                    cancellationToken: cancellationToken),
+                OriginalUrl = job.SourceStoragePath == ImageProcessingJob.UploadFormSource
+                    ? null
+                    : await _storageService.CreateSignedUrlAsync(
+                        job.SourceStoragePath,
+                        cancellationToken: cancellationToken),
                 ProcessedUrl = await _storageService.CreateSignedUrlAsync(
                     job.ProcessedStoragePath,
                     cancellationToken: cancellationToken)

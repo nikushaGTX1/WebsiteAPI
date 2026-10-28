@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -191,6 +191,7 @@ public sealed class ImageProcessingWorker : BackgroundService
                 other.Mode == job.Mode &&
                 other.AuthorizationBasis == job.AuthorizationBasis &&
                 other.DuplicateOfJobId == null &&
+                other.SourceStoragePath != ImageProcessingJob.UploadFormSource &&
                 other.Status != ImageJobStatus.Pending &&
                 other.Status != ImageJobStatus.Running &&
                 other.Status != ImageJobStatus.Failed)

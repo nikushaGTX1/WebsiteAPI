@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace Website_API.Models;
 
@@ -27,6 +27,9 @@ public enum ImageAuthorizationBasis
 
 public class ImageProcessingJob
 {
+    // Marks checks run from the upload form; they have no stored photo.
+    public const string UploadFormSource = "upload-form";
+
     public long Id { get; set; }
 
     public int? ApartmentImageId { get; set; }

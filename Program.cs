@@ -49,6 +49,17 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 Window = TimeSpan.FromMinutes(10)
             }));
+    // Upload-form photo checks run on the paid GPU: cap each signed-in user.
+    options.AddPolicy("ImageChecks", context => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                      ?? ClientIpResolver.Resolve(context),
+        factory: _ => new FixedWindowRateLimiterOptions
+        {
+            AutoReplenishment = true,
+            PermitLimit = 120,
+            QueueLimit = 0,
+            Window = TimeSpan.FromHours(1)
+        }));
 });
 builder.Services.AddOutputCache(options =>
 {
