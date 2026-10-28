@@ -227,7 +227,7 @@ public sealed class ImageProcessingWorker : BackgroundService
                 Mode = job.Mode,
                 AuthorizationBasis = job.AuthorizationBasis.ToString().ToLowerInvariant(),
                 PermissionReference = job.PermissionReference,
-                OwnBrandTerms = _options.OwnBrandTerms
+                OwnBrandTerms = _options.RemovableBrandTerms
             },
             cancellationToken);
 

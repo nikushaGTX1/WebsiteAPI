@@ -111,7 +111,7 @@ public class PhotoChecksController : ControllerBase
                 .FirstOrDefaultAsync(cancellationToken);
             if (previous is not null)
             {
-                return Ok(new { classification = previous.Classification, watermarkText = previous.WatermarkText, action = "cached" });
+                return Ok(new { classification = _options.PublicClassification(previous.Classification, previous.WatermarkText), watermarkText = previous.WatermarkText, action = "cached" });
             }
         }
 
@@ -137,7 +137,7 @@ public class PhotoChecksController : ControllerBase
                     ExpectedSha256 = sha,
                     Mode = modalMode,
                     AuthorizationBasis = basis.ToString().ToLowerInvariant(),
-                    OwnBrandTerms = _options.OwnBrandTerms
+                    OwnBrandTerms = _options.RemovableBrandTerms
                 },
                 cancellationToken);
         }
@@ -182,7 +182,7 @@ public class PhotoChecksController : ControllerBase
 
         return Ok(new
         {
-            classification = result.Classification,
+            classification = _options.PublicClassification(result.Classification, job.WatermarkText),
             watermarkText = job.WatermarkText,
             action = cleaned is null && result.Action == "processed" ? "validation_failed" : result.Action,
             cleanedImage = cleaned,
