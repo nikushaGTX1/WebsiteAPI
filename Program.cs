@@ -473,6 +473,21 @@ using (var scope = app.Services.CreateScope())
 // =========================
 
 app.UseResponseCompression();
+
+// Security headers. The API returns JSON, so its CSP (report-only for now) allows nothing; the website's own
+// headers are set in site/server.mjs. HSTS also needs to be on in Cloudflare (SSL/TLS > Edge Certificates).
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+    headers["X-Frame-Options"] = "DENY";
+    headers["X-Content-Type-Options"] = "nosniff";
+    headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    // Swagger UI needs scripts and styles; skip the strict policy there.
+    if (!context.Request.Path.StartsWithSegments("/swagger"))
+        headers["Content-Security-Policy-Report-Only"] = "default-src 'none'; frame-ancestors 'none'";
+    await next();
+});
 app.UseStaticFiles();
 
 app.UseRouting();

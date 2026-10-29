@@ -13,6 +13,11 @@ public class Apartment
     // Basic informacia
     public string Title { get; set; } = string.Empty;
 
+    // Optional translations of Title. Null means none: the site shows the original Title.
+    [MaxLength(300)] public string? TitleEn { get; set; }
+    [MaxLength(300)] public string? TitleKa { get; set; }
+    [MaxLength(300)] public string? TitleRu { get; set; }
+
     public string Description { get; set; } = string.Empty;
 
     public decimal Price { get; set; }

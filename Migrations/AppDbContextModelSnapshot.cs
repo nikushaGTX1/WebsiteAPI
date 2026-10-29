@@ -484,6 +484,18 @@ namespace Website_API.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("TitleEn")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("TitleKa")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("TitleRu")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
                     b.Property<int>("TotalFloors")
                         .HasColumnType("integer");
 

@@ -14,6 +14,9 @@ public class CreateApartmentDto
     // Basic information
     [Required]
     public string Title { get; set; } = string.Empty;
+    [MaxLength(300)] public string? TitleEn { get; set; }
+    [MaxLength(300)] public string? TitleKa { get; set; }
+    [MaxLength(300)] public string? TitleRu { get; set; }
 
     [Required]
     public string Description { get; set; } = string.Empty;
@@ -124,6 +127,10 @@ public class UpdateApartmentDto
 {
     // Basic information
     public string? Title { get; set; }
+    // Empty string clears a translation; null keeps it.
+    [MaxLength(300)] public string? TitleEn { get; set; }
+    [MaxLength(300)] public string? TitleKa { get; set; }
+    [MaxLength(300)] public string? TitleRu { get; set; }
     public string? Description { get; set; }
 
     [Range(0.01, double.MaxValue)]

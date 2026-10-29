@@ -336,9 +336,12 @@ public class ApartmentsController : ControllerBase
                 // Basic information
                 MyHomeId = string.IsNullOrWhiteSpace(dto.MyHomeId) ? null : dto.MyHomeId.Trim(),
                 Title = dto.Title,
+                TitleEn = ListingTextNormalizer.CleanTitle(dto.TitleEn),
+                TitleKa = ListingTextNormalizer.CleanTitle(dto.TitleKa),
+                TitleRu = ListingTextNormalizer.CleanTitle(dto.TitleRu),
                 Description = SanitizeVerifiedTag(dto.Description),
                 Price = dto.Price,
-                Address = string.IsNullOrWhiteSpace(dto.Address) ? null : dto.Address.Trim(),
+                Address = string.IsNullOrWhiteSpace(dto.Address) ? null : ListingTextNormalizer.CleanAddress(dto.Address),
                 PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber)
                     ? null
                     : dto.PhoneNumber.Trim(),
@@ -360,7 +363,7 @@ public class ApartmentsController : ControllerBase
                 City = dto.City.Trim(),
                 Region = dto.Region.Trim(),
                 District = dto.District.Trim(),
-                Street = canonicalStreet?.NameEn ?? dto.Street?.Trim() ?? string.Empty,
+                Street = canonicalStreet?.NameEn ?? ListingTextNormalizer.CleanAddress(dto.Street) ?? string.Empty,
                 StreetId = canonicalStreet?.Id,
                 BuildingNumber = string.IsNullOrWhiteSpace(dto.BuildingNumber) ? null : dto.BuildingNumber.Trim(),
                 Latitude = dto.Latitude ?? dto.PropertyLatitude,
@@ -564,6 +567,10 @@ public class ApartmentsController : ControllerBase
         apartment.Title =
             dto.Title ?? apartment.Title;
 
+        if (dto.TitleEn is not null) apartment.TitleEn = ListingTextNormalizer.CleanTitle(dto.TitleEn);
+        if (dto.TitleKa is not null) apartment.TitleKa = ListingTextNormalizer.CleanTitle(dto.TitleKa);
+        if (dto.TitleRu is not null) apartment.TitleRu = ListingTextNormalizer.CleanTitle(dto.TitleRu);
+
         apartment.Description =
             (dto.Description is null ? null : SanitizeVerifiedTag(dto.Description)) ?? apartment.Description;
 
@@ -571,7 +578,7 @@ public class ApartmentsController : ControllerBase
             dto.Price ?? apartment.Price;
 
         apartment.Address =
-            dto.Address ?? apartment.Address;
+            ListingTextNormalizer.CleanAddress(dto.Address) ?? apartment.Address;
 
         if (dto.PhoneNumber is not null)
         {
@@ -590,7 +597,7 @@ public class ApartmentsController : ControllerBase
             canonicalStreet?.District.NameEn ?? dto.District ?? apartment.District;
 
         apartment.Street =
-            canonicalStreet?.NameEn ?? (string.IsNullOrWhiteSpace(dto.Street) ? apartment.Street : dto.Street.Trim());
+            canonicalStreet?.NameEn ?? (string.IsNullOrWhiteSpace(dto.Street) ? apartment.Street : ListingTextNormalizer.CleanAddress(dto.Street)!);
 
         if (canonicalStreet is not null) apartment.StreetId = canonicalStreet.Id;
         apartment.BuildingNumber = dto.BuildingNumber ?? apartment.BuildingNumber;
