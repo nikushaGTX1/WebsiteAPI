@@ -141,13 +141,15 @@ public class ClientBoardController(AppDbContext db, SupabaseStorageService stora
     [HttpGet("client-board")]
     public async Task<ActionResult<ClientBoardPage>> Board(string? district = null, decimal? budgetMin = null,
         decimal? budgetMax = null, DateOnly? moveInBefore = null, int? residents = null, bool? pets = null,
-        int page = 1, int pageSize = 12, CancellationToken ct = default)
+        string goal = "Rent", int page = 1, int pageSize = 12, CancellationToken ct = default)
     {
         if (page < 1 || page > 100000 || pageSize < 1 || pageSize > 48 || budgetMin < 0 || budgetMax < 0 ||
-            budgetMin > budgetMax || residents is < 1 or > 7 || district?.Length > 80) return BadRequest();
-        // Renters only: purchase budgets must never be presented as monthly rent.
+            budgetMin > budgetMax || residents is < 1 or > 7 || district?.Length > 80 ||
+            goal is not ("Rent" or "Buy")) return BadRequest();
+        // One goal at a time: purchase budgets must never be listed next to monthly rents.
+        var goalJson = goal == "Buy" ? "{\"propertyGoal\":\"Buy\"}" : "{\"propertyGoal\":\"Rent\"}";
         var q = db.ClientProfiles.AsNoTracking().Where(x => x.Status == "Active" && x.PublishConsentAt != null && StaffIds.Contains(x.AgentUserId)
-            && EF.Functions.JsonContains(x.ProfileJson, "{\"propertyGoal\":\"Rent\"}"));
+            && EF.Functions.JsonContains(x.ProfileJson, goalJson));
         if (!string.IsNullOrEmpty(district)) q = q.Where(x => x.Districts.Contains(district) || EF.Functions.JsonContains(x.ProfileJson, "{\"locationFlexible\":true}"));
         // Budget filters are USD/month and select overlapping requirement ranges.
         if (budgetMin.HasValue) q = q.Where(x => x.BudgetMaxUsd >= budgetMin);
