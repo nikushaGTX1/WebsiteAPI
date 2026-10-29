@@ -29,9 +29,10 @@ public sealed class ImageAiOptions
     public int RequestTimeoutSeconds { get; set; } = 300;
     public string[] OwnBrandTerms { get; set; } = ["velven"];
 
-    // Partners whose watermarks Velven may remove with their permission (myhome.ge cooperates
-    // with Velven). Railway: ImageAi__PartnerBrandTerms__0=myhome. Any other mark stays third-party.
-    public string[] PartnerBrandTerms { get; set; } = ["myhome"];
+    // Partners whose watermarks Velven may remove with their permission (myhome.ge and ss.ge
+    // cooperate with Velven). Railway: ImageAi__PartnerBrandTerms__0=myhome, __1=ss.ge. Remove a
+    // partner here when an agreement ends. Any other mark stays third-party.
+    public string[] PartnerBrandTerms { get; set; } = ["myhome", "ss.ge"];
 
     // Marks the AI service may remove: our own plus licensed partners.
     public string[] RemovableBrandTerms => [.. OwnBrandTerms, .. PartnerBrandTerms];

@@ -12,8 +12,10 @@ public class PartnerWatermarkTests
     [InlineData("own_brand", "MYHOME .GE", "partner_brand")]
     [InlineData("own_brand", "myhome.ge | velven", "partner_brand")]
     [InlineData("own_brand", "velven", "own_brand")]                 // Velven's own mark stays own
-    [InlineData("third_party", "ss.ge", "third_party")]              // other companies are never removable
-    [InlineData("third_party", "myhome.ge | ss.ge", "third_party")]  // mixed with another company
+    [InlineData("third_party", "SS.GE", "partner_brand")]            // second partner
+    [InlineData("third_party", "myhome.ge | ss.ge", "partner_brand")]
+    [InlineData("third_party", "korter.ge", "third_party")]          // other companies are never removable
+    [InlineData("third_party", "myhome.ge | korter.ge", "third_party")] // mixed with another company
     [InlineData("third_party", null, "third_party")]                 // unreadable logo
     [InlineData("none", null, "none")]
     public void OnlyPartnerAndOwnMarksBecomeRemovable(string classification, string? text, string expected) =>
@@ -21,5 +23,5 @@ public class PartnerWatermarkTests
 
     [Fact]
     public void TheAiServiceTreatsPartnerMarksLikeOurOwn() =>
-        Assert.Equal(["velven", "myhome"], Options.RemovableBrandTerms);
+        Assert.Equal(["velven", "myhome", "ss.ge"], Options.RemovableBrandTerms);
 }
