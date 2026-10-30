@@ -45,11 +45,23 @@ public sealed class ImageAiOptions
     {
         if (classification is not ("own_brand" or "third_party") || string.IsNullOrWhiteSpace(watermarkText))
             return classification;
-        var parts = watermarkText.Split(" | ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        // Unreadable bits (a logo icon read as "~") say nothing about whose mark it is.
+        var parts = watermarkText.Split(" | ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(part => Normalize(part).Length >= 3)
+            .ToArray();
+        if (parts.Length == 0) return classification;
+        // Same rule as the AI service: letters and digits only, so "MY HOME" and "SS GE" match.
         bool Has(string text, string[] terms) =>
-            terms.Any(term => text.Contains(term, StringComparison.OrdinalIgnoreCase));
+            terms.Select(Normalize).Any(term => term.Length > 0 && Normalize(text).Contains(term, StringComparison.Ordinal));
         var allRemovable = parts.All(part => Has(part, RemovableBrandTerms));
         var anyPartner = parts.Any(part => Has(part, PartnerBrandTerms) && !Has(part, OwnBrandTerms));
         return allRemovable && anyPartner ? "partner_brand" : classification;
     }
+
+    /// <summary>"MYH0ME.GE" -> "myhomege": lowercase letters and digits, common OCR mix-ups fixed.</summary>
+    public static string Normalize(string? text) =>
+        new((text ?? string.Empty).ToLowerInvariant()
+            .Select(ch => ch switch { '0' => 'o', '1' => 'l', '|' => 'l', '5' => 's', '$' => 's', _ => ch })
+            .Where(char.IsLetterOrDigit)
+            .ToArray());
 }

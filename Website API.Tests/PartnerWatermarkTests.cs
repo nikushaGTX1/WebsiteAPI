@@ -13,6 +13,10 @@ public class PartnerWatermarkTests
     [InlineData("own_brand", "myhome.ge | velven", "partner_brand")]
     [InlineData("own_brand", "velven", "own_brand")]                 // Velven's own mark stays own
     [InlineData("third_party", "SS.GE", "partner_brand")]            // second partner
+    [InlineData("third_party", "MY HOME", "partner_brand")]          // OCR split the word
+    [InlineData("third_party", "SS GE", "partner_brand")]
+    [InlineData("third_party", "MYH0ME.GE", "partner_brand")]        // zero read instead of O
+    [InlineData("own_brand", "myhome.ge | ~", "partner_brand")]      // logo icon read as noise
     [InlineData("third_party", "myhome.ge | ss.ge", "partner_brand")]
     [InlineData("third_party", "korter.ge", "third_party")]          // other companies are never removable
     [InlineData("third_party", "myhome.ge | korter.ge", "third_party")] // mixed with another company

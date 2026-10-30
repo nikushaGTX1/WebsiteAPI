@@ -62,6 +62,75 @@ models_volume = modal.Volume.from_name("velven-image-models", create_if_missing=
 secret = modal.Secret.from_name("velven-image-ai")
 
 
+# Largest share of the photo a removable (own or partner) mark may cover. Partner marks such as
+# myhome.ge are often big and centred, larger than the 10% limit used for unknown marks.
+MAX_REMOVABLE_BBOX_PERCENT = 25.0
+# Extra prompts for faint marks the "watermark" prompt misses. Their boxes are only kept when
+# the text in them is a removable brand, so ordinary logos in the photo (a TV, a sign) are left alone.
+EXTRA_DETECTION_PROMPTS = ("logo", "text")
+
+
+def normalize_mark_text(text: str) -> str:
+    """Lowercase letters and digits only, with common OCR mix-ups fixed: "MY HOME.GE" -> "myhomege"."""
+    text = (text or "").lower().translate(str.maketrans({"0": "o", "1": "l", "|": "l", "5": "s", "$": "s"}))
+    return "".join(ch for ch in text if ch.isalnum())
+
+
+def _close_enough(term: str, text: str) -> bool:
+    """term appears in text with at most one wrong letter (for terms of 5+ letters)."""
+    if term in text:
+        return True
+    if len(term) < 5:
+        return False
+    for start in range(0, max(1, len(text) - len(term) + 1)):
+        window = text[start:start + len(term)]
+        if len(window) == len(term) and sum(a != b for a, b in zip(window, term)) <= 1:
+            return True
+    return False
+
+
+def mark_is_removable(text: str, terms: list[str]) -> bool:
+    normalized = normalize_mark_text(text)
+    return bool(normalized) and any(
+        _close_enough(normalize_mark_text(term), normalized) for term in terms if normalize_mark_text(term))
+
+
+def _is_unreadable(text: str) -> bool:
+    """No real word read: an icon, a shape or OCR noise."""
+    return len(normalize_mark_text(text)) < 3
+
+
+def _overlap_or_near(a: list[int], b: list[int]) -> bool:
+    """Boxes touch, or are within one box-height of each other (a logo icon beside its text)."""
+    gap = max(a[3] - a[1], b[3] - b[1])
+    return not (a[2] + gap < b[0] or b[2] + gap < a[0] or a[3] + gap < b[1] or b[3] + gap < a[1])
+
+
+def _iou(a: list[int], b: list[int]) -> float:
+    x1, y1, x2, y2 = max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0, x2 - x1) * max(0, y2 - y1)
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union else 0.0
+
+
+def classify_marks(detections: list[dict], terms: list[str]) -> tuple[str, list[dict]]:
+    """
+    Returns (classification, boxes to remove).
+    own_brand: at least one mark reads as Velven or a licensed partner and no mark clearly reads
+    as another company. Unreadable boxes next to a removable mark (its icon) are removed with it.
+    third_party: some mark clearly names another company, or nothing readable was found.
+    """
+    if not detections:
+        return "none", []
+    removable = [d for d in detections if mark_is_removable(d.get("text", ""), terms)]
+    other = [d for d in detections if d not in removable and not _is_unreadable(d.get("text", ""))]
+    if not removable or other:
+        return "third_party", []
+    icons = [d for d in detections if d not in removable and d.get("primary")
+             and any(_overlap_or_near(d["bbox"], r["bbox"]) for r in removable)]
+    return "own_brand", removable + icons
+
+
 def _florence_snapshot() -> Path:
     return (Path(MODEL_DIR) / "hf" / "hub" / ("models--" + FLORENCE_REPO.replace("/", "--"))
             / "snapshots" / FLORENCE_REVISION)
@@ -196,20 +265,33 @@ class Processor:
         own_terms = [t.lower() for t in request.get("own_brand_terms", ["velven"]) if t]
         max_bbox_percent = float(request.get("max_bbox_percent", 10.0))
 
-        detections = self._detect(pil, request.get("detection_prompt", "watermark"),
-                                  max_bbox_percent)
-        accepted = sorted((d for d in detections if d["accepted"]),
-                          key=lambda d: d["area_percent"], reverse=True)[:4]
-        for detection in accepted:
+        removable_limit = max(max_bbox_percent, MAX_REMOVABLE_BBOX_PERCENT)
+        detections = self._detect(pil, request.get("detection_prompt", "watermark"), removable_limit)
+        for detection in detections:
+            detection["primary"] = True
+        # Boxes over the normal limit are kept only if they turn out to be our or a partner's mark.
+        candidates = sorted((d for d in detections if d["accepted"]),
+                            key=lambda d: d["area_percent"], reverse=True)[:6]
+        for detection in candidates:
             detection["text"] = self._read_text(pil, detection["bbox"])
+        candidates = [d for d in candidates
+                      if d["area_percent"] <= max_bbox_percent or mark_is_removable(d["text"], own_terms)]
+        if not any(mark_is_removable(d["text"], own_terms) for d in candidates):
+            # Faint marks: look again with other prompts, keeping only boxes that read as removable.
+            for prompt in EXTRA_DETECTION_PROMPTS:
+                for extra in self._detect(pil, prompt, removable_limit):
+                    if not extra["accepted"] or any(_iou(extra["bbox"], d["bbox"]) > 0.5 for d in candidates):
+                        continue
+                    extra["text"] = self._read_text(pil, extra["bbox"])
+                    if mark_is_removable(extra["text"], own_terms):
+                        extra["primary"] = False
+                        candidates.append(extra)
+                        detections.append(extra)
+        for detection in detections:
+            detection["accepted"] = detection in candidates
 
-        if not accepted:
-            classification = "none"
-        elif all(any(t in d["text"].lower() for t in own_terms) for d in accepted):
-            classification = "own_brand"
-        else:
-            # Unreadable logos count as third-party: never guess ownership.
-            classification = "third_party"
+        # Unreadable marks alone, or any mark naming another company, stay third-party.
+        classification, accepted = classify_marks(candidates, own_terms)
 
         licensed = basis == "licensed" and bool(permission_reference)
         may_modify = basis in {"owned", "licensed"} and (
@@ -235,12 +317,16 @@ class Processor:
             mask = Image.new("L", pil.size, 0)
             draw = ImageDraw.Draw(mask)
             for detection in accepted:
-                draw.rectangle(detection["bbox"], fill=255)
+                x1, y1, x2, y2 = detection["bbox"]
+                # A few pixels around the box so no outline of the logo is left behind.
+                pad = max(4, round(0.08 * max(x2 - x1, y2 - y1)))
+                draw.rectangle([max(0, x1 - pad), max(0, y1 - pad),
+                                min(pil.width, x2 + pad), min(pil.height, y2 + pad)], fill=255)
             mask_np = np.array(mask)
             source_np = np.array(pil)
             output_bgr = self.lama(source_np, mask_np)
             validation = _validate(source_np, cv2.cvtColor(output_bgr, cv2.COLOR_BGR2RGB),
-                                   mask_np, max_bbox_percent)
+                                   mask_np, removable_limit)
             result["validation"] = validation
             if validation["ok"]:
                 fmt = request.get("output_format", "jpeg").lower()
@@ -277,7 +363,7 @@ def _validate(source, output, mask, max_bbox_percent: float) -> dict:
     checks = {}
     checks["shape_matches"] = output.shape == source.shape
     mask_percent = float((mask > 0).mean() * 100)
-    checks["mask_within_limit"] = mask_percent <= max_bbox_percent * 4
+    checks["mask_within_limit"] = mask_percent <= min(60.0, max_bbox_percent * 2.5)
     outside = mask == 0
     diff = np.abs(output.astype(np.int16) - source.astype(np.int16))
     checks["outside_mask_unchanged"] = bool(outside.any() and diff[outside].max() <= 2)
