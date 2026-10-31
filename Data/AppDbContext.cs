@@ -39,6 +39,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ClientProfile> ClientProfiles => Set<ClientProfile>();
     public DbSet<SavedSearchMatch> SavedSearchMatches => Set<SavedSearchMatch>();
     public DbSet<ClientNotification> ClientNotifications => Set<ClientNotification>();
+    public DbSet<ListingInterestNotification> ListingInterestNotifications => Set<ListingInterestNotification>();
 
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -142,6 +143,16 @@ public class AppDbContext : IdentityDbContext<AppUser>
                 .HasFilter("\"SavedSearchId\" IS NOT NULL AND \"ApartmentId\" IS NOT NULL");
             notification.HasIndex(item => new { item.UserId, item.ReadAt });
             notification.HasIndex(item => item.EmailPending).HasFilter("\"EmailPending\"");
+        });
+
+        builder.Entity<ListingInterestNotification>(notification =>
+        {
+            notification.HasOne(item => item.User).WithMany().HasForeignKey(item => item.UserId).OnDelete(DeleteBehavior.Cascade);
+            notification.HasOne(item => item.Apartment).WithMany().HasForeignKey(item => item.ApartmentId).OnDelete(DeleteBehavior.Cascade);
+            notification.HasOne(item => item.SavedSearch).WithMany().HasForeignKey(item => item.SavedSearchId).OnDelete(DeleteBehavior.Cascade);
+            // One alert per listing, client search and recipient.
+            notification.HasIndex(item => new { item.UserId, item.ApartmentId, item.SavedSearchId }).IsUnique();
+            notification.HasIndex(item => new { item.UserId, item.ReadAt });
         });
 
         builder.Entity<AppUser>().Property(user => user.MatchAlertsInApp).HasDefaultValue(true);

@@ -85,11 +85,28 @@ public class ClientController : ControllerBase
 
     private readonly AppDbContext _context;
     private readonly SupabaseStorageService _storage;
+    private readonly ListingInterestService? _interests;
 
-    public ClientController(AppDbContext context, SupabaseStorageService storage)
+    public ClientController(AppDbContext context, SupabaseStorageService storage, ListingInterestService? interests = null)
     {
         _context = context;
         _storage = storage;
+        _interests = interests;
+    }
+
+    /// <summary>Owners of listings the search already matches get a bell alert. Never fails the request.</summary>
+    private async Task NotifyOwnersAsync(int searchId)
+    {
+        if (_interests is null) return;
+        try
+        {
+            await _interests.NotifyForSearchAsync(searchId, CancellationToken.None);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            HttpContext?.RequestServices.GetService<ILogger<ClientController>>()
+                ?.LogWarning(exception, "Owner alerts for saved search {SearchId} failed.", searchId);
+        }
     }
 
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
@@ -172,6 +189,7 @@ public class ClientController : ControllerBase
                 .FirstAsync(item => item.UserId == UserId && item.CriteriaHash == hash, cancellationToken);
             return Ok(new { saved.Id, saved.Name, existed = true });
         }
+        await NotifyOwnersAsync(search.Id);
         return Ok(new { search.Id, search.Name, existed = false });
     }
 
@@ -219,6 +237,7 @@ public class ClientController : ControllerBase
                 .ExecuteUpdateAsync(s => s.SetProperty(n => n.EmailPending, false), cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        if (dto.Profile is not null) await NotifyOwnersAsync(search.Id);
         return Ok(new { search.Id, search.Name, search.NotificationsEnabled });
     }
 

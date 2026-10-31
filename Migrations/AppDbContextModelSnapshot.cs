@@ -1402,6 +1402,44 @@ namespace Website_API.Migrations
                     b.ToTable("ImageProcessingJobs");
                 });
 
+            modelBuilder.Entity("Website_API.Models.ListingInterestNotification", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ApartmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("SavedSearchId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApartmentId");
+
+                    b.HasIndex("SavedSearchId");
+
+                    b.HasIndex("UserId", "ReadAt");
+
+                    b.HasIndex("UserId", "ApartmentId", "SavedSearchId")
+                        .IsUnique();
+
+                    b.ToTable("ListingInterestNotifications");
+                });
+
             modelBuilder.Entity("Website_API.Models.ListingUpload", b =>
                 {
                     b.Property<int>("Id")
@@ -2159,6 +2197,33 @@ namespace Website_API.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("ApartmentImage");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ListingInterestNotification", b =>
+                {
+                    b.HasOne("Website_API.Models.Apartment", "Apartment")
+                        .WithMany()
+                        .HasForeignKey("ApartmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Website_API.Models.SavedSearch", "SavedSearch")
+                        .WithMany()
+                        .HasForeignKey("SavedSearchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Website_API.Models.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Apartment");
+
+                    b.Navigation("SavedSearch");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Website_API.Models.ListingUpload", b =>

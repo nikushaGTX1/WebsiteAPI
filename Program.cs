@@ -113,6 +113,7 @@ builder.Services.AddScoped<HomeMatchScorer>();
 // Velven Discover: published listings are checked against saved Velven Match searches in the background.
 builder.Services.AddSingleton<ApartmentMatchQueue>();
 builder.Services.AddScoped<SavedSearchMatcher>();
+builder.Services.AddScoped<ListingInterestService>();
 builder.Services.AddHostedService<SavedSearchMatchWorker>();
 
 // AI image processing (Modal GPU). Off unless ImageAi__Enabled=true.

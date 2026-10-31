@@ -29,11 +29,13 @@ public class SavedSearchMatcher
 {
     private readonly AppDbContext _context;
     private readonly ILogger<SavedSearchMatcher> _logger;
+    private readonly ListingInterestService? _interests;
 
-    public SavedSearchMatcher(AppDbContext context, ILogger<SavedSearchMatcher> logger)
+    public SavedSearchMatcher(AppDbContext context, ILogger<SavedSearchMatcher> logger, ListingInterestService? interests = null)
     {
         _context = context;
         _logger = logger;
+        _interests = interests;
     }
 
     /// <summary>
@@ -93,6 +95,9 @@ public class SavedSearchMatcher
                 SavedSearchId = search.Id,
                 ApartmentId = apartmentId,
             });
+
+            // The owner or agent who listed the home hears that a client is looking for it.
+            if (_interests is not null) await _interests.AddAlertAsync(apartment, search, cancellationToken);
 
             var user = search.User;
             if (search.NotificationsEnabled && (user.MatchAlertsInApp || user.MatchAlertsEmail))
