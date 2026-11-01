@@ -1416,11 +1416,37 @@ namespace Website_API.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("OwnerEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTime?>("OwnerEmailedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("OwnerReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OwnerUserId")
+                        .HasColumnType("text");
+
                     b.Property<DateTime?>("ReadAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReviewerUserId")
+                        .HasColumnType("text");
+
                     b.Property<int>("SavedSearchId")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("pending");
 
                     b.Property<string>("UserId")
                         .IsRequired()
@@ -1431,6 +1457,10 @@ namespace Website_API.Migrations
                     b.HasIndex("ApartmentId");
 
                     b.HasIndex("SavedSearchId");
+
+                    b.HasIndex("OwnerUserId", "Status");
+
+                    b.HasIndex("ReviewerUserId", "Status");
 
                     b.HasIndex("UserId", "ReadAt");
 
@@ -2207,6 +2237,11 @@ namespace Website_API.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Website_API.Models.AppUser", "Reviewer")
+                        .WithMany()
+                        .HasForeignKey("ReviewerUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Website_API.Models.SavedSearch", "SavedSearch")
                         .WithMany()
                         .HasForeignKey("SavedSearchId")
@@ -2220,6 +2255,8 @@ namespace Website_API.Migrations
                         .IsRequired();
 
                     b.Navigation("Apartment");
+
+                    b.Navigation("Reviewer");
 
                     b.Navigation("SavedSearch");
 

@@ -150,6 +150,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             notification.HasOne(item => item.User).WithMany().HasForeignKey(item => item.UserId).OnDelete(DeleteBehavior.Cascade);
             notification.HasOne(item => item.Apartment).WithMany().HasForeignKey(item => item.ApartmentId).OnDelete(DeleteBehavior.Cascade);
             notification.HasOne(item => item.SavedSearch).WithMany().HasForeignKey(item => item.SavedSearchId).OnDelete(DeleteBehavior.Cascade);
+            notification.HasOne(item => item.Reviewer).WithMany().HasForeignKey(item => item.ReviewerUserId).OnDelete(DeleteBehavior.SetNull);
+            notification.Property(item => item.Status).HasMaxLength(20).HasDefaultValue(ListingInterestNotification.Pending);
+            notification.Property(item => item.OwnerEmail).HasMaxLength(256);
+            notification.HasIndex(item => new { item.ReviewerUserId, item.Status });
+            notification.HasIndex(item => new { item.OwnerUserId, item.Status });
             // One alert per listing, client search and recipient.
             notification.HasIndex(item => new { item.UserId, item.ApartmentId, item.SavedSearchId }).IsUnique();
             notification.HasIndex(item => new { item.UserId, item.ReadAt });

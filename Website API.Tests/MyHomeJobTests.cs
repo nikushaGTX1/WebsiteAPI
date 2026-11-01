@@ -47,6 +47,8 @@ public class MyHomeJobTests
             builder.Services.AddHttpClient<GoogleNearbyPlacesService>();
             builder.Services.AddOutputCache();
             builder.Services.AddSingleton<ApartmentMatchQueue>();
+            builder.Services.AddScoped<ImageProcessingQueue>(); // ApartmentsController needs it since photo checks
+            builder.Services.AddScoped<ListingInterestService>();
             var calls = 0; var concurrent = 0; var peak = 0;
             var handler = new StubHandler(async (request, token) => {
                 Interlocked.Increment(ref calls); var count = Interlocked.Increment(ref concurrent); peak = Math.Max(peak, count);
