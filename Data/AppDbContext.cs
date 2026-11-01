@@ -24,6 +24,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<FavoriteApartment> FavoriteApartments =>
         Set<FavoriteApartment>();
     public DbSet<CrmLead> CrmLeads => Set<CrmLead>();
+    public DbSet<CrmLeadNotification> CrmLeadNotifications => Set<CrmLeadNotification>();
     public DbSet<CrmActivity> CrmActivities => Set<CrmActivity>();
     public DbSet<CrmTask> CrmTasks => Set<CrmTask>();
     public DbSet<CrmJobApplication> CrmJobApplications => Set<CrmJobApplication>();
@@ -45,6 +46,16 @@ public class AppDbContext : IdentityDbContext<AppUser>
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        builder.Entity<CrmLeadNotification>(notice =>
+        {
+            notice.Property(n => n.ActorName).HasMaxLength(256);
+            notice.Property(n => n.FromStatus).HasMaxLength(20);
+            notice.Property(n => n.ToStatus).HasMaxLength(20);
+            notice.HasIndex(n => new { n.UserId, n.ReadAt });
+            notice.HasIndex(n => new { n.UserId, n.CreatedAt, n.Id });
+            notice.HasOne(n => n.User).WithMany().HasForeignKey(n => n.UserId).OnDelete(DeleteBehavior.Cascade);
+            notice.HasOne(n => n.Lead).WithMany().HasForeignKey(n => n.LeadId).OnDelete(DeleteBehavior.Cascade);
+        });
         builder.Entity<ClientIntakeLink>(link =>
         {
             link.Property(x => x.Token).HasMaxLength(64);

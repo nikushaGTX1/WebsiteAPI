@@ -1311,6 +1311,8 @@ public class CrmController : ControllerBase
                 CreatedAt = now
             });
 
+            await Website_API.Services.CrmLeadNotifications.EnqueueStatusChangeAsync(
+                _context, lead, userId, oldStatus, status, now, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
         }
 

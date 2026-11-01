@@ -1181,6 +1181,53 @@ namespace Website_API.Migrations
                     b.ToTable("CrmLeads");
                 });
 
+            modelBuilder.Entity("Website_API.Models.CrmLeadNotification", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FromStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("LeadId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ToStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LeadId");
+
+                    b.HasIndex("UserId", "ReadAt");
+
+                    b.HasIndex("UserId", "CreatedAt", "Id");
+
+                    b.ToTable("CrmLeadNotifications");
+                });
+
             modelBuilder.Entity("Website_API.Models.CrmTask", b =>
                 {
                     b.Property<int>("Id")
@@ -2173,6 +2220,25 @@ namespace Website_API.Migrations
                     b.Navigation("CreatedByUser");
 
                     b.Navigation("CustomerUser");
+                });
+
+            modelBuilder.Entity("Website_API.Models.CrmLeadNotification", b =>
+                {
+                    b.HasOne("Website_API.Models.CrmLead", "Lead")
+                        .WithMany()
+                        .HasForeignKey("LeadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Website_API.Models.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Lead");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Website_API.Models.CrmTask", b =>
