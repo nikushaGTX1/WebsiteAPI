@@ -34,6 +34,9 @@ public class ClientRequirements : SavedSearchProfile
     public string? CarFuelType { get; set; }
     public string? PurchaseTiming { get; set; }
     public string? ApartmentStyle { get; set; }
+    /** Buyers: acceptable property conditions (WhiteFrame = თეთრი კარკასი, ...). "Any" = no preference. */
+    public List<string> PropertyConditions { get; set; } = [];
+    public const string ConditionCodes = "Any MoveInReady Renovated WhiteFrame BlackFrame GreenFrame NeedsRenovation";
     public string? PetOtherType { get; set; }
     public string? ProximityTarget { get; set; }
     public string? ProximityAddress { get; set; }
@@ -71,6 +74,7 @@ public class ClientRequirements : SavedSearchProfile
                 !Codes(p.Districts, "Vake Saburtalo Vera Mtatsminda Dighomi DidiDighomi Didube Avlabari Isani Gldani Chugureti Ortachala Nadzaladevi Krtsanisi Vashlijvari Sololaki Samgori SelectOnMap") ||
                 !Codes(p.Lifestyles, "Athlete RemoteWorker BusinessProfessional Student QuietLifestyle SocialLifestyle HostsGuests FrequentTraveler") ||
                 !Codes(p.Transportation, "Car Metro Walking MultipleMethods") ||
+                !Codes(p.PropertyConditions, ConditionCodes) ||
                 !Codes(p.ChildrenAgeGroups, "Age0To3 Age4To6 Age7To12 Age13To17") ||
                 !Codes(p.TopPriorities, "SelectedLocationNearby OfficeNearby MetroNearby SchoolNearby KindergartenNearby GymNearby ParkNearby UniversityNearby SupermarketNearby PharmacyNearby PlaygroundNearby PlaygroundOrSportsFieldNearby ClinicNearby PublicTransportNearby EverydayServicesNearby CafesNearby CafesOrCoworkingNearby CafesAndRestaurantsNearby MeetingPlacesNearby StudySpacesNearby CityCenterNearby EntertainmentNearby Workspace Parking QuietStreet AwayFromNightlife BalconyOrTerrace MultipleBathrooms SecurityOrConcierge ModernMaintainedBuilding IsolatedBedrooms CompanyLeaseAvailable") ||
                 !Code(p.Gender, "Male Female") || !Code(p.HouseholdType, "JustMe Couple FamilyWithChildren Relatives Roommates CorporateHousing") ||
@@ -111,7 +115,7 @@ public record PublicClientRequirements(
     string Gender, string HouseholdType, int Adults, int Children, string[] ChildrenAgeGroups,
     int? Bedrooms, int[] BedroomChoices, decimal? MinSize, string? RentalDuration,
     string? MoveInTiming, string? MoveInDate, bool HasPet, string? PetType, string[] PetTypes,
-    string? DogSize, int? PetCount, string[] TopPriorities);
+    string? DogSize, int? PetCount, string[] TopPriorities, string[] PropertyConditions);
 
 public record PublicClientAgent(string Name, string? Phone, string? Photo);
 public record PublicClientCard(long Id, bool IdentityVerified, string? Nationality,

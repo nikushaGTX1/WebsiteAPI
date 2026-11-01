@@ -141,11 +141,12 @@ public class ClientBoardController(AppDbContext db, SupabaseStorageService stora
     [HttpGet("client-board")]
     public async Task<ActionResult<ClientBoardPage>> Board(string? district = null, decimal? budgetMin = null,
         decimal? budgetMax = null, DateOnly? moveInBefore = null, int? residents = null, bool? pets = null,
-        string goal = "Rent", int page = 1, int pageSize = 12, CancellationToken ct = default)
+        string goal = "Rent", string? condition = null, int page = 1, int pageSize = 12, CancellationToken ct = default)
     {
         if (page < 1 || page > 100000 || pageSize < 1 || pageSize > 48 || budgetMin < 0 || budgetMax < 0 ||
             budgetMin > budgetMax || residents is < 1 or > 7 || district?.Length > 80 ||
-            goal is not ("Rent" or "Buy")) return BadRequest();
+            goal is not ("Rent" or "Buy") ||
+            (condition is not null && !ClientRequirements.ConditionCodes.Split(' ').Contains(condition))) return BadRequest();
         // One goal at a time: purchase budgets must never be listed next to monthly rents.
         var goalJson = goal == "Buy" ? "{\"propertyGoal\":\"Buy\"}" : "{\"propertyGoal\":\"Rent\"}";
         var q = db.ClientProfiles.AsNoTracking().Where(x => x.Status == "Active" && x.PublishConsentAt != null && StaffIds.Contains(x.AgentUserId)
@@ -157,6 +158,13 @@ public class ClientBoardController(AppDbContext db, SupabaseStorageService stora
         if (moveInBefore.HasValue) q = q.Where(x => x.MoveInDate <= moveInBefore || x.MoveInTiming == "Flexible");
         if (residents.HasValue) q = q.Where(x => x.Residents == residents);
         if (pets.HasValue) q = q.Where(x => x.HasPets == pets);
+        // Buyers who accept this condition, or any condition.
+        if (!string.IsNullOrEmpty(condition))
+        {
+            var wanted = $"{{\"propertyConditions\":[\"{condition}\"]}}";
+            q = q.Where(x => EF.Functions.JsonContains(x.ProfileJson, wanted) ||
+                             EF.Functions.JsonContains(x.ProfileJson, "{\"propertyConditions\":[\"Any\"]}"));
+        }
         var total = await q.CountAsync(ct);
         var rows = await q.Include(x => x.Agent).OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
@@ -176,7 +184,8 @@ public class ClientBoardController(AppDbContext db, SupabaseStorageService stora
             new(p.BudgetMin, p.BudgetMax, p.Currency, p.Districts.Where(x => x != "SelectOnMap").ToArray(), p.LocationFlexible,
                 p.Gender, p.HouseholdType, p.Adults, p.Children, p.ChildrenAgeGroups.ToArray(), p.Bedrooms,
                 p.BedroomChoices.ToArray(), p.MinSize, p.RentalDuration, p.MoveInTiming, p.MoveInDate,
-                row.HasPets, p.PetType, p.PetTypes.ToArray(), p.DogSize, p.PetCount, p.TopPriorities.Take(3).ToArray()),
+                row.HasPets, p.PetType, p.PetTypes.ToArray(), p.DogSize, p.PetCount, p.TopPriorities.Take(3).ToArray(),
+                p.PropertyConditions.ToArray()),
             new(row.Agent.FullName ?? "Velven agent", row.Agent.PhoneNumber, agentPhoto));
     }
 }

@@ -158,6 +158,19 @@ public class ClientBoardTests
             Assert.Empty((await Board("?moveInBefore=2026-10-25")).Items);
             Assert.Single((await Board("?pageSize=1&page=2")).Items);
             Assert.Empty((await Board("?page=3&pageSize=1")).Items);
+            // Buyers: the condition filter (white frame, renovated, ...) replaces pets on the Buy tab.
+            var buyNode = System.Text.Json.Nodes.JsonNode.Parse(Profile().GetRawText())!.AsObject();
+            buyNode["propertyGoal"] = "Buy"; buyNode["purchaseTiming"] = "Flexible";
+            buyNode["propertyConditions"] = new System.Text.Json.Nodes.JsonArray("WhiteFrame", "Renovated");
+            var buy = Request(); buy.Profile = JsonSerializer.SerializeToElement(buyNode);
+            (await Submit(token, buy)).EnsureSuccessStatusCode();
+            Assert.Equal(2, (await Board()).Total); // Rent board unchanged
+            Assert.Equal(["WhiteFrame", "Renovated"], Assert.Single((await Board("?goal=Buy&condition=WhiteFrame")).Items).Profile.PropertyConditions);
+            Assert.Empty((await Board("?goal=Buy&condition=GreenFrame")).Items);
+            var badCondition = buyNode.DeepClone().AsObject(); badCondition["propertyConditions"] = new System.Text.Json.Nodes.JsonArray("Purple");
+            var invalid = Request(); invalid.Profile = JsonSerializer.SerializeToElement(badCondition);
+            Assert.Equal(HttpStatusCode.BadRequest, (await Submit(token, invalid)).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/client-board?goal=Buy&condition=Purple")).StatusCode);
             foreach (var query in new[] { "?page=0", "?pageSize=100", "?residents=8", "?budgetMin=2000&budgetMax=1000" }) Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/client-board" + query)).StatusCode);
             Role("Agent", "other");
             Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync($"/api/client-intake-links/{linkId}")).StatusCode);
@@ -165,7 +178,7 @@ public class ClientBoardTests
             Assert.Equal(HttpStatusCode.NotFound, (await client.PatchAsJsonAsync($"/api/client-profiles/{id}/status", new { status = "Closed" })).StatusCode);
             Assert.Empty((await client.GetFromJsonAsync<JsonElement[]>("/api/client-intake-links"))!);
             Role("Agent");
-            var recent = await client.GetFromJsonAsync<JsonElement>("/api/client-profiles"); Assert.Equal(3, recent.GetProperty("total").GetInt32());
+            var recent = await client.GetFromJsonAsync<JsonElement>("/api/client-profiles"); Assert.Equal(4, recent.GetProperty("total").GetInt32());
             Assert.Equal(HttpStatusCode.BadRequest, (await client.PatchAsJsonAsync($"/api/client-profiles/{id}/status", new { status = "Unknown" })).StatusCode);
             (await client.PatchAsJsonAsync($"/api/client-profiles/{id}/status", new { status = "Paused" })).EnsureSuccessStatusCode();
             Assert.Equal(1, (await Board()).Total);
@@ -178,7 +191,7 @@ public class ClientBoardTests
             Assert.Equal(2, (await Board()).Total); // Revocation stops new intake, not existing client consent.
             using (var scope = app.Services.CreateScope()) {
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                Assert.Equal(3, await db.CrmLeads.CountAsync());
+                Assert.Equal(4, await db.CrmLeads.CountAsync()); // three renters and one buyer
                 Assert.All(await db.CrmLeads.ToListAsync(), l => { Assert.Equal("test-user", l.AssignedAgentId); Assert.True(l.ConsentGiven); });
                 Assert.All(await db.ClientProfiles.ToListAsync(), p => { Assert.DoesNotContain("SECRET NAME", p.ProfileJson); Assert.NotEqual(default, p.ConsentAt); });
                 db.UserRoles.RemoveRange(await db.UserRoles.Where(x => x.UserId == "test-user").ToListAsync()); await db.SaveChangesAsync();

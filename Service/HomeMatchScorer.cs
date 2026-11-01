@@ -605,7 +605,12 @@ public class HomeMatchScorer
     private static bool IsWithin(int? distance, int maximum) =>
         distance.HasValue && distance.Value <= maximum;
 
-    private static bool IsQuiet(Apartment apartment) =>
+    // The upload form records "Quiet street: Yes" in the listing details; NoiseLevel is rarely set.
+    internal static bool IsQuiet(Apartment apartment) =>
+        System.Text.RegularExpressions.Regex.IsMatch(
+            apartment.Description ?? string.Empty,
+            @"Quiet street:\s*Yes",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
         apartment.NoiseLevel.Equals(
             "Quiet",
             StringComparison.OrdinalIgnoreCase
@@ -690,6 +695,7 @@ public class HomeMatchScorer
             "MetroNearby" =>
                 $"Metro is approximately {apartment.MetroDistanceMinutes} minutes away.",
 
+            "QuietStreet" => "The apartment is on a quiet street.",
             _ => $"The apartment includes {Humanize(preference).ToLowerInvariant()}."
         };
     }
