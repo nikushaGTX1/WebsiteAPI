@@ -777,6 +777,57 @@ namespace Website_API.Migrations
                     b.ToTable("CanonicalStreets");
                 });
 
+            modelBuilder.Entity("Website_API.Models.ClientCoupon", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("AmountUsd")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime?>("RedeemedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RedeemedById")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("ClientCoupons");
+                });
+
             modelBuilder.Entity("Website_API.Models.ClientIntakeLink", b =>
                 {
                     b.Property<long>("Id")
@@ -2108,6 +2159,17 @@ namespace Website_API.Migrations
                     b.Navigation("City");
 
                     b.Navigation("District");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ClientCoupon", b =>
+                {
+                    b.HasOne("Website_API.Models.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Website_API.Models.ClientIntakeLink", b =>

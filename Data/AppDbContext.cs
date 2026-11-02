@@ -25,6 +25,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         Set<FavoriteApartment>();
     public DbSet<CrmLead> CrmLeads => Set<CrmLead>();
     public DbSet<CrmLeadNotification> CrmLeadNotifications => Set<CrmLeadNotification>();
+    public DbSet<ClientCoupon> ClientCoupons => Set<ClientCoupon>();
     public DbSet<CrmActivity> CrmActivities => Set<CrmActivity>();
     public DbSet<CrmTask> CrmTasks => Set<CrmTask>();
     public DbSet<CrmJobApplication> CrmJobApplications => Set<CrmJobApplication>();
@@ -46,6 +47,17 @@ public class AppDbContext : IdentityDbContext<AppUser>
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        builder.Entity<ClientCoupon>(coupon =>
+        {
+            coupon.Property(c => c.Kind).HasMaxLength(40);
+            coupon.Property(c => c.Code).HasMaxLength(20);
+            coupon.Property(c => c.Title).HasMaxLength(120);
+            coupon.Property(c => c.AmountUsd).HasPrecision(10, 2);
+            coupon.HasIndex(c => c.Code).IsUnique();
+            // One coupon of each kind per account (one game cashback per client).
+            coupon.HasIndex(c => new { c.UserId, c.Kind }).IsUnique();
+            coupon.HasOne(c => c.User).WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
         builder.Entity<CrmLeadNotification>(notice =>
         {
             notice.Property(n => n.ActorName).HasMaxLength(256);
