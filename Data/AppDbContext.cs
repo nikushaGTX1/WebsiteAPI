@@ -53,6 +53,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             coupon.Property(c => c.Code).HasMaxLength(20);
             coupon.Property(c => c.Title).HasMaxLength(120);
             coupon.Property(c => c.AmountUsd).HasPrecision(10, 2);
+            coupon.Property(c => c.RedeemNote).HasMaxLength(200);
+            coupon.Property(c => c.VoidReason).HasMaxLength(200);
             coupon.HasIndex(c => c.Code).IsUnique();
             // One coupon of each kind per account (one game cashback per client).
             coupon.HasIndex(c => new { c.UserId, c.Kind }).IsUnique();

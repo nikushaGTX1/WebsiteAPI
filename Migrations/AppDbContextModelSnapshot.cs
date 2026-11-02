@@ -802,6 +802,10 @@ namespace Website_API.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
 
+                    b.Property<string>("RedeemNote")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<DateTime?>("RedeemedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -815,6 +819,16 @@ namespace Website_API.Migrations
 
                     b.Property<string>("UserId")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("VoidReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("VoidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VoidedById")
                         .HasColumnType("text");
 
                     b.HasKey("Id");

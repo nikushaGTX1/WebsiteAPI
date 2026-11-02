@@ -18,7 +18,7 @@ namespace Website_API.Tests;
 public class CouponTests
 {
     [LocalPostgresFact]
-    public async Task GameWinAddsOneCashbackCouponThatAnAgentCanRedeemOnce()
+    public async Task GameWinAddsOneCashbackCouponThatAManagerCanUseOnceOrCancel()
     {
         var configured = Environment.GetEnvironmentVariable("MYHOME_TEST_DATABASE");
         var cs = new NpgsqlConnectionStringBuilder(configured);
@@ -84,12 +84,35 @@ public class CouponTests
             As("other", "Client");
             Assert.Equal(0, (await client.GetFromJsonAsync<JsonElement>("/api/Coupons")).GetArrayLength());
 
+            // Only managers and admins check and use codes.
             As("agent", "Agent");
-            var found = await client.GetFromJsonAsync<JsonElement>($"/api/Coupons/lookup/{code.ToLowerInvariant()}");
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"/api/Coupons/lookup/{code}")).StatusCode);
+            As("agent", "Manager");
+            // Typed with spaces and in lower case still finds it.
+            var found = await client.GetFromJsonAsync<JsonElement>($"/api/Coupons/lookup/{code.Replace("-", " ").ToLowerInvariant()}");
             Assert.Equal("Nino Client", found.GetProperty("clientName").GetString());
             var couponId = found.GetProperty("coupon").GetProperty("id").GetInt32();
-            Assert.Equal(HttpStatusCode.OK, (await client.PostAsync($"/api/Coupons/{couponId}/redeem", null)).StatusCode);
-            Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync($"/api/Coupons/{couponId}/redeem", null)).StatusCode);
+            var redeem = await client.PostAsJsonAsync($"/api/Coupons/{couponId}/redeem", new { note = "Deal #42, Vake 2-room" });
+            Assert.Equal(HttpStatusCode.OK, redeem.StatusCode);
+            var redeemed = await redeem.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("Deal #42, Vake 2-room", redeemed.GetProperty("redeemNote").GetString());
+            Assert.Equal("agent", redeemed.GetProperty("redeemedBy").GetString());
+            // Never twice, and a used coupon cannot be cancelled afterwards.
+            Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync($"/api/Coupons/{couponId}/redeem", new { })).StatusCode);
+            Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync($"/api/Coupons/{couponId}/void", new { })).StatusCode);
+            var list = await client.GetFromJsonAsync<JsonElement>("/api/Coupons/all?status=redeemed&search=nino");
+            Assert.Equal(1, list.GetProperty("total").GetInt32());
+            Assert.Equal(1, list.GetProperty("counts").GetProperty("redeemed").GetInt32());
+
+            // A second client's coupon is cancelled instead; it then cannot be used.
+            As("other", "Client");
+            var otherId = (await (await client.PostAsJsonAsync("/api/Coupons/game-reward", new { floor = 30 })).Content
+                .ReadFromJsonAsync<JsonElement>()).GetProperty("coupon").GetProperty("id").GetInt32();
+            As("agent", "Admin");
+            Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync($"/api/Coupons/{otherId}/void", new { reason = "Faked win" })).StatusCode);
+            Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync($"/api/Coupons/{otherId}/redeem", new { })).StatusCode);
+            As("other", "Client");
+            Assert.Equal("void", (await client.GetFromJsonAsync<JsonElement>("/api/Coupons"))[0].GetProperty("status").GetString());
 
             As("client", "Client");
             Assert.Equal("redeemed", (await client.GetFromJsonAsync<JsonElement>("/api/Coupons"))[0].GetProperty("status").GetString());

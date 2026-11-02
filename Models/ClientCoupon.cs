@@ -21,4 +21,11 @@ public class ClientCoupon
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? RedeemedAt { get; set; }
     public string? RedeemedById { get; set; }
+    /// <summary>What the coupon was used on, e.g. the deal or listing, written by the manager.</summary>
+    public string? RedeemNote { get; set; }
+
+    /// <summary>A manager cancelled the coupon (e.g. a faked win); it can no longer be used.</summary>
+    public DateTime? VoidedAt { get; set; }
+    public string? VoidedById { get; set; }
+    public string? VoidReason { get; set; }
 }

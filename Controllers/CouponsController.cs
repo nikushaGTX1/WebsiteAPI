@@ -17,7 +17,7 @@ public class CouponsController : ControllerBase
     /// <summary>Floor the player must reach in the Velven game to win the cashback (default).</summary>
     public const int GameRewardFloor = 30;
     public const string GameRewardKind = "game-cashback-50";
-    private const string StaffRoles = "Admin,Manager,Agent";
+    private const string ManagerRoles = "Admin,Manager";
     // No 0/O or 1/I so codes read clearly over the phone.
     private const string CodeAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 
@@ -96,32 +96,144 @@ public class CouponsController : ControllerBase
         return Ok(new { created = true, coupon = ToDto(coupon) });
     }
 
-    /// <summary>Agents look up the code a client shows them.</summary>
-    [Authorize(Roles = StaffRoles)]
+    public record RedeemRequest(string? Note);
+    public record VoidRequest(string? Reason);
+
+    /// <summary>Managers: every coupon, newest first, searchable by code, client name or email.</summary>
+    [Authorize(Roles = ManagerRoles)]
+    [HttpGet("all")]
+    public async Task<IActionResult> All(string? search = null, string? status = null, int page = 1,
+        CancellationToken cancellationToken = default)
+    {
+        page = Math.Clamp(page, 1, 10000);
+        const int pageSize = 30;
+        var query = _context.ClientCoupons.AsNoTracking().Include(c => c.User).AsQueryable();
+        var term = search?.Trim();
+        if (!string.IsNullOrEmpty(term))
+        {
+            var upper = term.ToUpperInvariant();
+            var lower = term.ToLowerInvariant();
+            query = query.Where(c => c.Code.Contains(upper)
+                || (c.User.FullName != null && c.User.FullName.ToLower().Contains(lower))
+                || (c.User.Email != null && c.User.Email.ToLower().Contains(lower)));
+        }
+        query = status switch
+        {
+            "active" => query.Where(c => c.RedeemedAt == null && c.VoidedAt == null),
+            "redeemed" => query.Where(c => c.RedeemedAt != null),
+            "void" => query.Where(c => c.VoidedAt != null),
+            _ => query,
+        };
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query.OrderByDescending(c => c.CreatedAt)
+            .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
+        var staffNames = await StaffNamesAsync(items, cancellationToken);
+        var all = _context.ClientCoupons.AsNoTracking();
+        var counts = new
+        {
+            Active = await all.CountAsync(c => c.RedeemedAt == null && c.VoidedAt == null, cancellationToken),
+            Redeemed = await all.CountAsync(c => c.RedeemedAt != null, cancellationToken),
+            Void = await all.CountAsync(c => c.VoidedAt != null, cancellationToken),
+        };
+        return Ok(new { total, page, pageSize, counts, items = items.Select(c => StaffDto(c, staffNames)) });
+    }
+
+    /// <summary>Managers check the code a client shows them.</summary>
+    [Authorize(Roles = ManagerRoles)]
     [HttpGet("lookup/{code}")]
     public async Task<IActionResult> Lookup(string code, CancellationToken cancellationToken)
     {
-        var normalized = code.Trim().ToUpperInvariant();
+        var normalized = NormalizeCode(code);
         var coupon = await _context.ClientCoupons.AsNoTracking()
             .Include(c => c.User)
             .FirstOrDefaultAsync(c => c.Code == normalized, cancellationToken);
         if (coupon is null) return NotFound(new { message = "No coupon with this code." });
-        return Ok(new { coupon = ToDto(coupon), clientName = coupon.User.FullName, clientEmail = coupon.User.Email });
+        return Ok(StaffDto(coupon, await StaffNamesAsync([coupon], cancellationToken)));
     }
 
-    /// <summary>Marks a coupon as used on a deal, so it cannot be applied twice.</summary>
-    [Authorize(Roles = StaffRoles)]
+    /// <summary>
+    /// Marks a coupon as used on a deal. The update only succeeds while the coupon is still
+    /// unused and not cancelled, so two managers pressing at once cannot use it twice.
+    /// </summary>
+    [Authorize(Roles = ManagerRoles)]
     [HttpPost("{id:int}/redeem")]
-    public async Task<IActionResult> Redeem(int id, CancellationToken cancellationToken)
+    public async Task<IActionResult> Redeem(int id, RedeemRequest? request, CancellationToken cancellationToken)
     {
-        var coupon = await _context.ClientCoupons.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+        var note = Clip(request?.Note, 200);
+        var now = DateTime.UtcNow;
+        var userId = GetUserId();
+        var updated = await _context.ClientCoupons
+            .Where(c => c.Id == id && c.RedeemedAt == null && c.VoidedAt == null)
+            .ExecuteUpdateAsync(set => set
+                .SetProperty(c => c.RedeemedAt, now)
+                .SetProperty(c => c.RedeemedById, userId)
+                .SetProperty(c => c.RedeemNote, note), cancellationToken);
+        var coupon = await _context.ClientCoupons.AsNoTracking().Include(c => c.User)
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
         if (coupon is null) return NotFound();
-        if (coupon.RedeemedAt is not null) return Conflict(new { message = "This coupon was already used." });
-        coupon.RedeemedAt = DateTime.UtcNow;
-        coupon.RedeemedById = GetUserId();
-        await _context.SaveChangesAsync(cancellationToken);
-        return Ok(ToDto(coupon));
+        if (updated == 0)
+            return Conflict(new { message = coupon.VoidedAt is not null ? "This coupon was cancelled." : "This coupon was already used." });
+        return Ok(StaffDto(coupon, await StaffNamesAsync([coupon], cancellationToken)));
     }
+
+    /// <summary>Cancels an unused coupon (for example a faked win). It can no longer be used.</summary>
+    [Authorize(Roles = ManagerRoles)]
+    [HttpPost("{id:int}/void")]
+    public async Task<IActionResult> Void(int id, VoidRequest? request, CancellationToken cancellationToken)
+    {
+        var reason = Clip(request?.Reason, 200);
+        var now = DateTime.UtcNow;
+        var userId = GetUserId();
+        var updated = await _context.ClientCoupons
+            .Where(c => c.Id == id && c.RedeemedAt == null && c.VoidedAt == null)
+            .ExecuteUpdateAsync(set => set
+                .SetProperty(c => c.VoidedAt, now)
+                .SetProperty(c => c.VoidedById, userId)
+                .SetProperty(c => c.VoidReason, reason), cancellationToken);
+        var coupon = await _context.ClientCoupons.AsNoTracking().Include(c => c.User)
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+        if (coupon is null) return NotFound();
+        if (updated == 0)
+            return Conflict(new { message = coupon.VoidedAt is not null ? "This coupon was already cancelled." : "A used coupon cannot be cancelled." });
+        return Ok(StaffDto(coupon, await StaffNamesAsync([coupon], cancellationToken)));
+    }
+
+    /// <summary>Accepts "vlv 7k2m 9qxd", "VLV7K2M9QXD" and the printed form.</summary>
+    private static string NormalizeCode(string code)
+    {
+        var compact = new string(code.ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
+        return compact.Length == 11 && compact.StartsWith("VLV")
+            ? $"VLV-{compact[3..7]}-{compact[7..]}"
+            : code.Trim().ToUpperInvariant();
+    }
+
+    private static string? Clip(string? text, int max)
+    {
+        var value = text?.Trim();
+        return string.IsNullOrEmpty(value) ? null : value.Length > max ? value[..max] : value;
+    }
+
+    private async Task<Dictionary<string, string>> StaffNamesAsync(IEnumerable<ClientCoupon> coupons, CancellationToken cancellationToken)
+    {
+        var ids = coupons.SelectMany(c => new[] { c.RedeemedById, c.VoidedById })
+            .Where(id => id is not null).Select(id => id!).Distinct().ToList();
+        if (ids.Count == 0) return new();
+        return await _context.Users.AsNoTracking().Where(u => ids.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.FullName ?? u.Email ?? u.UserName ?? "Staff", cancellationToken);
+    }
+
+    private static object StaffDto(ClientCoupon coupon, IReadOnlyDictionary<string, string> staff) => new
+    {
+        coupon = ToDto(coupon),
+        clientName = coupon.User?.FullName,
+        clientEmail = coupon.User?.Email,
+        clientPhone = coupon.User?.PhoneNumber,
+        redeemNote = coupon.RedeemNote,
+        redeemedBy = coupon.RedeemedById is not null && staff.TryGetValue(coupon.RedeemedById, out var r) ? r : null,
+        voidedAt = coupon.VoidedAt,
+        voidReason = coupon.VoidReason,
+        voidedBy = coupon.VoidedById is not null && staff.TryGetValue(coupon.VoidedById, out var v) ? v : null,
+    };
 
     private async Task<string> NewCodeAsync(CancellationToken cancellationToken)
     {
@@ -142,7 +254,7 @@ public class CouponsController : ControllerBase
         coupon.Title,
         coupon.CreatedAt,
         coupon.RedeemedAt,
-        Status = coupon.RedeemedAt is null ? "active" : "redeemed",
+        Status = coupon.VoidedAt is not null ? "void" : coupon.RedeemedAt is not null ? "redeemed" : "active",
     };
 
     private string? GetUserId() =>
