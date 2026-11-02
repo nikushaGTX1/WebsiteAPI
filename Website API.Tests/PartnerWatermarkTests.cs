@@ -20,7 +20,9 @@ public class PartnerWatermarkTests
     [InlineData("third_party", "myhome.ge | ss.ge", "partner_brand")]
     [InlineData("third_party", "korter.ge", "third_party")]          // other companies are never removable
     [InlineData("third_party", "myhome.ge | korter.ge", "third_party")] // mixed with another company
-    [InlineData("third_party", null, "third_party")]                 // unreadable logo
+    [InlineData("third_party", null, "none")]                        // nothing readable: a lamp or mirror, not a watermark
+    [InlineData("third_party", "~ | ..", "none")]                    // only noise read
+    [InlineData("third_party", "korter.ge | ~", "third_party")]      // a real other company stays blocked
     [InlineData("none", null, "none")]
     public void OnlyPartnerAndOwnMarksBecomeRemovable(string classification, string? text, string expected) =>
         Assert.Equal(expected, Options.PublicClassification(classification, text));

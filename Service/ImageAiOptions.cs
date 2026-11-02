@@ -43,13 +43,15 @@ public sealed class ImageAiOptions
     /// </summary>
     public string? PublicClassification(string? classification, string? watermarkText)
     {
-        if (classification is not ("own_brand" or "third_party") || string.IsNullOrWhiteSpace(watermarkText))
-            return classification;
-        // Unreadable bits (a logo icon read as "~") say nothing about whose mark it is.
-        var parts = watermarkText.Split(" | ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        if (classification is not ("own_brand" or "third_party")) return classification;
+        // Unreadable bits (a lamp, a mirror edge or a logo icon read as "~") say nothing about whose
+        // mark it is. A photo where nothing readable was found is treated as having no watermark:
+        // plain apartment photos were flagged "other company's watermark" because of them.
+        var parts = (watermarkText ?? string.Empty)
+            .Split(" | ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(part => Normalize(part).Length >= 3)
             .ToArray();
-        if (parts.Length == 0) return classification;
+        if (parts.Length == 0) return classification == "third_party" ? "none" : classification;
         // Same rule as the AI service: letters and digits only, so "MY HOME" and "SS GE" match.
         bool Has(string text, string[] terms) =>
             terms.Select(Normalize).Any(term => term.Length > 0 && Normalize(text).Contains(term, StringComparison.Ordinal));

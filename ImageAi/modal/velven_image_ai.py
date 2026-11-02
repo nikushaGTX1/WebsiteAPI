@@ -118,12 +118,16 @@ def classify_marks(detections: list[dict], terms: list[str]) -> tuple[str, list[
     Returns (classification, boxes to remove).
     own_brand: at least one mark reads as Velven or a licensed partner and no mark clearly reads
     as another company. Unreadable boxes next to a removable mark (its icon) are removed with it.
-    third_party: some mark clearly names another company, or nothing readable was found.
+    third_party: some mark clearly names another company.
+    none: only unreadable shapes were found (plain photos were blocked by lamps and mirrors).
     """
     if not detections:
         return "none", []
     removable = [d for d in detections if mark_is_removable(d.get("text", ""), terms)]
     other = [d for d in detections if d not in removable and not _is_unreadable(d.get("text", ""))]
+    # Nothing readable anywhere ("1", "T", "..."): a lamp, mirror or reflection, not a watermark.
+    if not removable and not other:
+        return "none", []
     if not removable or other:
         return "third_party", []
     icons = [d for d in detections if d not in removable and d.get("primary")
