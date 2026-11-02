@@ -109,7 +109,11 @@ public class PhotoChecksController : ControllerBase
                 .OrderByDescending(job => job.Id)
                 .Select(job => new { job.Classification, job.WatermarkText })
                 .FirstOrDefaultAsync(cancellationToken);
-            if (previous is not null)
+            // A "third_party" answer is checked again: the AI service learns new partner spellings
+            // and logo layouts over time, and an old answer must not block removal forever.
+            var stillThirdParty = previous is not null &&
+                _options.PublicClassification(previous.Classification, previous.WatermarkText) == "third_party";
+            if (previous is not null && !stillThirdParty)
             {
                 return Ok(new { classification = _options.PublicClassification(previous.Classification, previous.WatermarkText), watermarkText = previous.WatermarkText, action = "cached" });
             }
