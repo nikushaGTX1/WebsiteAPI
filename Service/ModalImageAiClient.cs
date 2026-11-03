@@ -74,6 +74,8 @@ public sealed class ModalProcessRequest
     public string AuthorizationBasis { get; set; } = "unknown";
     public string? PermissionReference { get; set; }
     public string[] OwnBrandTerms { get; set; } = [];
+    /// <summary>Partner the photo is known to come from (e.g. "myhome"), or null.</summary>
+    public string? KnownSource { get; set; }
 }
 
 public sealed class ModalProcessResult

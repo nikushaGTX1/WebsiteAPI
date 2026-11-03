@@ -100,6 +100,57 @@ def _is_unreadable(text: str) -> bool:
     return len(normalize_mark_text(text)) < 3
 
 
+def _is_unreadable_or_fragment(text: str, terms: list[str]) -> bool:
+    """OCR noise, or a piece of a removable brand ("ge", "nome" from "myhome.ge")."""
+    normalized = normalize_mark_text(text)
+    if _is_unreadable(text):
+        return True
+    brands = [normalize_mark_text(t) for t in terms]
+    def near_piece(piece: str, brand: str) -> bool:
+        # One wrong letter is allowed in pieces of 4+ letters ("nome" for "home").
+        return len(piece) >= 4 and any(
+            sum(a != b for a, b in zip(piece, brand[i:i + len(piece)])) <= 1
+            for i in range(0, len(brand) - len(piece) + 1))
+    return any(normalized in b or near_piece(normalized, b) for b in brands if b)
+
+
+def _is_piece_of(text: str, source: str | None) -> bool:
+    """A 2+ letter piece of the known partner's name with its .ge ending ("ge", "home", "my")."""
+    if not source:
+        return False
+    normalized = normalize_mark_text(text)
+    brand = normalize_mark_text(source)
+    form = brand if brand.endswith("ge") else brand + "ge"
+    return len(normalized) >= 2 and normalized in form
+
+
+def partner_read_matches(text: str, terms: list[str]) -> bool:
+    """
+    Looser reading for the partner search, which only looks where such logos sit (the middle of
+    the photo or around a detected mark). Pale logos come out of OCR misspelled ("yone.ge",
+    "yfone ge" for "myhome.ge"), so a close resemblance to a brand, or a 3+ letter piece of it,
+    is enough here.
+    """
+    import difflib
+
+    normalized = normalize_mark_text(text)
+    if len(normalized) < 3:
+        return False
+    if mark_is_removable(text, terms):
+        return True
+    for term in terms:
+        brand = normalize_mark_text(term)
+        if not brand:
+            continue
+        forms = {brand, brand if brand.endswith("ge") else brand + "ge"}
+        for form in forms:
+            if len(normalized) >= 4 and difflib.SequenceMatcher(None, normalized, form).ratio() >= 0.6:
+                return True
+            if len(form) >= 5 and normalized in form and len(normalized) >= 3:
+                return True
+    return False
+
+
 def _overlap_or_near(a: list[int], b: list[int]) -> bool:
     """Boxes touch, or are within one box-height of each other (a logo icon beside its text)."""
     gap = max(a[3] - a[1], b[3] - b[1])
@@ -123,8 +174,12 @@ def classify_marks(detections: list[dict], terms: list[str]) -> tuple[str, list[
     """
     if not detections:
         return "none", []
-    removable = [d for d in detections if mark_is_removable(d.get("text", ""), terms)]
-    other = [d for d in detections if d not in removable and not _is_unreadable(d.get("text", ""))]
+    # Marks the partner search located already passed its (looser) brand check.
+    removable = [d for d in detections
+                 if d.get("partner_search") or mark_is_removable(d.get("text", ""), terms)]
+    # Pieces of a removable brand ("nome" read from "myhome") are not another company's mark.
+    other = [d for d in detections if d not in removable
+             and not (_is_unreadable_or_fragment(d.get("text", ""), terms) if removable else _is_unreadable(d.get("text", "")))]
     # Nothing readable anywhere ("1", "T", "..."): a lamp, mirror or reflection, not a watermark.
     if not removable and not other:
         return "none", []
@@ -245,6 +300,101 @@ class Processor:
                            min(image.width, x2 + pad), min(image.height, y2 + pad)))
         return str(self._florence("<OCR>", crop).get("<OCR>", "")).strip()
 
+    def _find_partner_marks(self, image, terms: list[str], seeds: list[list[int]],
+                            known_source: str | None = None) -> list[dict]:
+        """
+        Faint, semi-transparent partner marks (myhome.ge prints a pale logo in the middle of every
+        photo) are found by the detector, but its box often covers only part of the logo, so the
+        text read from it is a fragment ("ge", "nome"). Here each found box, and the middle of the
+        photo where such logos sit, is read again with room around it and with the contrast
+        raised, and the words are located. Only areas whose words read as a removable brand are
+        returned, so other text in the photo is never touched.
+
+        known_source: the photo is known to come from this partner (a listing with a MyHome ID).
+        Then a piece of its name is enough ("ge" read from a pale "myhome.ge").
+        """
+        import cv2
+        import numpy as np
+        from PIL import Image
+
+        w, h = image.size
+        # The middle of the photo first (tight, then wider), then around each detector box.
+        regions = [[0.28 * w, 0.42 * h, 0.72 * w, 0.58 * h], [0.18 * w, 0.34 * h, 0.82 * w, 0.66 * h]]
+        for x1, y1, x2, y2 in seeds:
+            cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+            bw, bh = max(x2 - x1, 0.25 * w), max(y2 - y1, 0.08 * h)
+            regions.append([cx - bw, cy - bh, cx + bw, cy + bh])
+        clahe = cv2.createCLAHE(clipLimit=8.0, tileGridSize=(8, 8))
+        brand = "".join(normalize_mark_text(t) for t in terms)
+        found = []
+        for rx1, ry1, rx2, ry2 in regions:
+            box = [int(max(0, rx1)), int(max(0, ry1)), int(min(w, rx2)), int(min(h, ry2))]
+            if box[2] - box[0] < 16 or box[3] - box[1] < 16:
+                continue
+            crop = image.crop(box)
+            scale = 2 if crop.width < 900 else 1
+            if scale > 1:
+                crop = crop.resize((crop.width * scale, crop.height * scale))
+            # Pale marks on bright walls: local contrast (CLAHE) makes the faint letters stand out.
+            grey = cv2.cvtColor(np.array(crop), cv2.COLOR_RGB2GRAY)
+            crop = Image.fromarray(clahe.apply(grey)).convert("RGB")
+            parsed = self._florence("<OCR_WITH_REGION>", crop).get("<OCR_WITH_REGION>", {})
+            labels = parsed.get("labels", []) or []
+            quads = parsed.get("quad_boxes", []) or []
+            joined = " ".join(str(label) for label in labels)
+            if not (partner_read_matches(joined, terms) or _is_piece_of(joined, known_source)):
+                continue
+            # Keep the words that belong to the brand (and pieces of it, e.g. "my", "home", ".ge").
+            parts = []
+            for label, quad in zip(labels, quads):
+                text = normalize_mark_text(str(label))
+                if not text or not (partner_read_matches(str(label), terms) or (len(text) >= 2 and text in brand)
+                                    or _is_piece_of(str(label), known_source)):
+                    continue
+                xs, ys = quad[0::2], quad[1::2]
+                parts.append([box[0] + min(xs) / scale, box[1] + min(ys) / scale,
+                              box[0] + max(xs) / scale, box[1] + max(ys) / scale])
+            if not parts:
+                continue
+            x1 = min(p[0] for p in parts)
+            y1 = min(p[1] for p in parts)
+            x2 = max(p[2] for p in parts)
+            y2 = max(p[3] for p in parts)
+            if known_source and not mark_is_removable(joined, terms):
+                # Only a piece was read ("ge"): cover the whole logo, which is about a quarter of
+                # the photo wide, stretching away from the piece towards the rest of the name.
+                logo_w = max(x2 - x1, 0.24 * w)
+                logo_h = max(y2 - y1, 0.085 * w)
+                form = normalize_mark_text(known_source)
+                form = form if form.endswith("ge") else form + "ge"
+                piece = normalize_mark_text(joined)
+                if form.endswith(piece):
+                    x1 = x2 - logo_w
+                elif form.startswith(piece):
+                    x2 = x1 + logo_w
+                else:
+                    cx = (x1 + x2) / 2
+                    x1, x2 = cx - logo_w / 2, cx + logo_w / 2
+                cy = (y1 + y2) / 2
+                y1, y2 = cy - logo_h / 2, cy + logo_h / 2
+                mark = [int(max(0, x1)), int(max(0, y1)), int(min(w, x2)), int(min(h, y2))]
+                if any(_iou(mark, d["bbox"]) > 0.5 for d in found):
+                    continue
+                percent = (mark[2] - mark[0]) * (mark[3] - mark[1]) / (w * h) * 100
+                found.append({"bbox": mark, "area_percent": round(percent, 3), "accepted": True,
+                              "text": joined, "primary": True, "partner_search": True})
+                continue
+            # The logo's icon and rounded outline reach past its letters.
+            pad_x, pad_y = 0.9 * (y2 - y1), 0.6 * (y2 - y1)
+            mark = [int(max(0, x1 - pad_x)), int(max(0, y1 - pad_y)),
+                    int(min(w, x2 + pad_x)), int(min(h, y2 + pad_y))]
+            if any(_iou(mark, d["bbox"]) > 0.5 for d in found):
+                continue
+            percent = (mark[2] - mark[0]) * (mark[3] - mark[1]) / (w * h) * 100
+            found.append({"bbox": mark, "area_percent": round(percent, 3), "accepted": True,
+                          "text": joined, "primary": True, "partner_search": True})
+        return found
+
     @modal.method()
     def process(self, request: dict) -> dict:
         import cv2
@@ -267,6 +417,10 @@ class Processor:
         basis = request.get("authorization_basis", "unknown")
         permission_reference = (request.get("permission_reference") or "").strip()
         own_terms = [t.lower() for t in request.get("own_brand_terms", ["velven"]) if t]
+        # The partner the photo comes from, if known; only a removable brand counts.
+        known_source = (request.get("known_source") or "").strip().lower() or None
+        if known_source not in own_terms:
+            known_source = None
         max_bbox_percent = float(request.get("max_bbox_percent", 10.0))
 
         removable_limit = max(max_bbox_percent, MAX_REMOVABLE_BBOX_PERCENT)
@@ -291,6 +445,19 @@ class Processor:
                         extra["primary"] = False
                         candidates.append(extra)
                         detections.append(extra)
+        if not any(mark_is_removable(d["text"], own_terms) for d in candidates):
+            # Still nothing readable: a pale partner logo read only in pieces. Look again around
+            # every box and in the middle of the photo with more room and more contrast.
+            seeds = [d["bbox"] for d in detections]
+            for mark in self._find_partner_marks(pil, own_terms, seeds, known_source):
+                if mark["area_percent"] > removable_limit:
+                    continue
+                # The fragments it replaces ("ge", "nome") are the same logo, not another mark.
+                candidates = [d for d in candidates
+                              if not (_overlap_or_near(d["bbox"], mark["bbox"])
+                                      and _is_unreadable_or_fragment(d["text"], own_terms))]
+                candidates.append(mark)
+                detections.append(mark)
         for detection in detections:
             detection["accepted"] = detection in candidates
 
@@ -401,6 +568,7 @@ def create_api(run):
         detection_prompt: str = Field("watermark", max_length=100)
         max_bbox_percent: float = Field(10.0, gt=0, le=25)
         output_format: str = Field("jpeg", pattern="^(jpeg|png)$")
+        known_source: str | None = Field(None, max_length=40)
 
     def authorize(value: str | None):
         supplied = (value or "").removeprefix("Bearer ").strip()
@@ -482,3 +650,19 @@ def benchmark(folder: str, mode: str = "detect", basis: str = "owned",
     }
     print(json.dumps(summary, indent=2))
     Path(out).with_suffix(".summary.json").write_text(json.dumps(summary, indent=2))
+
+
+@app.local_entrypoint()
+def try_folder(folder: str, out: str = "try-out", terms: str = "velven,myhome,ss.ge", source: str = ""):
+    """Runs this file's code (not the deployed app) on local photos and saves the results."""
+    output_dir = Path(out)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    processor = Processor()
+    for path in sorted(p for p in Path(folder).iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}):
+        r = processor.process.remote({
+            "image_b64": base64.b64encode(path.read_bytes()).decode(), "mode": "process",
+            "authorization_basis": "owned", "own_brand_terms": terms.split(","), "known_source": source or None})
+        if r.get("processed_b64"):
+            (output_dir / f"{path.stem}_clean.jpg").write_bytes(base64.b64decode(r["processed_b64"]))
+        print(path.name, r["action"], r["classification"],
+              [(d.get("text", ""), d["accepted"], d.get("partner_search", False)) for d in r["detections"]])

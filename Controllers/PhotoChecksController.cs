@@ -50,6 +50,9 @@ public class PhotoChecksController : ControllerBase
 
     // mode=detect scans only. mode=clean also removes the watermark, but only our own
     // brand, and only when the uploader confirms they may edit the photo.
+    /// <summary>When the AI service learned to find pale, partly readable partner logos.</summary>
+    private static readonly DateTime DetectionUpdatedAt = new(2026, 11, 3, 0, 0, 0, DateTimeKind.Utc);
+
     [HttpPost("check")]
     [EnableRateLimiting("ImageChecks")]
     [RequestSizeLimit(MaxBytes + 64 * 1024)]
@@ -57,6 +60,7 @@ public class PhotoChecksController : ControllerBase
         IFormFile image,
         [FromForm] string mode = "detect",
         [FromForm] bool rightsConfirmed = false,
+        [FromForm] string? source = null,
         CancellationToken cancellationToken = default)
     {
         if (!_options.Enabled)
@@ -99,13 +103,18 @@ public class PhotoChecksController : ControllerBase
         var sha = Convert.ToHexStringLower(SHA256.HashData(bytes));
         var basis = mode == "clean" ? ImageAuthorizationBasis.Owned : ImageAuthorizationBasis.Unknown;
         var modalMode = mode == "clean" ? "process" : "detect";
+        // Only a licensed partner can be named as the source (a MyHome ID means myhome.ge).
+        var knownSource = _options.PartnerBrandTerms.FirstOrDefault(term =>
+            string.Equals(term, source?.Trim(), StringComparison.OrdinalIgnoreCase));
 
         // Same photo scanned before: reuse the answer without paying for the GPU.
-        if (mode == "detect")
+        // Answers from before the pale-logo search (or for a photo now known to come from a
+        // partner) are not reused: they said "no watermark" for faint myhome.ge logos.
+        if (mode == "detect" && knownSource is null)
         {
             var previous = await _context.ImageProcessingJobs.AsNoTracking()
                 .Where(job => job.SourceSha256 == sha && job.Mode == "detect" &&
-                              job.Classification != null)
+                              job.Classification != null && job.CompletedAt >= DetectionUpdatedAt)
                 .OrderByDescending(job => job.Id)
                 .Select(job => new { job.Classification, job.WatermarkText })
                 .FirstOrDefaultAsync(cancellationToken);
@@ -141,7 +150,8 @@ public class PhotoChecksController : ControllerBase
                     ExpectedSha256 = sha,
                     Mode = modalMode,
                     AuthorizationBasis = basis.ToString().ToLowerInvariant(),
-                    OwnBrandTerms = _options.RemovableBrandTerms
+                    OwnBrandTerms = _options.RemovableBrandTerms,
+                    KnownSource = knownSource
                 },
                 cancellationToken);
         }
