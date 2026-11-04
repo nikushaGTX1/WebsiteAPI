@@ -88,10 +88,118 @@ def _pipeline_version() -> str:
     except OSError:
         digest.update(APP_NAME.encode())
     digest.update(FLORENCE_REVISION.encode())
+    for template in (LOGO_TEMPLATE_PATHS):
+        if template.exists():
+            digest.update(template.read_bytes())
     return digest.hexdigest()[:16]
 
 
+# The myhome.ge logo, learned from many listing photos (median edges): its edge pattern and the
+# filled pill shape. myhome stamps it at the centre of every photo, about 300 px wide.
+LOGO_TEMPLATE_PATHS = (Path("/root/vendor/myhome_logo.npz"), VENDOR / "myhome_logo.npz")
+# Shape-match scores. Above SURE the logo is taken as found on a photo known to come from
+# myhome. Between MAYBE and SURE it is used only where the text reader also saw the logo, to
+# replace that big box with the exact pill shape. Real photos without the logo score below 0.21.
+LOGO_SCORE_SURE = 0.22
+LOGO_SCORE_MAYBE = 0.15
+_logo_template = None
+
+
+def _load_logo_template():
+    global _logo_template
+    if _logo_template is None:
+        import numpy as np
+
+        for path in LOGO_TEMPLATE_PATHS:
+            if path.exists():
+                data = np.load(path)
+                _logo_template = {key: data[key] for key in data.files}
+                break
+        else:
+            _logo_template = {}
+    return _logo_template
+
+
+def find_myhome_logo(rgb) -> dict | None:
+    """
+    Looks for the myhome.ge logo at the centre of the photo by its shape (edge pattern),
+    trying the sizes it is stamped at. Returns the best place, its score and the exact pill
+    mask there, or None when the template is missing.
+    """
+    import cv2
+    import numpy as np
+
+    template = _load_logo_template()
+    if not template:
+        return None
+    h, w = rgb.shape[:2]
+    edges = template["edges"].astype(np.float32)
+    fill = template["fill"].astype(np.uint8)
+    aspect = edges.shape[0] / edges.shape[1]
+    cx, cy = float(template["cx"]) * w, float(template["cy"]) * h
+    best = None
+    for tw in np.geomspace(140, min(520, 0.8 * w), 26):
+        tw = int(round(tw))
+        th = int(round(tw * aspect))
+        if th < 12:
+            continue
+        rx, ry = int(0.02 * w) + 3, int(0.02 * h) + 3
+        x0, y0 = max(0, int(cx - tw / 2 - rx)), max(0, int(cy - th / 2 - ry))
+        x1, y1 = min(w, int(cx + tw / 2 + rx)), min(h, int(cy + th / 2 + ry))
+        if x1 - x0 <= tw or y1 - y0 <= th:
+            continue
+        area = rgb[y0:y1, x0:x1].astype(np.float32)
+        gx = cv2.Sobel(area, cv2.CV_32F, 1, 0)
+        gy = cv2.Sobel(area, cv2.CV_32F, 0, 1)
+        grad = np.sqrt(gx ** 2 + gy ** 2).mean(axis=2)
+        # Local contrast normalised, so strong edges of the room do not drown the faint logo.
+        grad = grad / (cv2.GaussianBlur(grad, (0, 0), 10) + 4.0)
+        small = cv2.resize(edges, (tw, th), interpolation=cv2.INTER_AREA)
+        scores = cv2.matchTemplate(grad, small, cv2.TM_CCOEFF_NORMED)
+        _, score, _, loc = cv2.minMaxLoc(scores)
+        if best is None or score > best["score"]:
+            best = {"score": float(score), "x": x0 + loc[0], "y": y0 + loc[1], "w": tw, "h": th}
+    if best is None:
+        return None
+    mask = np.zeros((h, w), np.uint8)
+    pill = cv2.resize(fill * 255, (best["w"], best["h"]), interpolation=cv2.INTER_NEAREST)
+    x, y = best["x"], best["y"]
+    pill = pill[: h - y, : w - x]
+    mask[y:y + pill.shape[0], x:x + pill.shape[1]] = pill
+    # A few pixels more so the soft edge of the pill is covered too.
+    grow = max(3, round(best["w"] / 60))
+    mask = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * grow + 1,) * 2))
+    ys, xs = np.nonzero(mask)
+    best["bbox"] = [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1]
+    best["mask"] = mask
+    best["area_percent"] = round(float((mask > 0).mean() * 100), 3)
+    best["score"] = round(best["score"], 3)
+    return best
+
+
 PIPELINE_VERSION = _pipeline_version()
+
+
+def _boxes_overlap(a: list[int], b: list[int]) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def build_mask(size: tuple[int, int], mask_boxes: list[dict], shape_masks: dict):
+    """The edit mask: padded rectangles, and for shape-matched logos their exact shape."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    mask = Image.new("L", size, 0)
+    draw = ImageDraw.Draw(mask)
+    for box in mask_boxes:
+        if box.get("shape") is None:
+            draw.rectangle(box["bbox"], fill=255)
+    array = np.array(mask)
+    for box in mask_boxes:
+        shape = shape_masks.get(box.get("shape"))
+        if shape is not None:
+            array = np.maximum(array, shape)
+    return Image.fromarray(array)
 
 
 def mask_boxes_for(accepted: list[dict], width: int, height: int) -> list[dict]:
@@ -100,6 +208,12 @@ def mask_boxes_for(accepted: list[dict], width: int, height: int) -> list[dict]:
     boxes = []
     for detection in accepted:
         x1, y1, x2, y2 = detection["bbox"]
+        if detection.get("shape"):
+            # Shape-matched logo: the mask is its exact (slightly grown) shape, no extra padding.
+            boxes.append({"bbox": [x1, y1, x2, y2], "from_bbox": [x1, y1, x2, y2], "pad": 0,
+                          "shape": detection["shape"], "width": x2 - x1, "height": y2 - y1,
+                          "area_percent": detection["area_percent"]})
+            continue
         # A few pixels around the box so no outline of the logo is left behind.
         pad = max(4, round(0.08 * max(x2 - x1, y2 - y1)))
         rect = [max(0, x1 - pad), max(0, y1 - pad), min(width, x2 + pad), min(height, y2 + pad)]
@@ -591,7 +705,36 @@ class Processor:
                         candidates.append(extra)
                         detections.append(extra)
         lap("extra_prompts")
-        if not any(mark_is_removable(d["text"], own_terms) for d in candidates):
+        # myhome.ge logo by its exact shape at the centre: finds pale logos the reader misses, and
+        # its mask is the logo pill itself instead of a padded rectangle around the text.
+        shape_masks: dict = {}
+        logo = find_myhome_logo(np.array(pil)) if "myhome" in own_terms else None
+        lap("logo_shape")
+
+        def use_logo(require_reader: bool) -> bool:
+            nonlocal candidates
+            if not logo or logo["score"] < LOGO_SCORE_MAYBE:
+                return False
+            overlapping = [d for d in candidates if _boxes_overlap(d["bbox"], logo["bbox"])]
+            seen = any(d.get("partner_search") or partner_read_matches(d.get("text", ""), own_terms)
+                       for d in overlapping)
+            sure = known_source == "myhome" and logo["score"] >= LOGO_SCORE_SURE
+            if not (seen if require_reader else sure):
+                return False
+            candidates = [d for d in candidates if d not in overlapping]
+            shape_masks["myhome_logo"] = logo["mask"]
+            mark = {"bbox": logo["bbox"], "area_percent": logo["area_percent"], "accepted": True,
+                    "text": "myhome.ge", "primary": True, "partner_search": True,
+                    "source": "logo_shape", "box_stage": "logo_shape", "shape": "myhome_logo",
+                    "score": logo["score"], "width": logo["bbox"][2] - logo["bbox"][0],
+                    "height": logo["bbox"][3] - logo["bbox"][1],
+                    "replaced": [d["bbox"] for d in overlapping]}
+            candidates.append(mark)
+            detections.append(mark)
+            return True
+
+        logo_used = use_logo(require_reader=False)
+        if not logo_used and not any(mark_is_removable(d["text"], own_terms) for d in candidates):
             # Still nothing readable: a pale partner logo read only in pieces. Look again around
             # every box and in the middle of the photo with more room and more contrast.
             seeds = [d["bbox"] for d in detections]
@@ -605,6 +748,9 @@ class Processor:
                 candidates.append(mark)
                 detections.append(mark)
         lap("partner_search")
+        if not logo_used:
+            # The reader found the logo: use the exact pill shape there instead of its big box.
+            logo_used = use_logo(require_reader=True)
         for detection in detections:
             detection["accepted"] = detection in candidates
 
@@ -641,10 +787,7 @@ class Processor:
             result["action"] = ("needs_clean_original" if classification == "third_party"
                                 else "detected_only")
         else:
-            mask = Image.new("L", pil.size, 0)
-            draw = ImageDraw.Draw(mask)
-            for box in mask_boxes:
-                draw.rectangle(box["bbox"], fill=255)
+            mask = build_mask(pil.size, mask_boxes, shape_masks)
             mask_np = np.array(mask)
             source_np = np.array(pil)
             lap("mask")
@@ -676,10 +819,7 @@ class Processor:
             if "validation" in result:
                 total_percent = result["validation"]["mask_percent"]
             else:
-                planned = Image.new("L", pil.size, 0)
-                planned_draw = ImageDraw.Draw(planned)
-                for box in mask_boxes:
-                    planned_draw.rectangle(box["bbox"], fill=255)
+                planned = build_mask(pil.size, mask_boxes, shape_masks)
                 total_percent = round(float((np.array(planned) > 0).mean() * 100), 3)
             result["mask_percent"] = total_percent
             result["safety_report"] = safety_report(accepted, mask_boxes, total_percent, own_terms)
@@ -687,10 +827,7 @@ class Processor:
             result["mask_percent"] = 0.0
             result["safety_report"] = {"would_reject": False, "flags": [], "enforced": False}
         if diagnostic:
-            diag_mask = Image.new("L", pil.size, 0)
-            diag_draw = ImageDraw.Draw(diag_mask)
-            for box in mask_boxes:
-                diag_draw.rectangle(box["bbox"], fill=255)
+            diag_mask = build_mask(pil.size, mask_boxes, shape_masks)
             result["diagnostic"] = _diagnostic_images(pil, detections, mask_boxes, diag_mask)
             lap("diagnostic")
 
