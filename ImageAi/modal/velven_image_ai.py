@@ -700,7 +700,8 @@ class Processor:
                     if not extra["accepted"] or any(_iou(extra["bbox"], d["bbox"]) > 0.5 for d in candidates):
                         continue
                     extra["text"] = self._read_text(pil, extra["bbox"])
-                    if all_marks or mark_is_removable(extra["text"], own_terms):
+                    # Extra prompts find every text in the room (signs, a TV); only brands count.
+                    if mark_is_removable(extra["text"], own_terms):
                         extra["primary"] = False
                         candidates.append(extra)
                         detections.append(extra)
@@ -718,7 +719,8 @@ class Processor:
             overlapping = [d for d in candidates if _boxes_overlap(d["bbox"], logo["bbox"])]
             seen = any(d.get("partner_search") or partner_read_matches(d.get("text", ""), own_terms)
                        for d in overlapping)
-            sure = known_source == "myhome" and logo["score"] >= LOGO_SCORE_SURE
+            # A photo from a myhome listing, or "remove every watermark" by staff, is enough.
+            sure = (known_source == "myhome" or all_marks) and logo["score"] >= LOGO_SCORE_SURE
             if not (seen if require_reader else sure):
                 return False
             candidates = [d for d in candidates if d not in overlapping]
@@ -753,6 +755,25 @@ class Processor:
             logo_used = use_logo(require_reader=True)
         for detection in detections:
             detection["accepted"] = detection in candidates
+
+        if all_marks:
+            # "Every watermark" still means real marks: a box with no readable word (a painting,
+            # a lamp, a pattern) is not a watermark and is never painted over.
+            # Words in the room (wall letters, a placemat, a sign) are not watermarks either:
+            # once the myhome.ge logo is found the photo's watermark is known, and otherwise
+            # only marks where watermarks are stamped (the centre or a corner) count.
+            def in_watermark_place(box: list[int]) -> bool:
+                x1, y1, x2, y2 = box
+                w, h = pil.width, pil.height
+                centre = x1 >= 0.2 * w and x2 <= 0.8 * w and y1 >= 0.3 * h and y2 <= 0.7 * h
+                corner = ((x2 <= 0.3 * w or x1 >= 0.7 * w) and (y2 <= 0.2 * h or y1 >= 0.8 * h))
+                return centre or corner
+
+            candidates = [d for d in candidates if d.get("partner_search")
+                          or (not logo_used and len(normalize_mark_text(d.get("text", ""))) >= 3
+                              and in_watermark_place(d["bbox"]))]
+            for detection in detections:
+                detection["accepted"] = detection in candidates
 
         # Unreadable marks alone, or any mark naming another company, stay third-party.
         classification, accepted = classify_marks(candidates, own_terms)
@@ -973,7 +994,7 @@ def benchmark(folder: str, mode: str = "detect", basis: str = "owned",
 
 @app.local_entrypoint()
 def try_folder(folder: str, out: str = "try-out", terms: str = "velven,myhome,ss.ge", source: str = "",
-               diagnostic: bool = False):
+               diagnostic: bool = False, scope: str = "brands"):
     """
     Runs this file's code (not the deployed app) on local photos and saves the results.
     --diagnostic also saves, per photo: the original, an overlay of every box and mask with sizes,
@@ -987,7 +1008,7 @@ def try_folder(folder: str, out: str = "try-out", terms: str = "velven,myhome,ss
         r = processor.process.remote({
             "image_b64": base64.b64encode(path.read_bytes()).decode(), "mode": "process",
             "authorization_basis": "owned", "own_brand_terms": terms.split(","), "known_source": source or None,
-            "diagnostic": diagnostic})
+            "diagnostic": diagnostic, "watermark_scope": scope})
         if r.get("processed_b64"):
             (output_dir / f"{path.stem}_clean.jpg").write_bytes(base64.b64decode(r["processed_b64"]))
         if diagnostic:

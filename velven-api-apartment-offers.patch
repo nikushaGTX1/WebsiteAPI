@@ -1,0 +1,875 @@
+diff --git a/Controllers/ApartmentOffersController.cs b/Controllers/ApartmentOffersController.cs
+new file mode 100644
+index 0000000..0875e37
+--- /dev/null
++++ b/Controllers/ApartmentOffersController.cs
+@@ -0,0 +1,136 @@
++using System.Security.Claims;
++using Microsoft.AspNetCore.Authorization;
++using Microsoft.AspNetCore.Mvc;
++using Microsoft.AspNetCore.RateLimiting;
++using Microsoft.EntityFrameworkCore;
++using Npgsql;
++using Website_API.Data;
++using Website_API.DTO;
++using Website_API.Models;
++using Website_API.Services;
++
++namespace Website_API.Controllers;
++
++[ApiController]
++[Route("api/apartment-offers")]
++public class ApartmentOffersController(AppDbContext db, SupabaseStorageService storage) : ControllerBase
++{
++    public const string StaffRoles = "Admin,Manager,Agent";
++    private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
++    private bool Elevated => User.IsInRole("Admin") || User.IsInRole("Manager");
++    private IQueryable<ApartmentOffer> Queue => db.ApartmentOffers.Where(x => Elevated || x.ReviewerUserId == UserId);
++
++    public record SubmitRequest(long ClientId, int ApartmentId, bool ShareWithOtherClients);
++
++    [Authorize]
++    [EnableRateLimiting("CrmInquiries")]
++    [HttpPost]
++    public async Task<IActionResult> Submit(SubmitRequest request, CancellationToken ct)
++    {
++        // The same 404 for missing and private clients, so IDs cannot be probed.
++        var client = await ClientBoardEligibility.PublicProfiles(db).AsNoTracking()
++            .Where(x => x.Id == request.ClientId).Select(x => new { x.Id, x.AgentUserId }).FirstOrDefaultAsync(ct);
++        if (client is null) return NotFound(new { code = "client_not_found" });
++        var ownsListing = await db.Apartments.AnyAsync(x => x.Id == request.ApartmentId && x.UploadedByUserId == UserId &&
++            !EF.Functions.ILike(x.Description, "%Source: https://www.myhome.ge/%") &&
++            !EF.Functions.ILike(x.Description, "%Source: https://home.ss.ge/%"), ct);
++        if (!ownsListing) return NotFound(new { code = "apartment_not_found" });
++
++        var offer = new ApartmentOffer { ClientProfileId = client.Id, ApartmentId = request.ApartmentId, SubmittedByUserId = UserId,
++            ReviewerUserId = client.AgentUserId, ShareWithOtherClients = request.ShareWithOtherClients };
++        db.ApartmentOffers.Add(offer);
++        try { await db.SaveChangesAsync(ct); }
++        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
++        {
++            return Conflict(new { code = "already_offered" });
++        }
++        return Ok(new { offer.Id, offer.Status, offer.CreatedAt, offer.ShareWithOtherClients });
++    }
++
++    [Authorize(Roles = StaffRoles)]
++    [HttpGet]
++    public async Task<IActionResult> Reviews([FromQuery] string status = ApartmentOffer.Pending, CancellationToken ct = default)
++    {
++        if (status is not (ApartmentOffer.Pending or ApartmentOffer.Approved or ApartmentOffer.Rejected)) return BadRequest();
++        var rows = await Queue.AsNoTracking().Where(x => x.Status == status)
++            .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id).Take(200)
++            .Select(x => new
++            {
++                x.Id, ClientId = x.ClientProfileId, x.Status, x.ShareWithOtherClients, x.CreatedAt, x.ReviewedAt,
++                IsNew = x.ReadAt == null,
++                Submitter = new { Name = x.SubmittedByUser.FullName, Phone = x.SubmittedByUser.PhoneNumber },
++                Apartment = new { x.Apartment.Id, x.Apartment.Title, x.Apartment.Price, x.Apartment.District, x.Apartment.Street,
++                    x.Apartment.Bedrooms, x.Apartment.SizeSquareMeters, x.Apartment.ImageUrl, x.Apartment.IsApproved },
++                MatchedClientIds = x.Matches.OrderBy(m => m.ClientProfileId).Select(m => m.ClientProfileId).ToList(),
++            }).ToListAsync(ct);
++        var items = new List<object>(rows.Count);
++        foreach (var row in rows)
++            items.Add(new
++            {
++                row.Id, row.ClientId, row.Status, row.ShareWithOtherClients, row.CreatedAt, row.ReviewedAt, row.IsNew,
++                row.Submitter, row.MatchedClientIds,
++                Apartment = new
++                {
++                    row.Apartment.Id, row.Apartment.Title, row.Apartment.Price, row.Apartment.District, row.Apartment.Street,
++                    row.Apartment.Bedrooms, row.Apartment.SizeSquareMeters, row.Apartment.IsApproved,
++                    ImageUrl = await storage.CreateSignedUrlAsync(row.Apartment.ImageUrl, SupabaseStorageService.ListingPhotoUrlSeconds, ct),
++                },
++            });
++        return Ok(items);
++    }
++
++    /// <summary>Approved listings found compatible with the signed-in agent's own clients.</summary>
++    [Authorize(Roles = StaffRoles)]
++    [HttpGet("matches")]
++    public async Task<IActionResult> Matches(CancellationToken ct) => Ok(await db.ApartmentOfferMatches.AsNoTracking()
++        .Where(x => x.AgentUserId == UserId && x.Offer.Status == ApartmentOffer.Approved)
++        .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id).Take(200)
++        .Select(x => new
++        {
++            x.Id, x.ApartmentOfferId, ClientId = x.ClientProfileId, x.CreatedAt,
++            Apartment = new { x.Offer.Apartment.Id, x.Offer.Apartment.Title, x.Offer.Apartment.Price, x.Offer.Apartment.District,
++                x.Offer.Apartment.Street, x.Offer.Apartment.Bedrooms, x.Offer.Apartment.SizeSquareMeters, x.Offer.Apartment.IsApproved },
++        }).ToListAsync(ct));
++
++    [Authorize(Roles = StaffRoles)]
++    [HttpPost("{id:int}/approve")]
++    public async Task<IActionResult> Approve(int id, CancellationToken ct)
++    {
++        await using var transaction = await db.Database.BeginTransactionAsync(ct);
++        var result = await ReviewAsync(id, ApartmentOffer.Approved, ct);
++        if (result is not null) return result;
++        var offer = await db.ApartmentOffers.Include(x => x.Apartment).FirstAsync(x => x.Id == id, ct);
++        var matched = 0;
++        if (offer.ShareWithOtherClients)
++        {
++            var candidates = await ClientBoardEligibility.PublicProfiles(db).AsNoTracking()
++                .Where(x => x.Id != offer.ClientProfileId).Select(x => new { x.Id, x.AgentUserId, x.ProfileJson }).ToListAsync(ct);
++            foreach (var candidate in candidates)
++            {
++                if (!ApartmentOfferMatching.IsCompatible(offer.Apartment, ClientRequirements.Read(candidate.ProfileJson), DateTime.UtcNow)) continue;
++                db.ApartmentOfferMatches.Add(new ApartmentOfferMatch { ApartmentOfferId = offer.Id, ClientProfileId = candidate.Id, AgentUserId = candidate.AgentUserId });
++                matched++;
++            }
++            await db.SaveChangesAsync(ct);
++        }
++        await transaction.CommitAsync(ct);
++        return Ok(new { status = ApartmentOffer.Approved, matchedClients = matched });
++    }
++
++    [Authorize(Roles = StaffRoles)]
++    [HttpPost("{id:int}/reject")]
++    public async Task<IActionResult> Reject(int id, CancellationToken ct) =>
++        await ReviewAsync(id, ApartmentOffer.Rejected, ct) ?? Ok(new { status = ApartmentOffer.Rejected, matchedClients = 0 });
++
++    /// <summary>Moves a pending offer once; a second click or reviewer gets 409. Null means success.</summary>
++    private async Task<IActionResult?> ReviewAsync(int id, string status, CancellationToken ct)
++    {
++        if (!await Queue.AnyAsync(x => x.Id == id, ct)) return NotFound();
++        var now = DateTime.UtcNow;
++        var reviewer = UserId;
++        var updated = await Queue.Where(x => x.Id == id && x.Status == ApartmentOffer.Pending).ExecuteUpdateAsync(s => s
++            .SetProperty(x => x.Status, status).SetProperty(x => x.ReviewedAt, now)
++            .SetProperty(x => x.ReviewedByUserId, reviewer).SetProperty(x => x.ReadAt, x => (DateTime?)(x.ReadAt ?? now)), ct);
++        return updated == 0 ? Conflict(new { code = "already_reviewed" }) : null;
++    }
++}
+diff --git a/Controllers/ClientBoardController.cs b/Controllers/ClientBoardController.cs
+index 31f8e95..cfd2c8c 100644
+--- a/Controllers/ClientBoardController.cs
++++ b/Controllers/ClientBoardController.cs
+@@ -149,8 +149,7 @@ public class ClientBoardController(AppDbContext db, SupabaseStorageService stora
+             (condition is not null && !ClientRequirements.ConditionCodes.Split(' ').Contains(condition))) return BadRequest();
+         // One goal at a time: purchase budgets must never be listed next to monthly rents.
+         var goalJson = goal == "Buy" ? "{\"propertyGoal\":\"Buy\"}" : "{\"propertyGoal\":\"Rent\"}";
+-        var q = db.ClientProfiles.AsNoTracking().Where(x => x.Status == "Active" && x.PublishConsentAt != null && StaffIds.Contains(x.AgentUserId)
+-            && EF.Functions.JsonContains(x.ProfileJson, goalJson));
++        var q = ClientBoardEligibility.PublicProfiles(db).AsNoTracking().Where(x => EF.Functions.JsonContains(x.ProfileJson, goalJson));
+         if (!string.IsNullOrEmpty(district)) q = q.Where(x => x.Districts.Contains(district) || EF.Functions.JsonContains(x.ProfileJson, "{\"locationFlexible\":true}"));
+         // Budget filters are USD/month and select overlapping requirement ranges.
+         if (budgetMin.HasValue) q = q.Where(x => x.BudgetMaxUsd >= budgetMin);
+diff --git a/Controllers/CrmNotificationsController.cs b/Controllers/CrmNotificationsController.cs
+index 17e8a0d..8cd7be5 100644
+--- a/Controllers/CrmNotificationsController.cs
++++ b/Controllers/CrmNotificationsController.cs
+@@ -23,12 +23,18 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService
+          (n.Lead.Apartment != null && n.Lead.Apartment.UploadedByUserId == UserId)))));
+     private IQueryable<ListingInterestNotification> MatchNotices => interests.ReviewQueue(UserId, IsManager)
+         .Where(n => n.Status == ListingInterestNotification.Pending);
++    private IQueryable<ApartmentOffer> OfferReviews => db.ApartmentOffers.Where(n =>
++        n.Status == ApartmentOffer.Pending && (IsManager || n.ReviewerUserId == UserId));
++    private IQueryable<ApartmentOfferMatch> OfferMatches => db.ApartmentOfferMatches.Where(n =>
++        n.AgentUserId == UserId && n.Offer.Status == ApartmentOffer.Approved);
+ 
+     [HttpGet("summary")]
+     public async Task<IActionResult> Summary(CancellationToken ct) => Ok(new
+     {
+         unread = await LeadNotices.CountAsync(n => n.ReadAt == null, ct) +
+-            await MatchNotices.CountAsync(n => n.ReadAt == null, ct),
++            await MatchNotices.CountAsync(n => n.ReadAt == null, ct) +
++            await OfferReviews.CountAsync(n => n.ReadAt == null, ct) +
++            await OfferMatches.CountAsync(n => n.ReadAt == null, ct),
+     });
+ 
+     [HttpGet]
+@@ -39,9 +45,14 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService
+         pageSize = Math.Clamp(pageSize, 1, 50);
+         var leads = LeadNotices.AsNoTracking();
+         var matches = MatchNotices.AsNoTracking();
+-        var total = await leads.CountAsync(ct) + await matches.CountAsync(ct);
++        var offers = OfferReviews.AsNoTracking();
++        var offerMatches = OfferMatches.AsNoTracking();
++        var total = await leads.CountAsync(ct) + await matches.CountAsync(ct) +
++            await offers.CountAsync(ct) + await offerMatches.CountAsync(ct);
+         var unread = await leads.CountAsync(n => n.ReadAt == null, ct) +
+-            await matches.CountAsync(n => n.ReadAt == null, ct);
++            await matches.CountAsync(n => n.ReadAt == null, ct) +
++            await offers.CountAsync(n => n.ReadAt == null, ct) +
++            await offerMatches.CountAsync(n => n.ReadAt == null, ct);
+         // Taking the top K of each source is sufficient for the top K of their merged feed.
+         var leadRows = await leads.OrderByDescending(n => n.CreatedAt).ThenByDescending(n => n.Id)
+             .Take(page * pageSize).Select(n => new NoticeRow
+@@ -58,7 +69,25 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService
+                 District = n.Apartment.District, Street = n.Apartment.Street,
+                 Bedrooms = n.Apartment.Bedrooms, ImageUrl = n.Apartment.ImageUrl,
+             }).ToListAsync(ct);
+-        var rows = leadRows.Concat(matchRows).OrderByDescending(n => n.CreatedAt)
++        var offerRows = await offers.OrderByDescending(n => n.CreatedAt).ThenByDescending(n => n.Id)
++            .Take(page * pageSize).Select(n => new NoticeRow
++            {
++                Id = n.Id, Type = "apartment-offer", CreatedAt = n.CreatedAt, ReadAt = n.ReadAt,
++                OfferId = n.Id, ClientId = n.ClientProfileId, ShareWithOtherClients = n.ShareWithOtherClients,
++                ApartmentId = n.ApartmentId, Title = n.Apartment.Title, Price = n.Apartment.Price,
++                District = n.Apartment.District, Street = n.Apartment.Street, Bedrooms = n.Apartment.Bedrooms,
++                SizeSquareMeters = n.Apartment.SizeSquareMeters, ImageUrl = n.Apartment.ImageUrl,
++            }).ToListAsync(ct);
++        var offerMatchRows = await offerMatches.OrderByDescending(n => n.CreatedAt).ThenByDescending(n => n.Id)
++            .Take(page * pageSize).Select(n => new NoticeRow
++            {
++                Id = n.Id, Type = "apartment-offer-match", CreatedAt = n.CreatedAt, ReadAt = n.ReadAt,
++                OfferId = n.ApartmentOfferId, ClientId = n.ClientProfileId, ShareWithOtherClients = true,
++                ApartmentId = n.Offer.ApartmentId, Title = n.Offer.Apartment.Title, Price = n.Offer.Apartment.Price,
++                District = n.Offer.Apartment.District, Street = n.Offer.Apartment.Street, Bedrooms = n.Offer.Apartment.Bedrooms,
++                SizeSquareMeters = n.Offer.Apartment.SizeSquareMeters, ImageUrl = n.Offer.Apartment.ImageUrl,
++            }).ToListAsync(ct);
++        var rows = leadRows.Concat(matchRows).Concat(offerRows).Concat(offerMatchRows).OrderByDescending(n => n.CreatedAt)
+             .ThenBy(n => n.Type, StringComparer.Ordinal).ThenByDescending(n => n.Id)
+             .Skip((page - 1) * pageSize).Take(pageSize).ToList();
+         var items = new List<object>();
+@@ -67,10 +96,12 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService
+             {
+                 row.Id, row.Type, row.CreatedAt, row.ReadAt,
+                 row.LeadId, row.LeadName, row.ActorName, row.FromStatus, row.ToStatus,
++                row.OfferId, row.ClientId, row.ShareWithOtherClients,
++                ReviewLink = row.OfferId is int offerId ? $"/crm/apartment-offers?offer={offerId}" : null,
+                 Apartment = row.ApartmentId.HasValue ? new
+                 {
+                     Id = row.ApartmentId.Value, row.Title, row.Price, row.District, row.Street,
+-                    row.Bedrooms, ImageUrl = await storage.CreateSignedUrlAsync(row.ImageUrl,
++                    row.Bedrooms, row.SizeSquareMeters, ImageUrl = await storage.CreateSignedUrlAsync(row.ImageUrl,
+                         SupabaseStorageService.ListingPhotoUrlSeconds, ct),
+                 } : null,
+             });
+@@ -92,6 +123,18 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService
+             if (notice is null) return NotFound();
+             notice.ReadAt ??= DateTime.UtcNow;
+         }
++        else if (type == "apartment-offer")
++        {
++            var notice = await OfferReviews.FirstOrDefaultAsync(n => n.Id == id, ct);
++            if (notice is null) return NotFound();
++            notice.ReadAt ??= DateTime.UtcNow;
++        }
++        else if (type == "apartment-offer-match")
++        {
++            var notice = await OfferMatches.FirstOrDefaultAsync(n => n.Id == id, ct);
++            if (notice is null) return NotFound();
++            notice.ReadAt ??= DateTime.UtcNow;
++        }
+         else return BadRequest();
+         await db.SaveChangesAsync(ct);
+         return NoContent();
+@@ -104,6 +147,8 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService
+         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+         await LeadNotices.Where(n => n.ReadAt == null).ExecuteUpdateAsync(s => s.SetProperty(n => n.ReadAt, now), ct);
+         await MatchNotices.Where(n => n.ReadAt == null).ExecuteUpdateAsync(s => s.SetProperty(n => n.ReadAt, now), ct);
++        await OfferReviews.Where(n => n.ReadAt == null).ExecuteUpdateAsync(s => s.SetProperty(n => n.ReadAt, now), ct);
++        await OfferMatches.Where(n => n.ReadAt == null).ExecuteUpdateAsync(s => s.SetProperty(n => n.ReadAt, now), ct);
+         await transaction.CommitAsync(ct);
+         return NoContent();
+     }
+@@ -126,5 +171,9 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService
+         public string? Street { get; set; }
+         public int Bedrooms { get; set; }
+         public string? ImageUrl { get; set; }
++        public int? OfferId { get; set; }
++        public long? ClientId { get; set; }
++        public bool ShareWithOtherClients { get; set; }
++        public double SizeSquareMeters { get; set; }
+     }
+ }
+diff --git a/Data/AppDbContext.cs b/Data/AppDbContext.cs
+index 21b111d..7a52c9f 100644
+--- a/Data/AppDbContext.cs
++++ b/Data/AppDbContext.cs
+@@ -39,6 +39,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
+     public DbSet<SavedSearch> SavedSearches => Set<SavedSearch>();
+     public DbSet<ClientIntakeLink> ClientIntakeLinks => Set<ClientIntakeLink>();
+     public DbSet<ClientProfile> ClientProfiles => Set<ClientProfile>();
++    public DbSet<ApartmentOffer> ApartmentOffers => Set<ApartmentOffer>();
++    public DbSet<ApartmentOfferMatch> ApartmentOfferMatches => Set<ApartmentOfferMatch>();
+     public DbSet<SavedSearchMatch> SavedSearchMatches => Set<SavedSearchMatch>();
+     public DbSet<ClientNotification> ClientNotifications => Set<ClientNotification>();
+     public DbSet<ListingInterestNotification> ListingInterestNotifications => Set<ListingInterestNotification>();
+@@ -185,6 +187,28 @@ public class AppDbContext : IdentityDbContext<AppUser>
+             notification.HasIndex(item => new { item.UserId, item.ReadAt });
+         });
+ 
++        builder.Entity<ApartmentOffer>(offer =>
++        {
++            offer.HasOne(item => item.ClientProfile).WithMany().HasForeignKey(item => item.ClientProfileId).OnDelete(DeleteBehavior.Cascade);
++            offer.HasOne(item => item.Apartment).WithMany().HasForeignKey(item => item.ApartmentId).OnDelete(DeleteBehavior.Cascade);
++            offer.HasOne(item => item.SubmittedByUser).WithMany().HasForeignKey(item => item.SubmittedByUserId).OnDelete(DeleteBehavior.Cascade);
++            offer.HasOne(item => item.Reviewer).WithMany().HasForeignKey(item => item.ReviewerUserId).OnDelete(DeleteBehavior.SetNull);
++            offer.HasOne(item => item.ReviewedBy).WithMany().HasForeignKey(item => item.ReviewedByUserId).OnDelete(DeleteBehavior.SetNull);
++            offer.Property(item => item.Status).HasMaxLength(20).HasDefaultValue(ApartmentOffer.Pending);
++            // One offer per listing and client: repeated clicks cannot create duplicates.
++            offer.HasIndex(item => new { item.ClientProfileId, item.ApartmentId }).IsUnique();
++            offer.HasIndex(item => new { item.ReviewerUserId, item.Status });
++        });
++
++        builder.Entity<ApartmentOfferMatch>(match =>
++        {
++            match.HasOne(item => item.Offer).WithMany(item => item.Matches).HasForeignKey(item => item.ApartmentOfferId).OnDelete(DeleteBehavior.Cascade);
++            match.HasOne(item => item.ClientProfile).WithMany().HasForeignKey(item => item.ClientProfileId).OnDelete(DeleteBehavior.Cascade);
++            match.HasOne(item => item.Agent).WithMany().HasForeignKey(item => item.AgentUserId).OnDelete(DeleteBehavior.Cascade);
++            match.HasIndex(item => new { item.ApartmentOfferId, item.ClientProfileId }).IsUnique();
++            match.HasIndex(item => new { item.AgentUserId, item.ReadAt });
++        });
++
+         builder.Entity<AppUser>().Property(user => user.MatchAlertsInApp).HasDefaultValue(true);
+         builder.Entity<AppUser>().Property(user => user.PreferredLanguage).HasMaxLength(5);
+         builder.Entity<Apartment>().HasIndex(apartment => apartment.PublishedAt);
+diff --git a/Migrations/20261104170000_AddApartmentOffers.cs b/Migrations/20261104170000_AddApartmentOffers.cs
+new file mode 100644
+index 0000000..04be0d6
+--- /dev/null
++++ b/Migrations/20261104170000_AddApartmentOffers.cs
+@@ -0,0 +1,83 @@
++using System;
++using Microsoft.EntityFrameworkCore.Infrastructure;
++using Microsoft.EntityFrameworkCore.Migrations;
++using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
++using Website_API.Data;
++
++#nullable disable
++
++namespace Website_API.Migrations
++{
++    /// <summary>Additive: two new tables, no change to existing tables or rows.</summary>
++    [DbContext(typeof(AppDbContext))]
++    [Migration("20261104170000_AddApartmentOffers")]
++    public partial class AddApartmentOffers : Migration
++    {
++        /// <inheritdoc />
++        protected override void Up(MigrationBuilder migrationBuilder)
++        {
++            migrationBuilder.CreateTable(
++                name: "ApartmentOffers",
++                columns: table => new
++                {
++                    Id = table.Column<int>(type: "integer", nullable: false)
++                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
++                    ClientProfileId = table.Column<long>(type: "bigint", nullable: false),
++                    ApartmentId = table.Column<int>(type: "integer", nullable: false),
++                    SubmittedByUserId = table.Column<string>(type: "text", nullable: false),
++                    ReviewerUserId = table.Column<string>(type: "text", nullable: true),
++                    ShareWithOtherClients = table.Column<bool>(type: "boolean", nullable: false),
++                    Status = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false, defaultValue: "pending"),
++                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
++                    ReadAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
++                    ReviewedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
++                    ReviewedByUserId = table.Column<string>(type: "text", nullable: true)
++                },
++                constraints: table =>
++                {
++                    table.PrimaryKey("PK_ApartmentOffers", x => x.Id);
++                    table.ForeignKey("FK_ApartmentOffers_Apartments_ApartmentId", x => x.ApartmentId, "Apartments", "Id", onDelete: ReferentialAction.Cascade);
++                    table.ForeignKey("FK_ApartmentOffers_AspNetUsers_ReviewedByUserId", x => x.ReviewedByUserId, "AspNetUsers", "Id", onDelete: ReferentialAction.SetNull);
++                    table.ForeignKey("FK_ApartmentOffers_AspNetUsers_ReviewerUserId", x => x.ReviewerUserId, "AspNetUsers", "Id", onDelete: ReferentialAction.SetNull);
++                    table.ForeignKey("FK_ApartmentOffers_AspNetUsers_SubmittedByUserId", x => x.SubmittedByUserId, "AspNetUsers", "Id", onDelete: ReferentialAction.Cascade);
++                    table.ForeignKey("FK_ApartmentOffers_ClientProfiles_ClientProfileId", x => x.ClientProfileId, "ClientProfiles", "Id", onDelete: ReferentialAction.Cascade);
++                });
++
++            migrationBuilder.CreateTable(
++                name: "ApartmentOfferMatches",
++                columns: table => new
++                {
++                    Id = table.Column<int>(type: "integer", nullable: false)
++                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
++                    ApartmentOfferId = table.Column<int>(type: "integer", nullable: false),
++                    ClientProfileId = table.Column<long>(type: "bigint", nullable: false),
++                    AgentUserId = table.Column<string>(type: "text", nullable: false),
++                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
++                    ReadAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
++                },
++                constraints: table =>
++                {
++                    table.PrimaryKey("PK_ApartmentOfferMatches", x => x.Id);
++                    table.ForeignKey("FK_ApartmentOfferMatches_ApartmentOffers_ApartmentOfferId", x => x.ApartmentOfferId, "ApartmentOffers", "Id", onDelete: ReferentialAction.Cascade);
++                    table.ForeignKey("FK_ApartmentOfferMatches_AspNetUsers_AgentUserId", x => x.AgentUserId, "AspNetUsers", "Id", onDelete: ReferentialAction.Cascade);
++                    table.ForeignKey("FK_ApartmentOfferMatches_ClientProfiles_ClientProfileId", x => x.ClientProfileId, "ClientProfiles", "Id", onDelete: ReferentialAction.Cascade);
++                });
++
++            migrationBuilder.CreateIndex("IX_ApartmentOffers_ApartmentId", "ApartmentOffers", "ApartmentId");
++            migrationBuilder.CreateIndex("IX_ApartmentOffers_ReviewedByUserId", "ApartmentOffers", "ReviewedByUserId");
++            migrationBuilder.CreateIndex("IX_ApartmentOffers_SubmittedByUserId", "ApartmentOffers", "SubmittedByUserId");
++            migrationBuilder.CreateIndex("IX_ApartmentOffers_ClientProfileId_ApartmentId", "ApartmentOffers", new[] { "ClientProfileId", "ApartmentId" }, unique: true);
++            migrationBuilder.CreateIndex("IX_ApartmentOffers_ReviewerUserId_Status", "ApartmentOffers", new[] { "ReviewerUserId", "Status" });
++            migrationBuilder.CreateIndex("IX_ApartmentOfferMatches_ClientProfileId", "ApartmentOfferMatches", "ClientProfileId");
++            migrationBuilder.CreateIndex("IX_ApartmentOfferMatches_AgentUserId_ReadAt", "ApartmentOfferMatches", new[] { "AgentUserId", "ReadAt" });
++            migrationBuilder.CreateIndex("IX_ApartmentOfferMatches_ApartmentOfferId_ClientProfileId", "ApartmentOfferMatches", new[] { "ApartmentOfferId", "ClientProfileId" }, unique: true);
++        }
++
++        /// <inheritdoc />
++        protected override void Down(MigrationBuilder migrationBuilder)
++        {
++            migrationBuilder.DropTable(name: "ApartmentOfferMatches");
++            migrationBuilder.DropTable(name: "ApartmentOffers");
++        }
++    }
++}
+diff --git a/Migrations/AppDbContextModelSnapshot.cs b/Migrations/AppDbContextModelSnapshot.cs
+index 1273d17..328fdd7 100644
+--- a/Migrations/AppDbContextModelSnapshot.cs
++++ b/Migrations/AppDbContextModelSnapshot.cs
+@@ -884,6 +884,101 @@ namespace Website_API.Migrations
+                     b.ToTable("ClientIntakeLinks");
+                 });
+ 
++            modelBuilder.Entity("Website_API.Models.ApartmentOffer", b =>
++                {
++                    b.Property<int>("Id")
++                        .ValueGeneratedOnAdd()
++                        .HasColumnType("integer");
++
++                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
++
++                    b.Property<int>("ApartmentId")
++                        .HasColumnType("integer");
++
++                    b.Property<long>("ClientProfileId")
++                        .HasColumnType("bigint");
++
++                    b.Property<DateTime>("CreatedAt")
++                        .HasColumnType("timestamp with time zone");
++
++                    b.Property<DateTime?>("ReadAt")
++                        .HasColumnType("timestamp with time zone");
++
++                    b.Property<DateTime?>("ReviewedAt")
++                        .HasColumnType("timestamp with time zone");
++
++                    b.Property<string>("ReviewedByUserId")
++                        .HasColumnType("text");
++
++                    b.Property<string>("ReviewerUserId")
++                        .HasColumnType("text");
++
++                    b.Property<bool>("ShareWithOtherClients")
++                        .HasColumnType("boolean");
++
++                    b.Property<string>("Status")
++                        .IsRequired()
++                        .ValueGeneratedOnAdd()
++                        .HasMaxLength(20)
++                        .HasColumnType("character varying(20)")
++                        .HasDefaultValue("pending");
++
++                    b.Property<string>("SubmittedByUserId")
++                        .IsRequired()
++                        .HasColumnType("text");
++
++                    b.HasKey("Id");
++
++                    b.HasIndex("ApartmentId");
++
++                    b.HasIndex("ReviewedByUserId");
++
++                    b.HasIndex("SubmittedByUserId");
++
++                    b.HasIndex("ClientProfileId", "ApartmentId")
++                        .IsUnique();
++
++                    b.HasIndex("ReviewerUserId", "Status");
++
++                    b.ToTable("ApartmentOffers");
++                });
++
++            modelBuilder.Entity("Website_API.Models.ApartmentOfferMatch", b =>
++                {
++                    b.Property<int>("Id")
++                        .ValueGeneratedOnAdd()
++                        .HasColumnType("integer");
++
++                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
++
++                    b.Property<string>("AgentUserId")
++                        .IsRequired()
++                        .HasColumnType("text");
++
++                    b.Property<int>("ApartmentOfferId")
++                        .HasColumnType("integer");
++
++                    b.Property<long>("ClientProfileId")
++                        .HasColumnType("bigint");
++
++                    b.Property<DateTime>("CreatedAt")
++                        .HasColumnType("timestamp with time zone");
++
++                    b.Property<DateTime?>("ReadAt")
++                        .HasColumnType("timestamp with time zone");
++
++                    b.HasKey("Id");
++
++                    b.HasIndex("ClientProfileId");
++
++                    b.HasIndex("AgentUserId", "ReadAt");
++
++                    b.HasIndex("ApartmentOfferId", "ClientProfileId")
++                        .IsUnique();
++
++                    b.ToTable("ApartmentOfferMatches");
++                });
++
+             modelBuilder.Entity("Website_API.Models.ClientNotification", b =>
+                 {
+                     b.Property<int>("Id")
+@@ -2204,6 +2299,79 @@ namespace Website_API.Migrations
+                     b.Navigation("Agent");
+                 });
+ 
++            modelBuilder.Entity("Website_API.Models.ApartmentOffer", b =>
++                {
++                    b.HasOne("Website_API.Models.Apartment", "Apartment")
++                        .WithMany()
++                        .HasForeignKey("ApartmentId")
++                        .OnDelete(DeleteBehavior.Cascade)
++                        .IsRequired();
++
++                    b.HasOne("Website_API.Models.ClientProfile", "ClientProfile")
++                        .WithMany()
++                        .HasForeignKey("ClientProfileId")
++                        .OnDelete(DeleteBehavior.Cascade)
++                        .IsRequired();
++
++                    b.HasOne("Website_API.Models.AppUser", "ReviewedBy")
++                        .WithMany()
++                        .HasForeignKey("ReviewedByUserId")
++                        .OnDelete(DeleteBehavior.SetNull);
++
++                    b.HasOne("Website_API.Models.AppUser", "Reviewer")
++                        .WithMany()
++                        .HasForeignKey("ReviewerUserId")
++                        .OnDelete(DeleteBehavior.SetNull);
++
++                    b.HasOne("Website_API.Models.AppUser", "SubmittedByUser")
++                        .WithMany()
++                        .HasForeignKey("SubmittedByUserId")
++                        .OnDelete(DeleteBehavior.Cascade)
++                        .IsRequired();
++
++                    b.Navigation("Apartment");
++
++                    b.Navigation("ClientProfile");
++
++                    b.Navigation("ReviewedBy");
++
++                    b.Navigation("Reviewer");
++
++                    b.Navigation("SubmittedByUser");
++                });
++
++            modelBuilder.Entity("Website_API.Models.ApartmentOfferMatch", b =>
++                {
++                    b.HasOne("Website_API.Models.AppUser", "Agent")
++                        .WithMany()
++                        .HasForeignKey("AgentUserId")
++                        .OnDelete(DeleteBehavior.Cascade)
++                        .IsRequired();
++
++                    b.HasOne("Website_API.Models.ApartmentOffer", "Offer")
++                        .WithMany("Matches")
++                        .HasForeignKey("ApartmentOfferId")
++                        .OnDelete(DeleteBehavior.Cascade)
++                        .IsRequired();
++
++                    b.HasOne("Website_API.Models.ClientProfile", "ClientProfile")
++                        .WithMany()
++                        .HasForeignKey("ClientProfileId")
++                        .OnDelete(DeleteBehavior.Cascade)
++                        .IsRequired();
++
++                    b.Navigation("Agent");
++
++                    b.Navigation("ClientProfile");
++
++                    b.Navigation("Offer");
++                });
++
++            modelBuilder.Entity("Website_API.Models.ApartmentOffer", b =>
++                {
++                    b.Navigation("Matches");
++                });
++
+             modelBuilder.Entity("Website_API.Models.ClientNotification", b =>
+                 {
+                     b.HasOne("Website_API.Models.Apartment", "Apartment")
+diff --git a/Models/ApartmentOffer.cs b/Models/ApartmentOffer.cs
+new file mode 100644
+index 0000000..c7df5ce
+--- /dev/null
++++ b/Models/ApartmentOffer.cs
+@@ -0,0 +1,47 @@
++namespace Website_API.Models;
++
++/// <summary>
++/// A user's own listing offered to one public board client. It goes to that client's agent first;
++/// approving it never publishes the listing, and it reaches other clients only when the user
++/// allowed sharing and the agent approved.
++/// </summary>
++public class ApartmentOffer
++{
++    public const string Pending = "pending";
++    public const string Approved = "approved";
++    public const string Rejected = "rejected";
++
++    public int Id { get; set; }
++    public long ClientProfileId { get; set; }
++    public ClientProfile ClientProfile { get; set; } = null!;
++    public int ApartmentId { get; set; }
++    public Apartment Apartment { get; set; } = null!;
++    public string SubmittedByUserId { get; set; } = "";
++    public AppUser SubmittedByUser { get; set; } = null!;
++    /// <summary>The selected client's agent. Null only if that account was removed: any manager then reviews.</summary>
++    public string? ReviewerUserId { get; set; }
++    public AppUser? Reviewer { get; set; }
++    public bool ShareWithOtherClients { get; set; }
++    public string Status { get; set; } = Pending;
++    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
++    /// <summary>Reviewer's bell: when they opened this submission.</summary>
++    public DateTime? ReadAt { get; set; }
++    public DateTime? ReviewedAt { get; set; }
++    public string? ReviewedByUserId { get; set; }
++    public AppUser? ReviewedBy { get; set; }
++    public List<ApartmentOfferMatch> Matches { get; set; } = [];
++}
++
++/// <summary>Another client an approved, shareable offer meets every hard requirement of. Goes to that client's agent.</summary>
++public class ApartmentOfferMatch
++{
++    public int Id { get; set; }
++    public int ApartmentOfferId { get; set; }
++    public ApartmentOffer Offer { get; set; } = null!;
++    public long ClientProfileId { get; set; }
++    public ClientProfile ClientProfile { get; set; } = null!;
++    public string AgentUserId { get; set; } = "";
++    public AppUser Agent { get; set; } = null!;
++    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
++    public DateTime? ReadAt { get; set; }
++}
+diff --git a/Services/ApartmentOfferMatching.cs b/Services/ApartmentOfferMatching.cs
+new file mode 100644
+index 0000000..f4d331f
+--- /dev/null
++++ b/Services/ApartmentOfferMatching.cs
+@@ -0,0 +1,34 @@
++using Microsoft.EntityFrameworkCore;
++using Website_API.Data;
++using Website_API.DTO;
++using Website_API.Models;
++
++namespace Website_API.Services;
++
++public static class ClientBoardEligibility
++{
++    /// <summary>
++    /// The only clients the public may see or offer to: agent intake-link profiles that are Active,
++    /// consented to publication and still assigned to staff. Self-serve Velven Match searches live
++    /// in SavedSearches and are not ClientProfiles, so they can never pass this query.
++    /// </summary>
++    public static IQueryable<ClientProfile> PublicProfiles(AppDbContext db) => db.ClientProfiles.Where(x =>
++        x.Status == "Active" && x.PublishConsentAt != null &&
++        db.UserRoles.Any(ur => ur.UserId == x.AgentUserId && db.Roles.Any(role => role.Id == ur.RoleId &&
++            (role.Name == "Admin" || role.Name == "Manager" || role.Name == "Agent"))));
++}
++
++public static class ApartmentOfferMatching
++{
++    /// <summary>
++    /// Mandatory filters only: anything short of an exact match, including details the listing leaves
++    /// unconfirmed, is excluded. Top priorities and lifestyle answers are optional and never decide this.
++    /// </summary>
++    public static bool IsCompatible(Apartment apartment, ClientRequirements client, DateTime today)
++    {
++        if (HomeMatchRequirements.Evaluate(apartment, client, today) != RequirementStatus.Exact) return false;
++        // Requirements the shared Velven Match check does not cover. An unknown size (0) cannot prove a minimum.
++        if (client.MinSize is > 0 && apartment.SizeSquareMeters < (double)client.MinSize.Value) return false;
++        return apartment.MaxOccupants is not int occupants || occupants >= client.Adults + client.Children;
++    }
++}
+diff --git a/Website API.Tests/ApartmentOfferTests.cs b/Website API.Tests/ApartmentOfferTests.cs
+new file mode 100644
+index 0000000..924d291
+--- /dev/null
++++ b/Website API.Tests/ApartmentOfferTests.cs	
+@@ -0,0 +1,183 @@
++using System.Net;
++using System.Net.Http.Json;
++using System.Text.Json;
++using System.Threading.RateLimiting;
++using Microsoft.AspNetCore.Authentication;
++using Microsoft.AspNetCore.Builder;
++using Microsoft.AspNetCore.Identity;
++using Microsoft.AspNetCore.RateLimiting;
++using Microsoft.AspNetCore.TestHost;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.Extensions.Configuration;
++using Microsoft.Extensions.DependencyInjection;
++using Npgsql;
++using Website_API.Controllers;
++using Website_API.Data;
++using Website_API.DTO;
++using Website_API.Models;
++using Website_API.Services;
++using Xunit;
++
++namespace Website_API.Tests;
++
++public class ApartmentOfferTests
++{
++    private static readonly DateTime Today = new(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
++    private static Apartment Listing(string district = "Vake", int bedrooms = 2, decimal price = 1000, double size = 80) => new()
++    {
++        Title = "Apartment for rent", Description = "Deal: Rent | Pet-friendly: yes", District = district, Bedrooms = bedrooms,
++        Price = price, SizeSquareMeters = size, IsPetFriendly = true, AvailableFrom = new DateTime(2026, 10, 15, 0, 0, 0, DateTimeKind.Utc),
++    };
++    private static ClientRequirements Client() => ClientRequirements.Read(ClientBoardTests.Profile().GetRawText());
++
++    [Fact]
++    public void CompatibleListingPasses() => Assert.True(ApartmentOfferMatching.IsCompatible(Listing(), Client(), Today));
++
++    [Fact]
++    public void EveryHardRequirementExcludes()
++    {
++        var client = Client();
++        Assert.False(ApartmentOfferMatching.IsCompatible(Listing(district: "Chugureti"), client, Today));
++        Assert.False(ApartmentOfferMatching.IsCompatible(Listing(bedrooms: 1), client, Today));
++        Assert.False(ApartmentOfferMatching.IsCompatible(Listing(price: 5000), client, Today));
++        var sale = Listing(); sale.Description = "Deal: Sale"; sale.Title = "For sale";
++        Assert.False(ApartmentOfferMatching.IsCompatible(sale, client, Today));
++        var late = Listing(); late.AvailableFrom = new DateTime(2027, 1, 1, 0, 0, 0, DateTimeKind.Utc);
++        Assert.False(ApartmentOfferMatching.IsCompatible(late, client, Today));
++        var noPets = Listing(); noPets.IsPetFriendly = false; noPets.Description = "Deal: Rent";
++        Assert.False(ApartmentOfferMatching.IsCompatible(noPets, client, Today));
++        var small = Client(); small.MinSize = 100;
++        Assert.False(ApartmentOfferMatching.IsCompatible(Listing(size: 80), small, Today));
++        var crowded = Listing(); crowded.MaxOccupants = 1;
++        Assert.False(ApartmentOfferMatching.IsCompatible(crowded, client, Today));
++    }
++
++    [Fact]
++    public void OptionalPrioritiesDoNotExclude()
++    {
++        var client = Client(); client.TopPriorities = ["Parking", "QuietStreet", "MetroNearby"];
++        var listing = Listing(); listing.HasParking = false;
++        Assert.True(ApartmentOfferMatching.IsCompatible(listing, client, Today));
++    }
++
++    [LocalPostgresFact]
++    public async Task PrivacySubmissionNotificationReviewAndSharingWorkInPostgres()
++    {
++        var cs = new NpgsqlConnectionStringBuilder(Environment.GetEnvironmentVariable("MYHOME_TEST_DATABASE"));
++        Assert.Contains(cs.Host, new[] { "localhost", "127.0.0.1" });
++        var database = "apartment_offers_" + Guid.NewGuid().ToString("N");
++        await using var maintenance = new NpgsqlConnection(cs.ConnectionString);
++        await maintenance.OpenAsync();
++        await new NpgsqlCommand($"CREATE DATABASE {database}", maintenance).ExecuteNonQueryAsync();
++        cs.Database = database;
++        WebApplication? app = null;
++        try
++        {
++            var builder = WebApplication.CreateBuilder(); builder.WebHost.UseTestServer();
++            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Supabase:Url"] = "https://example.invalid", ["Supabase:SecretKey"] = "test", ["Supabase:Bucket"] = "apartments" });
++            builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(cs.ConnectionString));
++            builder.Services.AddControllers().AddApplicationPart(typeof(ClientBoardController).Assembly);
++            builder.Services.AddAuthentication("Test").AddScheme<AuthenticationSchemeOptions, ClientBoardRoleHandler>("Test", _ => { });
++            builder.Services.AddAuthorization(); builder.Services.AddMemoryCache(); builder.Services.AddHttpClient<SupabaseStorageService>();
++            builder.Services.AddScoped<ListingInterestService>();
++            builder.Services.AddRateLimiter(o => o.AddPolicy("CrmInquiries", _ => RateLimitPartition.GetNoLimiter("test")));
++            app = builder.Build(); app.UseAuthentication(); app.UseAuthorization(); app.UseRateLimiter(); app.MapControllers();
++            int vake, chugureti, unshared;
++            long selected, compatible, incompatible, unpublished;
++            using (var scope = app.Services.CreateScope())
++            {
++                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>(); await db.Database.MigrateAsync();
++                db.Users.AddRange(new AppUser { Id = "agent-a", UserName = "a", FullName = "Agent A", PhoneNumber = "+995555000001" },
++                    new AppUser { Id = "agent-b", UserName = "b", FullName = "Agent B" }, new AppUser { Id = "owner", UserName = "owner", FullName = "Owner" },
++                    new AppUser { Id = "other-owner", UserName = "o2" }, new AppUser { Id = "match-client", UserName = "m" });
++                db.Roles.Add(new IdentityRole { Id = "agent", Name = "Agent", NormalizedName = "AGENT" });
++                db.UserRoles.AddRange(new IdentityUserRole<string> { UserId = "agent-a", RoleId = "agent" }, new IdentityUserRole<string> { UserId = "agent-b", RoleId = "agent" });
++                // A self-serve Velven Match client: a saved search, never a board profile.
++                db.SavedSearches.Add(new SavedSearch { UserId = "match-client", Name = "PrivateMatchSearch", CriteriaHash = "h", ProfileJson = ClientBoardTests.Profile().GetRawText() });
++                var v = Listing(); v.UploadedByUserId = "owner"; var c = Listing(district: "Chugureti", bedrooms: 1); c.UploadedByUserId = "owner"; var u = Listing(); u.UploadedByUserId = "owner";
++                db.Apartments.AddRange(v, c, u);
++                var link = new ClientIntakeLink { Token = "token", AgentUserId = "agent-a" };
++                var linkB = new ClientIntakeLink { Token = "token-b", AgentUserId = "agent-b" };
++                ClientProfile Profile(ClientIntakeLink l, string district, bool published) => new()
++                {
++                    IntakeLink = l, AgentUserId = l.AgentUserId, FirstName = "PrivateFirstName", Phone = "555123456", ConsentAt = DateTime.UtcNow,
++                    PublishConsentAt = published ? DateTime.UtcNow : null, ProfileJson = JsonSerializer.Serialize(ClientRequirements.Read(ClientBoardTests.Profile(district).GetRawText()), ClientRequirements.Json),
++                    Districts = [district], BudgetMinUsd = 800, BudgetMaxUsd = 1400, Residents = 2, HasPets = true,
++                    Lead = new CrmLead { Name = "PrivateFirstName", Phone = "555123456", AssignedAgentId = l.AgentUserId, Source = CrmLeadSource.AiMatch },
++                };
++                var a = Profile(link, "Vake", true); var b = Profile(linkB, "Vake", true); var d = Profile(linkB, "Gldani", true); var p = Profile(linkB, "Vake", false);
++                db.ClientProfiles.AddRange(a, b, d, p);
++                await db.SaveChangesAsync();
++                vake = v.Id; chugureti = c.Id; unshared = u.Id; selected = a.Id; compatible = b.Id; incompatible = d.Id; unpublished = p.Id;
++                // Dates in the shared fixture are in the past: make the fixture's move-in irrelevant.
++                await db.Apartments.ExecuteUpdateAsync(s => s.SetProperty(x => x.AvailableFrom, (DateTime?)null));
++            }
++            await app.StartAsync(); using var client = app.GetTestClient();
++            void As(string? role, string user) { client.DefaultRequestHeaders.Remove("X-Test-Role"); client.DefaultRequestHeaders.Remove("X-Test-User"); if (role is not null) client.DefaultRequestHeaders.Add("X-Test-Role", role); client.DefaultRequestHeaders.Add("X-Test-User", user); }
++            Task<HttpResponseMessage> Offer(long c, int a, bool share) => client.PostAsJsonAsync("/api/apartment-offers", new { clientId = c, apartmentId = a, shareWithOtherClients = share });
++
++            // Scenarios 1-3: the board shows agent clients only, with no private details.
++            As(null, "anonymous");
++            var board = await client.GetStringAsync("/api/client-board");
++            Assert.Contains($"\"id\":{selected}", board);
++            Assert.DoesNotContain($"\"id\":{unpublished}", board);
++            foreach (var secret in new[] { "PrivateMatchSearch", "match-client", "PrivateFirstName", "555123456" }) Assert.DoesNotContain(secret, board);
++            Assert.Equal(HttpStatusCode.Unauthorized, (await Offer(selected, vake, false)).StatusCode);
++            As("Client", "owner");
++            Assert.Equal(HttpStatusCode.NotFound, (await Offer(unpublished, vake, false)).StatusCode);
++            Assert.Equal(HttpStatusCode.NotFound, (await Offer(999999, vake, false)).StatusCode);
++            As("Client", "other-owner");
++            Assert.Equal(HttpStatusCode.NotFound, (await Offer(selected, vake, false)).StatusCode);
++
++            // Scenarios 4-5: submit, no duplicates, the responsible agent is told.
++            As("Client", "owner");
++            var created = await (await Offer(selected, vake, true)).Content.ReadFromJsonAsync<JsonElement>();
++            var sharedId = created.GetProperty("id").GetInt32();
++            Assert.Equal("pending", created.GetProperty("status").GetString());
++            Assert.Equal(HttpStatusCode.Conflict, (await Offer(selected, vake, true)).StatusCode);
++            var unsharedId = (await (await Offer(selected, unshared, false)).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
++            var incompatibleId = (await (await Offer(selected, chugureti, true)).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
++            Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsync($"/api/apartment-offers/{sharedId}/approve", null)).StatusCode);
++            As("Agent", "agent-a");
++            var bell = await client.GetStringAsync("/api/Crm/notifications");
++            Assert.Contains("apartment-offer", bell); Assert.Contains($"/crm/apartment-offers?offer={sharedId}", bell); Assert.Contains($"\"clientId\":{selected}", bell);
++            As("Agent", "agent-b");
++            Assert.DoesNotContain("apartment-offer", await client.GetStringAsync("/api/Crm/notifications"));
++            Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsync($"/api/apartment-offers/{sharedId}/approve", null)).StatusCode);
++
++            // Scenarios 6-9: review, sharing off, sharing on, incompatible.
++            As("Agent", "agent-a");
++            async Task<int> Approve(int id) => (await (await client.PostAsync($"/api/apartment-offers/{id}/approve", null)).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("matchedClients").GetInt32();
++            Assert.Equal(0, await Approve(unsharedId));
++            Assert.Equal(0, await Approve(incompatibleId));
++            Assert.Equal(1, await Approve(sharedId));
++            Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync($"/api/apartment-offers/{sharedId}/reject", null)).StatusCode);
++            using (var scope = app.Services.CreateScope())
++            {
++                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
++                var match = await db.ApartmentOfferMatches.SingleAsync();
++                Assert.Equal(compatible, match.ClientProfileId); Assert.Equal("agent-b", match.AgentUserId); Assert.NotEqual(incompatible, match.ClientProfileId);
++            }
++            As("Agent", "agent-b");
++            Assert.Contains("apartment-offer-match", await client.GetStringAsync("/api/Crm/notifications"));
++            var theirs = await client.GetStringAsync("/api/apartment-offers/matches");
++            Assert.Contains($"\"clientId\":{compatible}", theirs); Assert.DoesNotContain("PrivateFirstName", theirs);
++
++            As("Client", "owner");
++            var rejectable = (await (await Offer(compatible, unshared, true)).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
++            As("Agent", "agent-b");
++            Assert.Equal(HttpStatusCode.OK, (await client.PostAsync($"/api/apartment-offers/{rejectable}/reject", null)).StatusCode);
++            using (var scope = app.Services.CreateScope())
++            {
++                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
++                Assert.Equal(0, await db.ApartmentOfferMatches.CountAsync(x => x.ApartmentOfferId == rejectable));
++            }
++        }
++        finally
++        {
++            if (app is not null) await app.DisposeAsync();
++            NpgsqlConnection.ClearAllPools();
++            await new NpgsqlCommand($"DROP DATABASE IF EXISTS {database} WITH (FORCE)", maintenance).ExecuteNonQueryAsync();
++        }
++    }
++}
