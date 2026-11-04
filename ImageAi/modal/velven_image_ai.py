@@ -421,6 +421,8 @@ class Processor:
         known_source = (request.get("known_source") or "").strip().lower() or None
         if known_source not in own_terms:
             known_source = None
+        all_marks = (request.get("watermark_scope") == "all" and mode == "process"
+                     and (basis == "owned" or (basis == "licensed" and bool(permission_reference))))
         max_bbox_percent = float(request.get("max_bbox_percent", 10.0))
 
         removable_limit = max(max_bbox_percent, MAX_REMOVABLE_BBOX_PERCENT)
@@ -429,19 +431,19 @@ class Processor:
             detection["primary"] = True
         # Boxes over the normal limit are kept only if they turn out to be our or a partner's mark.
         candidates = sorted((d for d in detections if d["accepted"]),
-                            key=lambda d: d["area_percent"], reverse=True)[:6]
+                            key=lambda d: d["area_percent"], reverse=True)
         for detection in candidates:
             detection["text"] = self._read_text(pil, detection["bbox"])
         candidates = [d for d in candidates
-                      if d["area_percent"] <= max_bbox_percent or mark_is_removable(d["text"], own_terms)]
-        if not any(mark_is_removable(d["text"], own_terms) for d in candidates):
+                      if all_marks or d["area_percent"] <= max_bbox_percent or mark_is_removable(d["text"], own_terms)]
+        if all_marks or not any(mark_is_removable(d["text"], own_terms) for d in candidates):
             # Faint marks: look again with other prompts, keeping only boxes that read as removable.
             for prompt in EXTRA_DETECTION_PROMPTS:
                 for extra in self._detect(pil, prompt, removable_limit):
                     if not extra["accepted"] or any(_iou(extra["bbox"], d["bbox"]) > 0.5 for d in candidates):
                         continue
                     extra["text"] = self._read_text(pil, extra["bbox"])
-                    if mark_is_removable(extra["text"], own_terms):
+                    if all_marks or mark_is_removable(extra["text"], own_terms):
                         extra["primary"] = False
                         candidates.append(extra)
                         detections.append(extra)
@@ -464,9 +466,14 @@ class Processor:
         # Unreadable marks alone, or any mark naming another company, stay third-party.
         classification, accepted = classify_marks(candidates, own_terms)
 
+        if all_marks and candidates:
+            accepted = candidates
+            if classification == "none":
+                classification = "third_party"
+
         licensed = basis == "licensed" and bool(permission_reference)
         may_modify = basis in {"owned", "licensed"} and (
-            classification == "own_brand" or (classification == "third_party" and licensed))
+            all_marks or classification == "own_brand" or (classification == "third_party" and licensed))
 
         result = {
             "source_sha256": source_sha,
@@ -569,6 +576,7 @@ def create_api(run):
         max_bbox_percent: float = Field(10.0, gt=0, le=25)
         output_format: str = Field("jpeg", pattern="^(jpeg|png)$")
         known_source: str | None = Field(None, max_length=40)
+        watermark_scope: str = Field("brands", pattern="^(brands|all)$")
 
     def authorize(value: str | None):
         supplied = (value or "").removeprefix("Bearer ").strip()

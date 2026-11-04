@@ -61,6 +61,7 @@ public class PhotoChecksController : ControllerBase
         [FromForm] string mode = "detect",
         [FromForm] bool rightsConfirmed = false,
         [FromForm] string? source = null,
+        [FromForm] string watermarkScope = "brands",
         CancellationToken cancellationToken = default)
     {
         if (!_options.Enabled)
@@ -71,6 +72,11 @@ public class PhotoChecksController : ControllerBase
         if (mode is not ("detect" or "clean"))
         {
             return BadRequest(new { message = "Mode must be detect or clean." });
+        }
+
+        if (watermarkScope is not ("brands" or "all"))
+        {
+            return BadRequest(new { message = "Watermark scope must be brands or all." });
         }
 
         if (image is null || image.Length == 0 || image.Length > MaxBytes ||
@@ -151,7 +157,8 @@ public class PhotoChecksController : ControllerBase
                     Mode = modalMode,
                     AuthorizationBasis = basis.ToString().ToLowerInvariant(),
                     OwnBrandTerms = _options.RemovableBrandTerms,
-                    KnownSource = knownSource
+                    KnownSource = knownSource,
+                    WatermarkScope = mode == "clean" ? watermarkScope : "brands"
                 },
                 cancellationToken);
         }
