@@ -39,6 +39,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<SavedSearch> SavedSearches => Set<SavedSearch>();
     public DbSet<ClientIntakeLink> ClientIntakeLinks => Set<ClientIntakeLink>();
     public DbSet<ClientProfile> ClientProfiles => Set<ClientProfile>();
+    public DbSet<ApartmentOffer> ApartmentOffers => Set<ApartmentOffer>();
+    public DbSet<ApartmentOfferMatch> ApartmentOfferMatches => Set<ApartmentOfferMatch>();
     public DbSet<SavedSearchMatch> SavedSearchMatches => Set<SavedSearchMatch>();
     public DbSet<ClientNotification> ClientNotifications => Set<ClientNotification>();
     public DbSet<ListingInterestNotification> ListingInterestNotifications => Set<ListingInterestNotification>();
@@ -183,6 +185,28 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // One alert per listing, client search and recipient.
             notification.HasIndex(item => new { item.UserId, item.ApartmentId, item.SavedSearchId }).IsUnique();
             notification.HasIndex(item => new { item.UserId, item.ReadAt });
+        });
+
+        builder.Entity<ApartmentOffer>(offer =>
+        {
+            offer.HasOne(item => item.ClientProfile).WithMany().HasForeignKey(item => item.ClientProfileId).OnDelete(DeleteBehavior.Cascade);
+            offer.HasOne(item => item.Apartment).WithMany().HasForeignKey(item => item.ApartmentId).OnDelete(DeleteBehavior.Cascade);
+            offer.HasOne(item => item.SubmittedByUser).WithMany().HasForeignKey(item => item.SubmittedByUserId).OnDelete(DeleteBehavior.Cascade);
+            offer.HasOne(item => item.Reviewer).WithMany().HasForeignKey(item => item.ReviewerUserId).OnDelete(DeleteBehavior.SetNull);
+            offer.HasOne(item => item.ReviewedBy).WithMany().HasForeignKey(item => item.ReviewedByUserId).OnDelete(DeleteBehavior.SetNull);
+            offer.Property(item => item.Status).HasMaxLength(20).HasDefaultValue(ApartmentOffer.Pending);
+            // One offer per listing and client: repeated clicks cannot create duplicates.
+            offer.HasIndex(item => new { item.ClientProfileId, item.ApartmentId }).IsUnique();
+            offer.HasIndex(item => new { item.ReviewerUserId, item.Status });
+        });
+
+        builder.Entity<ApartmentOfferMatch>(match =>
+        {
+            match.HasOne(item => item.Offer).WithMany(item => item.Matches).HasForeignKey(item => item.ApartmentOfferId).OnDelete(DeleteBehavior.Cascade);
+            match.HasOne(item => item.ClientProfile).WithMany().HasForeignKey(item => item.ClientProfileId).OnDelete(DeleteBehavior.Cascade);
+            match.HasOne(item => item.Agent).WithMany().HasForeignKey(item => item.AgentUserId).OnDelete(DeleteBehavior.Cascade);
+            match.HasIndex(item => new { item.ApartmentOfferId, item.ClientProfileId }).IsUnique();
+            match.HasIndex(item => new { item.AgentUserId, item.ReadAt });
         });
 
         builder.Entity<AppUser>().Property(user => user.MatchAlertsInApp).HasDefaultValue(true);
