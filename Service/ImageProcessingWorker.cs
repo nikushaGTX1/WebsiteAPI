@@ -183,7 +183,9 @@ public sealed class ImageProcessingWorker : BackgroundService
         var bytes = await storage.DownloadAsync(job.SourceStoragePath, cancellationToken);
         job.SourceSha256 = Convert.ToHexStringLower(SHA256.HashData(bytes));
 
-        var duplicate = await context.ImageProcessingJobs
+        // Only answers made by the remover version now deployed are reused.
+        var cacheVersion = await modal.CurrentCacheVersionAsync(cancellationToken);
+        var duplicate = cacheVersion is null ? null : await context.ImageProcessingJobs
             .AsNoTracking()
             .Where(other =>
                 other.Id != job.Id &&
@@ -191,6 +193,7 @@ public sealed class ImageProcessingWorker : BackgroundService
                 other.Mode == job.Mode &&
                 other.AuthorizationBasis == job.AuthorizationBasis &&
                 other.DuplicateOfJobId == null &&
+                other.PipelineVersion == cacheVersion &&
                 other.SourceStoragePath != ImageProcessingJob.UploadFormSource &&
                 other.Status != ImageJobStatus.Pending &&
                 other.Status != ImageJobStatus.Running &&
@@ -204,6 +207,8 @@ public sealed class ImageProcessingWorker : BackgroundService
             job.Classification = duplicate.Classification;
             job.DetectionsJson = duplicate.DetectionsJson;
             job.WatermarkText = duplicate.WatermarkText;
+            job.PipelineVersion = duplicate.PipelineVersion;
+            job.SafetyReportJson = duplicate.SafetyReportJson;
             job.ProcessedStoragePath = duplicate.ProcessedStoragePath;
             job.ProcessedSha256 = duplicate.ProcessedSha256;
             job.Status = duplicate.ProcessedStoragePath is null
@@ -238,6 +243,8 @@ public sealed class ImageProcessingWorker : BackgroundService
         job.Classification = result.Classification;
         job.DetectionsJson = result.Detections.GetRawText();
         job.WatermarkText = ExtractText(result.Detections);
+        job.PipelineVersion = modal.CacheVersionFor(result.PipelineVersion);
+        job.SafetyReportJson = result.SafetyReport?.GetRawText();
 
         job.Status = result.Action switch
         {

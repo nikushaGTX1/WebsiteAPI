@@ -69,6 +69,107 @@ MAX_REMOVABLE_BBOX_PERCENT = 25.0
 # the text in them is a removable brand, so ordinary logos in the photo (a TV, a sign) are left alone.
 EXTRA_DETECTION_PROMPTS = ("logo", "text")
 
+# Report-only safety limits. They never change the output; they only say what a stricter rule
+# would have rejected, so the limits can be tuned on real photos before they are enforced.
+REPORT_MAX_SINGLE_MASK_PERCENT = 6.0
+REPORT_MAX_TOTAL_MASK_PERCENT = 10.0
+REPORT_MAX_MASK_TO_TEXT_RATIO = 3.0
+
+
+def _pipeline_version() -> str:
+    """
+    Changes whenever this file (rules, padding, prompts) or the model revision changes. The API
+    reuses a cached answer only when it came from the same version, so a deploy never serves
+    answers made by older rules.
+    """
+    digest = hashlib.sha256()
+    try:
+        digest.update(Path(__file__).read_bytes().replace(b"\r\n", b"\n"))
+    except OSError:
+        digest.update(APP_NAME.encode())
+    digest.update(FLORENCE_REVISION.encode())
+    return digest.hexdigest()[:16]
+
+
+PIPELINE_VERSION = _pipeline_version()
+
+
+def mask_boxes_for(accepted: list[dict], width: int, height: int) -> list[dict]:
+    """The rectangles painted into the mask: each accepted box plus its edge padding."""
+    area = width * height
+    boxes = []
+    for detection in accepted:
+        x1, y1, x2, y2 = detection["bbox"]
+        # A few pixels around the box so no outline of the logo is left behind.
+        pad = max(4, round(0.08 * max(x2 - x1, y2 - y1)))
+        rect = [max(0, x1 - pad), max(0, y1 - pad), min(width, x2 + pad), min(height, y2 + pad)]
+        bw, bh = rect[2] - rect[0], rect[3] - rect[1]
+        boxes.append({"bbox": rect, "from_bbox": [x1, y1, x2, y2], "pad": pad,
+                      "width": bw, "height": bh,
+                      "area_percent": round(bw * bh / area * 100, 3)})
+    return boxes
+
+
+def safety_report(accepted: list[dict], mask_boxes: list[dict], mask_percent: float | None,
+                  terms: list[str]) -> dict:
+    """Report-only: flags large masks and edits based on a partial read. Never changes output."""
+    flags = []
+    for detection, box in zip(accepted, mask_boxes):
+        if box["area_percent"] > REPORT_MAX_SINGLE_MASK_PERCENT:
+            flags.append({"flag": "large_single_mask", "bbox": box["bbox"],
+                          "area_percent": box["area_percent"], "limit": REPORT_MAX_SINGLE_MASK_PERCENT})
+        text_box = detection.get("text_bbox")
+        if text_box:
+            text_area = max(1, (text_box[2] - text_box[0]) * (text_box[3] - text_box[1]))
+            ratio = round(box["width"] * box["height"] / text_area, 2)
+            if ratio > REPORT_MAX_MASK_TO_TEXT_RATIO:
+                flags.append({"flag": "mask_much_larger_than_text", "bbox": box["bbox"],
+                              "ratio": ratio, "limit": REPORT_MAX_MASK_TO_TEXT_RATIO})
+        text = detection.get("text", "")
+        if detection.get("box_stage") == "fragment_logo_size" or not mark_is_removable(text, terms):
+            flags.append({"flag": "partial_text", "bbox": box["bbox"], "text": text,
+                          "box_stage": detection.get("box_stage", "detector")})
+    if mask_percent is not None and mask_percent > REPORT_MAX_TOTAL_MASK_PERCENT:
+        flags.append({"flag": "large_total_mask", "mask_percent": mask_percent,
+                      "limit": REPORT_MAX_TOTAL_MASK_PERCENT})
+    return {"would_reject": bool(flags), "flags": flags, "enforced": False}
+
+
+def _diagnostic_images(pil, detections: list[dict], mask_boxes: list[dict], mask) -> dict:
+    """Overlay of every box (green kept, red dropped, yellow read text, blue mask) and the mask, as PNG."""
+    from PIL import ImageDraw, ImageFont
+
+    overlay = pil.copy()
+    draw = ImageDraw.Draw(overlay)
+    line = max(2, round(max(pil.size) / 500))
+    try:
+        font = ImageFont.load_default(size=max(14, round(max(pil.size) / 90)))
+    except TypeError:  # Pillow without sized default font
+        font = ImageFont.load_default()
+    plain_text = draw.text
+    draw.text = lambda xy, text, fill: plain_text(xy, text, fill=fill, font=font,
+                                                  stroke_width=2, stroke_fill=(0, 0, 0))
+    for d in detections:
+        colour = (0, 200, 0) if d.get("accepted") else (230, 0, 0)
+        x1, y1, x2, y2 = d["bbox"]
+        draw.rectangle([x1, y1, x2, y2], outline=colour, width=line)
+        label = f'{d.get("source", "?")} {x2 - x1}x{y2 - y1} {d.get("area_percent", 0)}% "{d.get("text", "")[:30]}"'
+        draw.text((x1 + 3, max(0, y1 - 12)), label, fill=colour)
+        if d.get("text_bbox"):
+            draw.rectangle(d["text_bbox"], outline=(255, 200, 0), width=max(1, line // 2))
+    for box in mask_boxes:
+        draw.rectangle(box["bbox"], outline=(0, 90, 255), width=line)
+        draw.text((box["bbox"][0] + 3, min(pil.height - 12, box["bbox"][3] + 2)),
+                  f'mask {box["width"]}x{box["height"]} {box["area_percent"]}% pad {box["pad"]}',
+                  fill=(0, 90, 255))
+
+    def png(img) -> str:
+        buffer = io.BytesIO()
+        img.save(buffer, "PNG", optimize=True)
+        return base64.b64encode(buffer.getvalue()).decode()
+
+    return {"overlay_png_b64": png(overlay), "mask_png_b64": png(mask)}
+
 
 def normalize_mark_text(text: str) -> str:
     """Lowercase letters and digits only, with common OCR mix-ups fixed: "MY HOME.GE" -> "myhomege"."""
@@ -174,17 +275,20 @@ def classify_marks(detections: list[dict], terms: list[str]) -> tuple[str, list[
     """
     if not detections:
         return "none", []
-    # Marks the partner search located already passed its (looser) brand check.
+    # Marks the partner search located already passed its (looser) brand check; detector boxes
+    # are read the same looser way ("hone ge", "mykone ge" are a pale myhome.ge logo).
     removable = [d for d in detections
-                 if d.get("partner_search") or mark_is_removable(d.get("text", ""), terms)]
+                 if d.get("partner_search") or partner_read_matches(d.get("text", ""), terms)]
     # Pieces of a removable brand ("nome" read from "myhome") are not another company's mark.
     other = [d for d in detections if d not in removable
              and not (_is_unreadable_or_fragment(d.get("text", ""), terms) if removable else _is_unreadable(d.get("text", "")))]
     # Nothing readable anywhere ("1", "T", "..."): a lamp, mirror or reflection, not a watermark.
     if not removable and not other:
         return "none", []
-    if not removable or other:
+    if not removable:
         return "third_party", []
+    # A partner logo was found: remove it. Other text in the photo (a shop sign, a room name,
+    # a misread piece) is left exactly as it is; it no longer blocks the partner logo's removal.
     icons = [d for d in detections if d not in removable and d.get("primary")
              and any(_overlap_or_near(d["bbox"], r["bbox"]) for r in removable)]
     return "own_brand", removable + icons
@@ -234,8 +338,9 @@ def prepare_models() -> dict:
     gpu="T4",
     volumes={MODEL_DIR: models_volume},
     min_containers=0,
-    max_containers=1,
-    scaledown_window=60,
+    # Up to three photos at once, and the GPU stays ready between photos of one upload.
+    max_containers=3,
+    scaledown_window=300,
     timeout=300,
 )
 class Processor:
@@ -290,7 +395,9 @@ class Processor:
                 continue
             percent = (x2 - x1) * (y2 - y1) / area * 100
             detections.append({"bbox": [x1, y1, x2, y2], "area_percent": round(percent, 3),
-                               "accepted": percent <= max_bbox_percent})
+                               "accepted": percent <= max_bbox_percent,
+                               "source": f"detector:{prompt}", "box_stage": "detector",
+                               "width": x2 - x1, "height": y2 - y1})
         return detections
 
     def _read_text(self, image, bbox: list[int]) -> str:
@@ -320,6 +427,10 @@ class Processor:
         w, h = image.size
         # The middle of the photo first (tight, then wider), then around each detector box.
         regions = [[0.28 * w, 0.42 * h, 0.72 * w, 0.58 * h], [0.18 * w, 0.34 * h, 0.82 * w, 0.66 * h]]
+        if known_source:
+            # Photos from a partner site: their logo sits in the middle; a tight crop makes its
+            # letters larger for the reader.
+            regions.insert(0, [0.33 * w, 0.44 * h, 0.67 * w, 0.56 * h])
         for x1, y1, x2, y2 in seeds:
             cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
             bw, bh = max(x2 - x1, 0.25 * w), max(y2 - y1, 0.08 * h)
@@ -337,12 +448,22 @@ class Processor:
                 crop = crop.resize((crop.width * scale, crop.height * scale))
             # Pale marks on bright walls: local contrast (CLAHE) makes the faint letters stand out.
             grey = cv2.cvtColor(np.array(crop), cv2.COLOR_RGB2GRAY)
-            crop = Image.fromarray(clahe.apply(grey)).convert("RGB")
-            parsed = self._florence("<OCR_WITH_REGION>", crop).get("<OCR_WITH_REGION>", {})
-            labels = parsed.get("labels", []) or []
-            quads = parsed.get("quad_boxes", []) or []
-            joined = " ".join(str(label) for label in labels)
-            if not (partner_read_matches(joined, terms) or _is_piece_of(joined, known_source)):
+            views = [clahe.apply(grey)]
+            if known_source:
+                # Busy backgrounds (pillars, lights) hide the letters even after CLAHE. A white
+                # top-hat keeps only small bright shapes, i.e. the logo's strokes, on a dark ground.
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (max(9, crop.height // 6) | 1,) * 2)
+                tophat = cv2.morphologyEx(grey, cv2.MORPH_TOPHAT, kernel)
+                views.append(255 - cv2.normalize(tophat, None, 0, 255, cv2.NORM_MINMAX))
+            labels, quads, joined = [], [], ""
+            for view in views:
+                parsed = self._florence("<OCR_WITH_REGION>", Image.fromarray(view).convert("RGB")).get("<OCR_WITH_REGION>", {})
+                labels = parsed.get("labels", []) or []
+                quads = parsed.get("quad_boxes", []) or []
+                joined = " ".join(str(label) for label in labels)
+                if partner_read_matches(joined, terms) or _is_piece_of(joined, known_source):
+                    break
+            else:
                 continue
             # Keep the words that belong to the brand (and pieces of it, e.g. "my", "home", ".ge").
             parts = []
@@ -360,6 +481,7 @@ class Processor:
             y1 = min(p[1] for p in parts)
             x2 = max(p[2] for p in parts)
             y2 = max(p[3] for p in parts)
+            text_bbox = [int(x1), int(y1), int(x2), int(y2)]
             if known_source and not mark_is_removable(joined, terms):
                 # Only a piece was read ("ge"): cover the whole logo, which is about a quarter of
                 # the photo wide, stretching away from the piece towards the rest of the name.
@@ -382,7 +504,10 @@ class Processor:
                     continue
                 percent = (mark[2] - mark[0]) * (mark[3] - mark[1]) / (w * h) * 100
                 found.append({"bbox": mark, "area_percent": round(percent, 3), "accepted": True,
-                              "text": joined, "primary": True, "partner_search": True})
+                              "text": joined, "primary": True, "partner_search": True,
+                              "source": "partner_search", "box_stage": "fragment_logo_size",
+                              "text_bbox": text_bbox, "region": box,
+                              "width": mark[2] - mark[0], "height": mark[3] - mark[1]})
                 continue
             # The logo's icon and rounded outline reach past its letters.
             pad_x, pad_y = 0.9 * (y2 - y1), 0.6 * (y2 - y1)
@@ -392,7 +517,10 @@ class Processor:
                 continue
             percent = (mark[2] - mark[0]) * (mark[3] - mark[1]) / (w * h) * 100
             found.append({"bbox": mark, "area_percent": round(percent, 3), "accepted": True,
-                          "text": joined, "primary": True, "partner_search": True})
+                          "text": joined, "primary": True, "partner_search": True,
+                          "source": "partner_search", "box_stage": "letter_pad",
+                          "text_bbox": text_bbox, "region": box,
+                          "width": mark[2] - mark[0], "height": mark[3] - mark[1]})
         return found
 
     @modal.method()
@@ -401,8 +529,21 @@ class Processor:
         import numpy as np
         from PIL import Image, ImageDraw, ImageOps
 
+        import torch
+
         started = time.perf_counter()
+        torch.cuda.reset_peak_memory_stats()
+        timings: dict[str, float] = {}
+        stage_started = started
+
+        def lap(name: str):
+            nonlocal stage_started
+            now = time.perf_counter()
+            timings[name] = round(now - stage_started, 3)
+            stage_started = now
+
         cold, self.cold = self.cold, False
+        diagnostic = bool(request.get("diagnostic"))
         raw = base64.b64decode(request["image_b64"], validate=True)
         if len(raw) > MAX_IMAGE_BYTES:
             raise ValueError("Image is larger than 10 MB.")
@@ -426,6 +567,7 @@ class Processor:
         max_bbox_percent = float(request.get("max_bbox_percent", 10.0))
 
         removable_limit = max(max_bbox_percent, MAX_REMOVABLE_BBOX_PERCENT)
+        lap("decode")
         detections = self._detect(pil, request.get("detection_prompt", "watermark"), removable_limit)
         for detection in detections:
             detection["primary"] = True
@@ -436,6 +578,7 @@ class Processor:
             detection["text"] = self._read_text(pil, detection["bbox"])
         candidates = [d for d in candidates
                       if all_marks or d["area_percent"] <= max_bbox_percent or mark_is_removable(d["text"], own_terms)]
+        lap("detect_and_read")
         if all_marks or not any(mark_is_removable(d["text"], own_terms) for d in candidates):
             # Faint marks: look again with other prompts, keeping only boxes that read as removable.
             for prompt in EXTRA_DETECTION_PROMPTS:
@@ -447,6 +590,7 @@ class Processor:
                         extra["primary"] = False
                         candidates.append(extra)
                         detections.append(extra)
+        lap("extra_prompts")
         if not any(mark_is_removable(d["text"], own_terms) for d in candidates):
             # Still nothing readable: a pale partner logo read only in pieces. Look again around
             # every box and in the middle of the photo with more room and more contrast.
@@ -460,6 +604,7 @@ class Processor:
                                       and _is_unreadable_or_fragment(d["text"], own_terms))]
                 candidates.append(mark)
                 detections.append(mark)
+        lap("partner_search")
         for detection in detections:
             detection["accepted"] = detection in candidates
 
@@ -475,7 +620,11 @@ class Processor:
         may_modify = basis in {"owned", "licensed"} and (
             all_marks or classification == "own_brand" or (classification == "third_party" and licensed))
 
+        # The rectangles the mask is (or would be) made of, so every answer shows them.
+        mask_boxes = mask_boxes_for(accepted, pil.width, pil.height) if classification != "none" else []
         result = {
+            "pipeline_version": PIPELINE_VERSION,
+            "mask_boxes": mask_boxes,
             "source_sha256": source_sha,
             "width": pil.width,
             "height": pil.height,
@@ -494,15 +643,13 @@ class Processor:
         else:
             mask = Image.new("L", pil.size, 0)
             draw = ImageDraw.Draw(mask)
-            for detection in accepted:
-                x1, y1, x2, y2 = detection["bbox"]
-                # A few pixels around the box so no outline of the logo is left behind.
-                pad = max(4, round(0.08 * max(x2 - x1, y2 - y1)))
-                draw.rectangle([max(0, x1 - pad), max(0, y1 - pad),
-                                min(pil.width, x2 + pad), min(pil.height, y2 + pad)], fill=255)
+            for box in mask_boxes:
+                draw.rectangle(box["bbox"], fill=255)
             mask_np = np.array(mask)
             source_np = np.array(pil)
+            lap("mask")
             output_bgr = self.lama(source_np, mask_np)
+            lap("inpaint")
             validation = _validate(source_np, cv2.cvtColor(output_bgr, cv2.COLOR_BGR2RGB),
                                    mask_np, removable_limit)
             result["validation"] = validation
@@ -522,7 +669,33 @@ class Processor:
                 result["action"] = "processed"
             else:
                 result["action"] = "validation_failed"
+            lap("validate_and_encode")
 
+        # Report-only checks; the output above is already final and is not changed here.
+        if mask_boxes:
+            if "validation" in result:
+                total_percent = result["validation"]["mask_percent"]
+            else:
+                planned = Image.new("L", pil.size, 0)
+                planned_draw = ImageDraw.Draw(planned)
+                for box in mask_boxes:
+                    planned_draw.rectangle(box["bbox"], fill=255)
+                total_percent = round(float((np.array(planned) > 0).mean() * 100), 3)
+            result["mask_percent"] = total_percent
+            result["safety_report"] = safety_report(accepted, mask_boxes, total_percent, own_terms)
+        else:
+            result["mask_percent"] = 0.0
+            result["safety_report"] = {"would_reject": False, "flags": [], "enforced": False}
+        if diagnostic:
+            diag_mask = Image.new("L", pil.size, 0)
+            diag_draw = ImageDraw.Draw(diag_mask)
+            for box in mask_boxes:
+                diag_draw.rectangle(box["bbox"], fill=255)
+            result["diagnostic"] = _diagnostic_images(pil, detections, mask_boxes, diag_mask)
+            lap("diagnostic")
+
+        result["timings"] = timings
+        result["gpu_peak_memory_mb"] = round(torch.cuda.max_memory_allocated() / 1024 / 1024, 1)
         gpu_seconds = time.perf_counter() - started
         if cold:
             gpu_seconds += self.load_seconds
@@ -577,6 +750,7 @@ def create_api(run):
         output_format: str = Field("jpeg", pattern="^(jpeg|png)$")
         known_source: str | None = Field(None, max_length=40)
         watermark_scope: str = Field("brands", pattern="^(brands|all)$")
+        diagnostic: bool = False
 
     def authorize(value: str | None):
         supplied = (value or "").removeprefix("Bearer ").strip()
@@ -586,7 +760,7 @@ def create_api(run):
     @api.get("/health")
     def health(authorization: str | None = Header(None)):
         authorize(authorization)
-        return {"ok": True, "app": APP_NAME}
+        return {"ok": True, "app": APP_NAME, "pipeline_version": PIPELINE_VERSION}
 
     @api.post("/v1/process")
     async def process(payload: dict = Body(...), authorization: str | None = Header(None)):
@@ -661,16 +835,39 @@ def benchmark(folder: str, mode: str = "detect", basis: str = "owned",
 
 
 @app.local_entrypoint()
-def try_folder(folder: str, out: str = "try-out", terms: str = "velven,myhome,ss.ge", source: str = ""):
-    """Runs this file's code (not the deployed app) on local photos and saves the results."""
+def try_folder(folder: str, out: str = "try-out", terms: str = "velven,myhome,ss.ge", source: str = "",
+               diagnostic: bool = False):
+    """
+    Runs this file's code (not the deployed app) on local photos and saves the results.
+    --diagnostic also saves, per photo: the original, an overlay of every box and mask with sizes,
+    the mask, and a JSON with boxes, mask rectangles, safety report, timings and GPU memory.
+    """
     output_dir = Path(out)
     output_dir.mkdir(parents=True, exist_ok=True)
     processor = Processor()
+    summary = []
     for path in sorted(p for p in Path(folder).iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}):
         r = processor.process.remote({
             "image_b64": base64.b64encode(path.read_bytes()).decode(), "mode": "process",
-            "authorization_basis": "owned", "own_brand_terms": terms.split(","), "known_source": source or None})
+            "authorization_basis": "owned", "own_brand_terms": terms.split(","), "known_source": source or None,
+            "diagnostic": diagnostic})
         if r.get("processed_b64"):
             (output_dir / f"{path.stem}_clean.jpg").write_bytes(base64.b64decode(r["processed_b64"]))
+        if diagnostic:
+            (output_dir / f"{path.stem}_original{path.suffix.lower()}").write_bytes(path.read_bytes())
+            diag = r.pop("diagnostic", {})
+            for key, name in (("overlay_png_b64", "overlay"), ("mask_png_b64", "mask")):
+                if diag.get(key):
+                    (output_dir / f"{path.stem}_{name}.png").write_bytes(base64.b64decode(diag[key]))
+            report = {k: v for k, v in r.items() if k != "processed_b64"}
+            (output_dir / f"{path.stem}_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+            summary.append({"file": path.name, "action": r["action"], "mask_percent": r.get("mask_percent"),
+                            "would_reject": r["safety_report"]["would_reject"],
+                            "flags": [f["flag"] for f in r["safety_report"]["flags"]],
+                            "gpu_seconds": r["gpu_seconds"], "cold": r["cold_start"],
+                            "gpu_peak_memory_mb": r.get("gpu_peak_memory_mb"), "timings": r.get("timings")})
+            print(json.dumps(summary[-1]))
         print(path.name, r["action"], r["classification"],
               [(d.get("text", ""), d["accepted"], d.get("partner_search", False)) for d in r["detections"]])
+    if diagnostic and summary:
+        (output_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")

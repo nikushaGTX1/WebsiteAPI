@@ -54,6 +54,10 @@ public class ImageProcessingJob
     public string? Classification { get; set; }
     public string? DetectionsJson { get; set; }
     public string? WatermarkText { get; set; }
+    /// <summary>Remover version plus brand list that made this answer; a cached answer is reused only for the same one.</summary>
+    public string? PipelineVersion { get; set; }
+    /// <summary>Report-only safety check from the remover (large masks, partial text). Never changes the output.</summary>
+    public string? SafetyReportJson { get; set; }
     public long? DuplicateOfJobId { get; set; }
 
     public string? ProcessedStoragePath { get; set; }

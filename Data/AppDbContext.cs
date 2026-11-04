@@ -248,6 +248,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             job.Property(item => item.PermissionReference).HasMaxLength(500);
             job.Property(item => item.Classification).HasMaxLength(24);
             job.Property(item => item.WatermarkText).HasMaxLength(500);
+            job.Property(item => item.PipelineVersion).HasMaxLength(64);
             job.Property(item => item.LastError).HasMaxLength(2000);
             job.Property(item => item.EstimatedCostUsd).HasPrecision(12, 6);
 

@@ -50,8 +50,6 @@ public class PhotoChecksController : ControllerBase
 
     // mode=detect scans only. mode=clean also removes the watermark, but only our own
     // brand, and only when the uploader confirms they may edit the photo.
-    /// <summary>When the AI service learned to find pale, partly readable partner logos.</summary>
-    private static readonly DateTime DetectionUpdatedAt = new(2026, 11, 3, 0, 0, 0, DateTimeKind.Utc);
 
     [HttpPost("check")]
     [EnableRateLimiting("ImageChecks")]
@@ -116,11 +114,16 @@ public class PhotoChecksController : ControllerBase
         // Same photo scanned before: reuse the answer without paying for the GPU.
         // Answers from before the pale-logo search (or for a photo now known to come from a
         // partner) are not reused: they said "no watermark" for faint myhome.ge logos.
-        if (mode == "detect" && knownSource is null)
+        // Only answers made by the remover version now deployed (with the same brand list) are
+        // reused, so a deploy with new rules never serves older answers.
+        var cacheVersion = mode == "detect" && knownSource is null
+            ? await _modal.CurrentCacheVersionAsync(cancellationToken)
+            : null;
+        if (cacheVersion is not null)
         {
             var previous = await _context.ImageProcessingJobs.AsNoTracking()
                 .Where(job => job.SourceSha256 == sha && job.Mode == "detect" &&
-                              job.Classification != null && job.CompletedAt >= DetectionUpdatedAt)
+                              job.Classification != null && job.PipelineVersion == cacheVersion)
                 .OrderByDescending(job => job.Id)
                 .Select(job => new { job.Classification, job.WatermarkText })
                 .FirstOrDefaultAsync(cancellationToken);
@@ -173,6 +176,14 @@ public class PhotoChecksController : ControllerBase
         job.EstimatedCostUsd = (decimal)billedSeconds * _options.GpuUsdPerSecond;
         job.Classification = result.Classification;
         job.DetectionsJson = result.Detections.GetRawText();
+        job.PipelineVersion = _modal.CacheVersionFor(result.PipelineVersion);
+        job.SafetyReportJson = result.SafetyReport?.GetRawText();
+        if (result.SafetyReport is { } report && report.TryGetProperty("would_reject", out var wouldReject) &&
+            wouldReject.ValueKind == System.Text.Json.JsonValueKind.True)
+        {
+            // Report-only for now: logged so the limits can be tuned, the output is unchanged.
+            _logger.LogInformation("Photo {Sha} would be held by the safety check: {Report}", sha, report.GetRawText());
+        }
         job.WatermarkText = string.Join(" | ", result.Detections.EnumerateArray()
             .Select(item => item.TryGetProperty("text", out var text) ? text.GetString() : null)
             .Where(text => !string.IsNullOrWhiteSpace(text)));

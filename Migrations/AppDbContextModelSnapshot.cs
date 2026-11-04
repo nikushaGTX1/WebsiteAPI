@@ -1463,6 +1463,10 @@ namespace Website_API.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("PipelineVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("ProcessedSha256")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -1478,6 +1482,9 @@ namespace Website_API.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("ReviewedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SafetyReportJson")
                         .HasColumnType("text");
 
                     b.Property<string>("SourceSha256")
