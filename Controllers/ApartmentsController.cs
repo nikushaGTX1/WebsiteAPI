@@ -276,6 +276,41 @@ public class ApartmentsController : ControllerBase
                 apartment.TotalFloors == dto.TotalFloors)
             .Select(apartment => new { apartment.Id, apartment.IsApproved })
             .FirstOrDefaultAsync(cancellationToken);
+
+        // The same MyHome listing imported twice.
+        var myHomeIdForCheck = string.IsNullOrWhiteSpace(dto.MyHomeId) ? null : dto.MyHomeId.Trim();
+        if (duplicate is null && myHomeIdForCheck is not null)
+        {
+            duplicate = await _context.Apartments.AsNoTracking()
+                .Where(apartment => apartment.MyHomeId == myHomeIdForCheck)
+                .Select(apartment => new { apartment.Id, apartment.IsApproved })
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        // The same home with a slightly different price (prices change; the home does not):
+        // same district and street, same building when both give one, area within 1 m²,
+        // same number of rooms and the same floor.
+        if (duplicate is null && dto.SizeSquareMeters > 0)
+        {
+            var street = dto.Street?.Trim() ?? string.Empty;
+            var building = dto.BuildingNumber?.Trim() ?? string.Empty;
+            var candidates = await _context.Apartments.AsNoTracking()
+                .Where(apartment =>
+                    apartment.District == district &&
+                    apartment.Rooms == dto.Rooms &&
+                    apartment.Floor == dto.Floor &&
+                    apartment.SizeSquareMeters >= dto.SizeSquareMeters - 1 &&
+                    apartment.SizeSquareMeters <= dto.SizeSquareMeters + 1 &&
+                    ((dto.StreetId != null && apartment.StreetId == dto.StreetId) ||
+                     (street != "" && apartment.Street == street)))
+                .Select(apartment => new { apartment.Id, apartment.IsApproved, apartment.BuildingNumber })
+                .ToListAsync(cancellationToken);
+            var match = candidates.FirstOrDefault(candidate =>
+                building == "" || string.IsNullOrWhiteSpace(candidate.BuildingNumber) ||
+                string.Equals(candidate.BuildingNumber.Trim(), building, StringComparison.OrdinalIgnoreCase));
+            if (match is not null) duplicate = new { match.Id, match.IsApproved };
+        }
+
         if (duplicate is not null)
         {
             return Conflict(new

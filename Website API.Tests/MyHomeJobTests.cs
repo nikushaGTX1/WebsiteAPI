@@ -143,6 +143,18 @@ public class MyHomeJobTests
             var uploaded = createdJson.RootElement.GetProperty("apartment");
             var uploadedId = uploaded.GetProperty("id").GetInt32();
             Assert.Equal("55555555", uploaded.GetProperty("myHomeId").GetString());
+            // Duplicates are refused: the same MyHome listing again, even with other details...
+            using var sameMyHome = Form(new() { ["Title"] = "Copy", ["Description"] = "Copy", ["Price"] = "1200", ["District"] = "Other district", ["City"] = "Tbilisi", ["SizeSquareMeters"] = "90", ["TotalFloors"] = "5", ["MyHomeId"] = "55555555" });
+            Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync("/api/Apartments", sameMyHome)).StatusCode);
+            // ...and the same home on the same street with a slightly different price and area.
+            Dictionary<string, string> Home(string price, string size, string floor) => new() { ["Title"] = "Street home", ["Description"] = "Street copy", ["Price"] = price, ["District"] = "Vake", ["City"] = "Tbilisi", ["Street"] = "Paliashvili St", ["BuildingNumber"] = "12", ["SizeSquareMeters"] = size, ["Rooms"] = "3", ["Floor"] = floor, ["TotalFloors"] = "9" };
+            using var streetHome = Form(Home("1500", "80", "4"));
+            Assert.Equal(HttpStatusCode.OK, (await client.PostAsync("/api/Apartments", streetHome)).StatusCode);
+            using var cheaper = Form(Home("1450", "81", "4"));
+            Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync("/api/Apartments", cheaper)).StatusCode);
+            // A different flat in the same building (another floor) is not a duplicate.
+            using var otherFloor = Form(Home("1500", "80", "6"));
+            Assert.Equal(HttpStatusCode.OK, (await client.PostAsync("/api/Apartments", otherFloor)).StatusCode);
             using var omitted = Form(new() { ["Title"] = "Edited title" });
             Assert.Equal(HttpStatusCode.OK, (await client.PutAsync($"/api/Apartments/{uploadedId}", omitted)).StatusCode);
             using (var scope = app.Services.CreateScope()) {
