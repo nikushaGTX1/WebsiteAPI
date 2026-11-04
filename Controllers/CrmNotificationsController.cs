@@ -23,12 +23,18 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService 
          (n.Lead.Apartment != null && n.Lead.Apartment.UploadedByUserId == UserId)))));
     private IQueryable<ListingInterestNotification> MatchNotices => interests.ReviewQueue(UserId, IsManager)
         .Where(n => n.Status == ListingInterestNotification.Pending);
+    private IQueryable<ApartmentOffer> OfferReviews => db.ApartmentOffers.Where(n =>
+        n.Status == ApartmentOffer.Pending && (IsManager || n.ReviewerUserId == UserId));
+    private IQueryable<ApartmentOfferMatch> OfferMatches => db.ApartmentOfferMatches.Where(n =>
+        n.AgentUserId == UserId && n.Offer.Status == ApartmentOffer.Approved);
 
     [HttpGet("summary")]
     public async Task<IActionResult> Summary(CancellationToken ct) => Ok(new
     {
         unread = await LeadNotices.CountAsync(n => n.ReadAt == null, ct) +
-            await MatchNotices.CountAsync(n => n.ReadAt == null, ct),
+            await MatchNotices.CountAsync(n => n.ReadAt == null, ct) +
+            await OfferReviews.CountAsync(n => n.ReadAt == null, ct) +
+            await OfferMatches.CountAsync(n => n.ReadAt == null, ct),
     });
 
     [HttpGet]
@@ -39,9 +45,14 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService 
         pageSize = Math.Clamp(pageSize, 1, 50);
         var leads = LeadNotices.AsNoTracking();
         var matches = MatchNotices.AsNoTracking();
-        var total = await leads.CountAsync(ct) + await matches.CountAsync(ct);
+        var offers = OfferReviews.AsNoTracking();
+        var offerMatches = OfferMatches.AsNoTracking();
+        var total = await leads.CountAsync(ct) + await matches.CountAsync(ct) +
+            await offers.CountAsync(ct) + await offerMatches.CountAsync(ct);
         var unread = await leads.CountAsync(n => n.ReadAt == null, ct) +
-            await matches.CountAsync(n => n.ReadAt == null, ct);
+            await matches.CountAsync(n => n.ReadAt == null, ct) +
+            await offers.CountAsync(n => n.ReadAt == null, ct) +
+            await offerMatches.CountAsync(n => n.ReadAt == null, ct);
         // Taking the top K of each source is sufficient for the top K of their merged feed.
         var leadRows = await leads.OrderByDescending(n => n.CreatedAt).ThenByDescending(n => n.Id)
             .Take(page * pageSize).Select(n => new NoticeRow
@@ -58,7 +69,25 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService 
                 District = n.Apartment.District, Street = n.Apartment.Street,
                 Bedrooms = n.Apartment.Bedrooms, ImageUrl = n.Apartment.ImageUrl,
             }).ToListAsync(ct);
-        var rows = leadRows.Concat(matchRows).OrderByDescending(n => n.CreatedAt)
+        var offerRows = await offers.OrderByDescending(n => n.CreatedAt).ThenByDescending(n => n.Id)
+            .Take(page * pageSize).Select(n => new NoticeRow
+            {
+                Id = n.Id, Type = "apartment-offer", CreatedAt = n.CreatedAt, ReadAt = n.ReadAt,
+                OfferId = n.Id, ClientId = n.ClientProfileId, ShareWithOtherClients = n.ShareWithOtherClients,
+                ApartmentId = n.ApartmentId, Title = n.Apartment.Title, Price = n.Apartment.Price,
+                District = n.Apartment.District, Street = n.Apartment.Street, Bedrooms = n.Apartment.Bedrooms,
+                SizeSquareMeters = n.Apartment.SizeSquareMeters, ImageUrl = n.Apartment.ImageUrl,
+            }).ToListAsync(ct);
+        var offerMatchRows = await offerMatches.OrderByDescending(n => n.CreatedAt).ThenByDescending(n => n.Id)
+            .Take(page * pageSize).Select(n => new NoticeRow
+            {
+                Id = n.Id, Type = "apartment-offer-match", CreatedAt = n.CreatedAt, ReadAt = n.ReadAt,
+                OfferId = n.ApartmentOfferId, ClientId = n.ClientProfileId, ShareWithOtherClients = true,
+                ApartmentId = n.Offer.ApartmentId, Title = n.Offer.Apartment.Title, Price = n.Offer.Apartment.Price,
+                District = n.Offer.Apartment.District, Street = n.Offer.Apartment.Street, Bedrooms = n.Offer.Apartment.Bedrooms,
+                SizeSquareMeters = n.Offer.Apartment.SizeSquareMeters, ImageUrl = n.Offer.Apartment.ImageUrl,
+            }).ToListAsync(ct);
+        var rows = leadRows.Concat(matchRows).Concat(offerRows).Concat(offerMatchRows).OrderByDescending(n => n.CreatedAt)
             .ThenBy(n => n.Type, StringComparer.Ordinal).ThenByDescending(n => n.Id)
             .Skip((page - 1) * pageSize).Take(pageSize).ToList();
         var items = new List<object>();
@@ -67,10 +96,12 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService 
             {
                 row.Id, row.Type, row.CreatedAt, row.ReadAt,
                 row.LeadId, row.LeadName, row.ActorName, row.FromStatus, row.ToStatus,
+                row.OfferId, row.ClientId, row.ShareWithOtherClients,
+                ReviewLink = row.OfferId is int offerId ? $"/crm/apartment-offers?offer={offerId}" : null,
                 Apartment = row.ApartmentId.HasValue ? new
                 {
                     Id = row.ApartmentId.Value, row.Title, row.Price, row.District, row.Street,
-                    row.Bedrooms, ImageUrl = await storage.CreateSignedUrlAsync(row.ImageUrl,
+                    row.Bedrooms, row.SizeSquareMeters, ImageUrl = await storage.CreateSignedUrlAsync(row.ImageUrl,
                         SupabaseStorageService.ListingPhotoUrlSeconds, ct),
                 } : null,
             });
@@ -92,6 +123,18 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService 
             if (notice is null) return NotFound();
             notice.ReadAt ??= DateTime.UtcNow;
         }
+        else if (type == "apartment-offer")
+        {
+            var notice = await OfferReviews.FirstOrDefaultAsync(n => n.Id == id, ct);
+            if (notice is null) return NotFound();
+            notice.ReadAt ??= DateTime.UtcNow;
+        }
+        else if (type == "apartment-offer-match")
+        {
+            var notice = await OfferMatches.FirstOrDefaultAsync(n => n.Id == id, ct);
+            if (notice is null) return NotFound();
+            notice.ReadAt ??= DateTime.UtcNow;
+        }
         else return BadRequest();
         await db.SaveChangesAsync(ct);
         return NoContent();
@@ -104,6 +147,8 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await LeadNotices.Where(n => n.ReadAt == null).ExecuteUpdateAsync(s => s.SetProperty(n => n.ReadAt, now), ct);
         await MatchNotices.Where(n => n.ReadAt == null).ExecuteUpdateAsync(s => s.SetProperty(n => n.ReadAt, now), ct);
+        await OfferReviews.Where(n => n.ReadAt == null).ExecuteUpdateAsync(s => s.SetProperty(n => n.ReadAt, now), ct);
+        await OfferMatches.Where(n => n.ReadAt == null).ExecuteUpdateAsync(s => s.SetProperty(n => n.ReadAt, now), ct);
         await transaction.CommitAsync(ct);
         return NoContent();
     }
@@ -126,5 +171,9 @@ public class CrmNotificationsController(AppDbContext db, ListingInterestService 
         public string? Street { get; set; }
         public int Bedrooms { get; set; }
         public string? ImageUrl { get; set; }
+        public int? OfferId { get; set; }
+        public long? ClientId { get; set; }
+        public bool ShareWithOtherClients { get; set; }
+        public double SizeSquareMeters { get; set; }
     }
 }

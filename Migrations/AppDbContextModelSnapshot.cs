@@ -884,6 +884,101 @@ namespace Website_API.Migrations
                     b.ToTable("ClientIntakeLinks");
                 });
 
+            modelBuilder.Entity("Website_API.Models.ApartmentOffer", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ApartmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("ClientProfileId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReviewedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReviewerUserId")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("ShareWithOtherClients")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("pending");
+
+                    b.Property<string>("SubmittedByUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApartmentId");
+
+                    b.HasIndex("ReviewedByUserId");
+
+                    b.HasIndex("SubmittedByUserId");
+
+                    b.HasIndex("ClientProfileId", "ApartmentId")
+                        .IsUnique();
+
+                    b.HasIndex("ReviewerUserId", "Status");
+
+                    b.ToTable("ApartmentOffers");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ApartmentOfferMatch", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AgentUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("ApartmentOfferId")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("ClientProfileId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientProfileId");
+
+                    b.HasIndex("AgentUserId", "ReadAt");
+
+                    b.HasIndex("ApartmentOfferId", "ClientProfileId")
+                        .IsUnique();
+
+                    b.ToTable("ApartmentOfferMatches");
+                });
+
             modelBuilder.Entity("Website_API.Models.ClientNotification", b =>
                 {
                     b.Property<int>("Id")
@@ -2202,6 +2297,79 @@ namespace Website_API.Migrations
                         .IsRequired();
 
                     b.Navigation("Agent");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ApartmentOffer", b =>
+                {
+                    b.HasOne("Website_API.Models.Apartment", "Apartment")
+                        .WithMany()
+                        .HasForeignKey("ApartmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Website_API.Models.ClientProfile", "ClientProfile")
+                        .WithMany()
+                        .HasForeignKey("ClientProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Website_API.Models.AppUser", "ReviewedBy")
+                        .WithMany()
+                        .HasForeignKey("ReviewedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Website_API.Models.AppUser", "Reviewer")
+                        .WithMany()
+                        .HasForeignKey("ReviewerUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Website_API.Models.AppUser", "SubmittedByUser")
+                        .WithMany()
+                        .HasForeignKey("SubmittedByUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Apartment");
+
+                    b.Navigation("ClientProfile");
+
+                    b.Navigation("ReviewedBy");
+
+                    b.Navigation("Reviewer");
+
+                    b.Navigation("SubmittedByUser");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ApartmentOfferMatch", b =>
+                {
+                    b.HasOne("Website_API.Models.AppUser", "Agent")
+                        .WithMany()
+                        .HasForeignKey("AgentUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Website_API.Models.ApartmentOffer", "Offer")
+                        .WithMany("Matches")
+                        .HasForeignKey("ApartmentOfferId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Website_API.Models.ClientProfile", "ClientProfile")
+                        .WithMany()
+                        .HasForeignKey("ClientProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Agent");
+
+                    b.Navigation("ClientProfile");
+
+                    b.Navigation("Offer");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ApartmentOffer", b =>
+                {
+                    b.Navigation("Matches");
                 });
 
             modelBuilder.Entity("Website_API.Models.ClientNotification", b =>
