@@ -114,6 +114,7 @@ builder.Services.AddScoped<HomeMatchScorer>();
 builder.Services.AddSingleton<ApartmentMatchQueue>();
 builder.Services.AddScoped<SavedSearchMatcher>();
 builder.Services.AddScoped<ListingInterestService>();
+builder.Services.AddScoped<ApartmentSubmissionService>();
 builder.Services.AddHostedService<SavedSearchMatchWorker>();
 
 // AI image processing (Modal GPU). Off unless ImageAi__Enabled=true.

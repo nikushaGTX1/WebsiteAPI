@@ -36,6 +36,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<CrmQuestionnaireLink> CrmQuestionnaireLinks { get; set; }
     public DbSet<OwnerListingLink> OwnerListingLinks => Set<OwnerListingLink>();
     public DbSet<OwnerSubmission> OwnerSubmissions => Set<OwnerSubmission>();
+    public DbSet<SubmissionEvent> SubmissionEvents => Set<SubmissionEvent>();
+    public DbSet<SubmissionClientMatch> SubmissionClientMatches => Set<SubmissionClientMatch>();
     public DbSet<SavedSearch> SavedSearches => Set<SavedSearch>();
     public DbSet<ClientIntakeLink> ClientIntakeLinks => Set<ClientIntakeLink>();
     public DbSet<ClientProfile> ClientProfiles => Set<ClientProfile>();
@@ -118,6 +120,20 @@ public class AppDbContext : IdentityDbContext<AppUser>
             submission.Property(item => item.OwnerPhone).HasMaxLength(40);
             submission.Property(item => item.OwnerEmail).HasMaxLength(160);
             submission.HasIndex(item => item.AgentUserId);
+            submission.HasIndex(item => item.SubmissionKey).IsUnique();
+        });
+
+        builder.Entity<SubmissionEvent>(entry =>
+        {
+            entry.Property(x => x.Action).HasMaxLength(24);
+            entry.HasOne(x => x.Submission).WithMany().HasForeignKey(x => x.OwnerSubmissionId).OnDelete(DeleteBehavior.Cascade);
+            entry.HasIndex(x => new { x.OwnerSubmissionId, x.Action }).IsUnique().HasFilter("\"Action\" = 'sent'");
+        });
+        builder.Entity<SubmissionClientMatch>(match =>
+        {
+            match.HasOne(x => x.Submission).WithMany().HasForeignKey(x => x.OwnerSubmissionId).OnDelete(DeleteBehavior.Cascade);
+            match.HasOne(x => x.ClientProfile).WithMany().HasForeignKey(x => x.ClientProfileId).OnDelete(DeleteBehavior.Cascade);
+            match.HasIndex(x => new { x.OwnerSubmissionId, x.ClientProfileId }).IsUnique();
         });
 
         // Velven Discover: saved searches, their new matches and the client's alerts.

@@ -213,12 +213,14 @@ public class ApartmentsController : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var staff = User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Agent");
+        var manager = User.IsInRole("Admin") || User.IsInRole("Manager");
         var apartment = await _context.Apartments
             .Include(apartment => apartment.Images)
             .AsNoTracking()
             .FirstOrDefaultAsync(
                 apartment => apartment.Id == id &&
                     (apartment.IsApproved || staff || (userId != null && apartment.UploadedByUserId == userId)) &&
+                    (manager || apartment.UploadedByUserId == userId || !_context.OwnerSubmissions.Any(s => s.IsGeneralSubmission && s.PublishedApartmentId == apartment.Id && s.Status != "sent")) &&
                     !EF.Functions.ILike(apartment.Description, "%Source: https://www.myhome.ge/%") &&
                     !EF.Functions.ILike(apartment.Description, "%Source: https://home.ss.ge/%"),
                 cancellationToken);
@@ -337,7 +339,7 @@ public class ApartmentsController : ControllerBase
                     submission.Status != "published" &&
                     submission.Status != "rejected",
                 cancellationToken);
-            if (ownerSubmission is null)
+            if (ownerSubmission is null || ownerSubmission.IsGeneralSubmission)
                 return BadRequest(new { message = "This owner submission is not available for publishing." });
         }
 
@@ -1165,6 +1167,8 @@ public class ApartmentsController : ControllerBase
             .FirstOrDefaultAsync(apartment => apartment.Id == id, cancellationToken);
         if (apartment is null) return NotFound(new { message = "Apartment not found" });
 
+        if (await _context.OwnerSubmissions.AnyAsync(x => x.IsGeneralSubmission && x.PublishedApartmentId == id && x.Status != "sent", cancellationToken))
+            return Conflict(new { message = "ეს ბინა დაამტკიცეთ და გააგზავნეთ მესაკუთრის განაცხადების გვერდიდან." });
         apartment.IsApproved = true;
         apartment.LastConfirmedAt = DateTime.UtcNow;
         apartment.PublishedAt ??= DateTime.UtcNow;

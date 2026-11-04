@@ -21,12 +21,9 @@ public class ClientRequirements : SavedSearchProfile
 {
     public string Gender { get; set; } = "";
     public string HouseholdType { get; set; } = "";
-    public int Adults { get; set; } = 1;
-    public int Children { get; set; }
     public List<string> ChildrenAgeGroups { get; set; } = [];
     public List<string> Lifestyles { get; set; } = [];
     public List<string> TopPriorities { get; set; } = [];
-    public decimal? MinSize { get; set; }
     public int? PetCount { get; set; }
     public List<string> Transportation { get; set; } = [];
     public int? MetroDistanceMinutes { get; set; }
@@ -35,7 +32,6 @@ public class ClientRequirements : SavedSearchProfile
     public string? PurchaseTiming { get; set; }
     public string? ApartmentStyle { get; set; }
     /** Buyers: acceptable property conditions (WhiteFrame = თეთრი კარკასი, ...). "Any" = no preference. */
-    public List<string> PropertyConditions { get; set; } = [];
     public const string ConditionCodes = "Any MoveInReady Renovated WhiteFrame BlackFrame GreenFrame NeedsRenovation";
     public string? PetOtherType { get; set; }
     public string? ProximityTarget { get; set; }
