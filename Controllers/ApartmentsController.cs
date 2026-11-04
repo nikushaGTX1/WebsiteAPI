@@ -211,11 +211,14 @@ public class ApartmentsController : ControllerBase
         int id,
         CancellationToken cancellationToken)
     {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var staff = User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Agent");
         var apartment = await _context.Apartments
             .Include(apartment => apartment.Images)
             .AsNoTracking()
             .FirstOrDefaultAsync(
                 apartment => apartment.Id == id &&
+                    (apartment.IsApproved || staff || (userId != null && apartment.UploadedByUserId == userId)) &&
                     !EF.Functions.ILike(apartment.Description, "%Source: https://www.myhome.ge/%") &&
                     !EF.Functions.ILike(apartment.Description, "%Source: https://home.ss.ge/%"),
                 cancellationToken);
