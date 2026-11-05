@@ -72,11 +72,14 @@ public class PhotoChecksController(AppDbContext context, ImageProcessingQueue qu
             return Ok(new { classification = "authorized_edit", action = "processed", cleanedImage = Convert.ToBase64String(cached), contentType = "image/png", jobId = previous.Id });
         }
         var day = DateTime.UtcNow.Date;
-        if (await context.ImageProcessingJobs.CountAsync(j => j.RequestedByUserId == userId && j.StartedAt >= day, cancellationToken) >= options.Value.DailyUserLimit)
+        if (await context.ImageProcessingJobs.CountAsync(j => j.RequestedByUserId == userId && j.StartedAt >= day && j.PipelineVersion != null && j.PipelineVersion.StartsWith("openai-edit-v1:"), cancellationToken) >= options.Value.DailyUserLimit)
             return StatusCode(429, new { message = "Daily image editing limit reached." });
         var budget = await queue.GetBudgetAsync(cancellationToken);
         if (budget.Exhausted || budget.SpentUsd + options.Value.EstimatedRequestUsd > options.Value.BudgetCutoffUsd)
-            return StatusCode(503, new { message = "Image editing is paused by the application budget." });
+            return StatusCode(503, new { message = budget.ImagesProcessed >= budget.MonthlyImageQuota
+                ? $"Monthly OpenAI image limit reached ({budget.ImagesProcessed}/{budget.MonthlyImageQuota} attempts)."
+                : "Image editing is paused by the OpenAI estimated-spend cutoff.",
+                imagesProcessed = budget.ImagesProcessed, monthlyImageQuota = budget.MonthlyImageQuota, estimatedSpentUsd = budget.SpentUsd });
         // Persist originals and reserve estimated spend BEFORE any billable call. Failed calls keep reservations.
         var originalPath = await storage.UploadBytesAsync(bytes, OpenAIImageEditingService.ValidateImage(bytes), "image-edit-originals", cancellationToken);
         var job = new ImageProcessingJob

@@ -192,7 +192,7 @@ public class OpenAIImageEditingTests
         using (var scope = f.App.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            db.ImageProcessingJobs.Add(new ImageProcessingJob { RequestedByUserId = "admin", StartedAt = DateTime.UtcNow, Status = ImageJobStatus.Failed });
+            db.ImageProcessingJobs.Add(new ImageProcessingJob { RequestedByUserId = "admin", StartedAt = DateTime.UtcNow, Status = ImageJobStatus.Failed, PipelineVersion = "openai-edit-v1:earlier-settings" });
             await db.SaveChangesAsync();
         }
         Assert.Equal((HttpStatusCode)429, (await f.Upload()).StatusCode);
@@ -206,6 +206,34 @@ public class OpenAIImageEditingTests
         Assert.Equal(HttpStatusCode.Conflict, (await f.Upload()).StatusCode);
         Assert.Equal(1, f.ProviderCalls); Assert.Single(f.Objects);
     }
+    [Fact]
+    public async Task TrialBudgetExcludesModalHistoryAndRetainsOpenAIReservationsAcrossSettings()
+    {
+        await using var f = await Fixture.Start(); f.As("Admin");
+        using (var scope = f.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            for (var index = 0; index < 30; index++)
+                db.ImageProcessingJobs.Add(new ImageProcessingJob { RequestedByUserId = "admin", StartedAt = DateTime.UtcNow,
+                    PipelineVersion = index % 2 == 0 ? null : "modal-legacy-version", EstimatedCostUsd = 10, GpuSeconds = 100, Status = ImageJobStatus.Failed });
+            db.ImageProcessingJobs.Add(new ImageProcessingJob { RequestedByUserId = "admin", StartedAt = DateTime.UtcNow,
+                PipelineVersion = "openai-edit-v1:previous-model-settings", EstimatedCostUsd = 0.2m, Status = ImageJobStatus.Failed });
+            await db.SaveChangesAsync();
+            var budget = await scope.ServiceProvider.GetRequiredService<ImageProcessingQueue>().GetBudgetAsync(default);
+            Assert.Equal(1, budget.ImagesProcessed); Assert.Equal(0.2m, budget.SpentUsd);
+            Assert.Equal(0, budget.GpuSeconds); Assert.False(budget.Exhausted);
+            Assert.Equal(31, await db.ImageProcessingJobs.CountAsync());
+        }
+        // Historical Modal work must not exhaust daily limits or block a new authorized upload.
+        (await f.Upload()).EnsureSuccessStatusCode(); Assert.Equal(1, f.ProviderCalls);
+        using (var scope = f.App.Services.CreateScope())
+        {
+            var budget = await scope.ServiceProvider.GetRequiredService<ImageProcessingQueue>().GetBudgetAsync(default);
+            Assert.Equal(2, budget.ImagesProcessed); Assert.Equal(0.3m, budget.SpentUsd);
+            Assert.Equal(32, await scope.ServiceProvider.GetRequiredService<AppDbContext>().ImageProcessingJobs.CountAsync());
+        }
+    }
+
     [Fact]
     public async Task WorkerRequiresExplicitJobsAndNeverRetriesFailedOrInterruptedCalls()
     {

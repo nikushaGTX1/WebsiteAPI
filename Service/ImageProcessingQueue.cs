@@ -18,7 +18,7 @@ public sealed class ImageProcessingQueue
 
     public bool Enabled => _options.Enabled && _options.Valid;
 
-    // Inserts rows only; the worker does the slow part, so callers never wait on GPU.
+    // Inserts explicit jobs only; the worker does the slow part.
     public async Task<List<ImageProcessingJob>> EnqueueAsync(
         IEnumerable<ApartmentImage> images,
         string mode,
@@ -34,6 +34,7 @@ public sealed class ImageProcessingQueue
         var imageIds = list.Select(image => image.Id).ToList();
         var openIds = await _context.ImageProcessingJobs
             .Where(job =>
+                job.PipelineVersion != null && job.PipelineVersion.StartsWith("openai-edit-v1:") &&
                 job.ApartmentImageId != null &&
                 imageIds.Contains(job.ApartmentImageId.Value) &&
                 (job.Status == ImageJobStatus.Pending ||
@@ -74,7 +75,9 @@ public sealed class ImageProcessingQueue
             DateTimeKind.Utc);
 
         var month = _context.ImageProcessingJobs
-            .Where(job => job.StartedAt >= monthStart);
+            // Provider budgets span configuration changes but exclude historical Modal work.
+            .Where(job => job.StartedAt >= monthStart && job.PipelineVersion != null &&
+                job.PipelineVersion.StartsWith("openai-edit-v1:"));
         var spent = await month.SumAsync(job => job.EstimatedCostUsd, cancellationToken);
         var count = await month.CountAsync(cancellationToken);
         var gpuSeconds = await month.SumAsync(job => job.GpuSeconds, cancellationToken);
