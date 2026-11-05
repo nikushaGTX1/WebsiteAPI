@@ -52,6 +52,10 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterDto dto)
     {
+        var phone = dto.PhoneNumber.Trim();
+        if (!ClientRequirements.ValidPhone(phone))
+            return BadRequest(new { message = "Please enter a valid phone number." });
+
         var existingEmail = await _userManager.FindByEmailAsync(dto.Email);
 
         if (existingEmail != null)
@@ -65,9 +69,7 @@ public class AuthController : ControllerBase
             UserName = string.IsNullOrWhiteSpace(dto.UserName) ? dto.Email.Trim() : dto.UserName.Trim(),
             Email = dto.Email,
             FullName = dto.FullName,
-            PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber)
-                ? null
-                : dto.PhoneNumber.Trim()
+            PhoneNumber = phone
         };
 
         var result = await _userManager.CreateAsync(user, dto.Password);

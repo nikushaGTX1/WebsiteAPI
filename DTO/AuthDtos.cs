@@ -19,8 +19,8 @@ public class RegisterDto
     public string? ConfirmPassword { get; set; }
     public string? FullName { get; set; }
 
-    [Phone]
-    public string? PhoneNumber { get; set; }
+    [Required(ErrorMessage = "Please enter a valid phone number.")]
+    public string PhoneNumber { get; set; } = "";
 }
 
 public class LoginDto
