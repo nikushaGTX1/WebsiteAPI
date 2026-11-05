@@ -49,14 +49,14 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 Window = TimeSpan.FromMinutes(10)
             }));
-    // Upload-form photo checks run on the paid GPU: cap each signed-in user.
+    // Cap explicit image editing requests per authenticated user.
     options.AddPolicy("ImageChecks", context => RateLimitPartition.GetFixedWindowLimiter(
         partitionKey: context.User.FindFirstValue(ClaimTypes.NameIdentifier)
                       ?? ClientIpResolver.Resolve(context),
         factory: _ => new FixedWindowRateLimiterOptions
         {
             AutoReplenishment = true,
-            PermitLimit = 120,
+            PermitLimit = 5,
             QueueLimit = 0,
             Window = TimeSpan.FromHours(1)
         }));
@@ -116,11 +116,12 @@ builder.Services.AddScoped<SavedSearchMatcher>();
 builder.Services.AddScoped<ListingInterestService>();
 builder.Services.AddHostedService<SavedSearchMatchWorker>();
 
-// AI image processing (Modal GPU). Off unless ImageAi__Enabled=true.
+// OpenAI image editing. Off unless ImageAi__Enabled=true.
 builder.Services.Configure<ImageAiOptions>(
     builder.Configuration.GetSection("ImageAi"));
-builder.Services.AddHttpClient<ModalImageAiClient>();
+builder.Services.AddHttpClient<OpenAIImageEditingService>();
 builder.Services.AddScoped<ImageProcessingQueue>();
+builder.Services.AddScoped<IImageEditingGuard, ImageEditingGuard>();
 builder.Services.AddHostedService<ImageProcessingWorker>();
 
 // =========================
