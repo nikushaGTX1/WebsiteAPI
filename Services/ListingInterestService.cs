@@ -15,10 +15,6 @@ namespace Website_API.Services;
 /// </summary>
 public class ListingInterestService
 {
-    private static readonly string[] StaffOrOwnerRoles =
-        ["ADMIN", "MANAGER", "AGENT", "UPLOADER", "CRM-MANAGER", "CRM_MANAGER", "OWNER"];
-    private static readonly string[] StaffRoles =
-        ["ADMIN", "MANAGER", "AGENT", "UPLOADER", "CRM-MANAGER", "CRM_MANAGER"];
 
     private readonly AppDbContext _context;
     private readonly ILogger<ListingInterestService> _logger;
@@ -37,12 +33,8 @@ public class ListingInterestService
         _configuration = configuration;
     }
 
-    /// <summary>Saved searches of real client accounts (not staff or owners testing the site).</summary>
     private IQueryable<SavedSearch> ClientSearches() => _context.SavedSearches.AsNoTracking()
-        .Where(search => _context.UserRoles.Any(ur => ur.UserId == search.UserId &&
-                _context.Roles.Any(r => r.Id == ur.RoleId && r.NormalizedName == "CLIENT")) &&
-            !_context.UserRoles.Any(ur => ur.UserId == search.UserId &&
-                _context.Roles.Any(r => r.Id == ur.RoleId && StaffOrOwnerRoles.Contains(r.NormalizedName!))));
+        .Where(search => PublicAccounts.Users(_context).Any(user => user.Id == search.UserId));
 
     /// <summary>Requirements an owner may see. Map shapes, names and contact details are left out.</summary>
     private static readonly string[] PublicFields =
@@ -69,10 +61,6 @@ public class ListingInterestService
         return result;
     }
 
-    private async Task<bool> HasRoleAsync(string userId, string[] roles, CancellationToken cancellationToken) =>
-        await _context.UserRoles.AnyAsync(ur => ur.UserId == userId &&
-            _context.Roles.Any(r => r.Id == ur.RoleId && roles.Contains(r.NormalizedName!)), cancellationToken);
-
     /// <summary>Adds an unsaved pending match for an agent to review unless one exists. Caller saves.</summary>
     public async Task AddAlertAsync(Apartment apartment, SavedSearch search, CancellationToken cancellationToken)
     {
@@ -90,7 +78,7 @@ public class ListingInterestService
             .Where(item => item.PublishedApartmentId == apartment.Id)
             .Select(item => new { item.AgentUserId, item.OwnerEmail })
             .FirstOrDefaultAsync(cancellationToken);
-        var listedByStaff = await HasRoleAsync(listedBy, StaffRoles, cancellationToken);
+        var listedByStaff = !await PublicAccounts.Users(_context).AnyAsync(user => user.Id == listedBy, cancellationToken);
         string? reviewer = listedByStaff ? listedBy : submission?.AgentUserId;
         string? owner = listedByStaff ? null : listedBy;
         var ownerEmail = submission?.OwnerEmail?.Trim();
@@ -100,6 +88,7 @@ public class ListingInterestService
             owner = await _context.Users.Where(user => user.NormalizedEmail == normalized)
                 .Select(user => user.Id).FirstOrDefaultAsync(cancellationToken);
         }
+        if (owner == search.UserId) return;
         if (owner is not null && string.IsNullOrWhiteSpace(ownerEmail))
             ownerEmail = await _context.Users.Where(user => user.Id == owner).Select(user => user.Email).FirstOrDefaultAsync(cancellationToken);
 

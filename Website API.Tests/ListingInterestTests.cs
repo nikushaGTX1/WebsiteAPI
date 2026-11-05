@@ -39,7 +39,6 @@ public class ListingInterestTests
             {
                 await db.Database.MigrateAsync();
                 db.Roles.AddRange(
-                    new IdentityRole { Id = "client-role", Name = "Client", NormalizedName = "CLIENT" },
                     new IdentityRole { Id = "owner-role", Name = "Owner", NormalizedName = "OWNER" },
                     new IdentityRole { Id = "agent-role", Name = "Agent", NormalizedName = "AGENT" });
                 db.Users.AddRange(
@@ -48,7 +47,6 @@ public class ListingInterestTests
                     new AppUser { Id = "agent", UserName = "agent", Email = "agent@example.invalid", PhoneNumber = "+995555123123", FullName = "Andria Agent" },
                     new AppUser { Id = "other-agent", UserName = "other", Email = "other@example.invalid" });
                 db.UserRoles.AddRange(
-                    new IdentityUserRole<string> { UserId = "client", RoleId = "client-role" },
                     new IdentityUserRole<string> { UserId = "owner", RoleId = "owner-role" },
                     new IdentityUserRole<string> { UserId = "agent", RoleId = "agent-role" },
                     new IdentityUserRole<string> { UserId = "other-agent", RoleId = "agent-role" });

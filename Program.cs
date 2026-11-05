@@ -352,9 +352,7 @@ using (var scope = app.Services.CreateScope())
             "Manager",
             "Agent",
             "Uploader",
-            "User",
-            "Client",
-            "Owner"
+            "User"
         ];
 
         foreach (var role in roles)
@@ -377,23 +375,6 @@ using (var scope = app.Services.CreateScope())
                 }
             }
         }
-
-        // Client accounts (Velven Discover): every existing account that is not staff and has no
-        // role yet besides "User". Staff (Admin/Manager/Agent/Uploader, or IsAgent) is never touched.
-        var newClients = await context.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "AspNetUserRoles" ("UserId", "RoleId")
-            SELECT u."Id", r."Id"
-            FROM "AspNetUsers" u CROSS JOIN "AspNetRoles" r
-            WHERE r."NormalizedName" = 'CLIENT'
-              AND NOT u."IsAgent"
-              AND NOT EXISTS (
-                SELECT 1 FROM "AspNetUserRoles" ur
-                JOIN "AspNetRoles" sr ON sr."Id" = ur."RoleId"
-                WHERE ur."UserId" = u."Id"
-                  AND sr."NormalizedName" IN ('ADMIN', 'MANAGER', 'AGENT', 'UPLOADER', 'CLIENT', 'OWNER'))
-            """);
-        if (newClients > 0)
-            app.Logger.LogInformation("Gave the Client role to {Count} existing account(s).", newClients);
 
         var adminEmail =
             builder.Configuration["Admin:Email"]

@@ -35,8 +35,6 @@ public class SavedSearchMatchingTests
             {
                 await db.Database.MigrateAsync();
                 db.Users.Add(new AppUser { Id = "client", UserName = "client", Email = "client@example.invalid", MatchAlertsInApp = true, MatchAlertsEmail = true });
-                db.Roles.Add(new Microsoft.AspNetCore.Identity.IdentityRole { Id = "client-role", Name = "Client", NormalizedName = "CLIENT" });
-                db.UserRoles.Add(new Microsoft.AspNetCore.Identity.IdentityUserRole<string> { UserId = "client", RoleId = "client-role" });
                 var search = new SavedSearch
                 {
                     UserId = "client",

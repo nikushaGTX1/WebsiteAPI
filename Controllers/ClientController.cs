@@ -40,12 +40,7 @@ public class ClientPreferencesDto
     public string? PreferredLanguage { get; set; }
 }
 
-/// <summary>
-/// Lets only client accounts through. Checked against the database, not the sign-in token, so
-/// accounts that became clients after signing in (and staff who stopped being clients) are right
-/// without signing in again.
-/// </summary>
-public class RequireClientRoleAttribute : Attribute, IAsyncAuthorizationFilter
+public class RequirePublicAccountAttribute : Attribute, IAsyncAuthorizationFilter
 {
     public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
     {
@@ -56,14 +51,8 @@ public class RequireClientRoleAttribute : Attribute, IAsyncAuthorizationFilter
             return;
         }
         var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
-        var isClient = await db.UserRoles.AnyAsync(userRole =>
-            userRole.UserId == userId &&
-            db.Roles.Any(role => role.Id == userRole.RoleId && role.NormalizedName == "CLIENT"));
-        var isStaff = await db.UserRoles.AnyAsync(ur => ur.UserId == userId && db.Roles.Any(r =>
-            r.Id == ur.RoleId && (r.NormalizedName == "ADMIN" || r.NormalizedName == "MANAGER" ||
-            r.NormalizedName == "AGENT" || r.NormalizedName == "UPLOADER" || r.NormalizedName == "CRM-MANAGER" || r.NormalizedName == "CRM_MANAGER" || r.NormalizedName == "OWNER")));
-        if (!isClient || isStaff)
-            context.Result = new ObjectResult(new { message = "Velven Discover is available for client accounts." })
+        if (!await PublicAccounts.Users(db).AnyAsync(user => user.Id == userId, context.HttpContext.RequestAborted))
+            context.Result = new ObjectResult(new { message = "Velven Discover is available for personal accounts." })
             {
                 StatusCode = StatusCodes.Status403Forbidden,
             };
@@ -76,7 +65,7 @@ public class RequireClientRoleAttribute : Attribute, IAsyncAuthorizationFilter
 /// </summary>
 [ApiController]
 [Authorize]
-[RequireClientRole]
+[RequirePublicAccount]
 [Route("api/client")]
 public class ClientController : ControllerBase
 {
