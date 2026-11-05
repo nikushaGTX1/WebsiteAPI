@@ -80,17 +80,10 @@ public class ListingInterestService
             .FirstOrDefaultAsync(cancellationToken);
         var listedByStaff = !await PublicAccounts.Users(_context).AnyAsync(user => user.Id == listedBy, cancellationToken);
         string? reviewer = listedByStaff ? listedBy : submission?.AgentUserId;
-        string? owner = listedByStaff ? null : listedBy;
-        var ownerEmail = submission?.OwnerEmail?.Trim();
-        if (owner is null && !string.IsNullOrWhiteSpace(ownerEmail))
-        {
-            var normalized = ownerEmail.ToUpperInvariant();
-            owner = await _context.Users.Where(user => user.NormalizedEmail == normalized)
-                .Select(user => user.Id).FirstOrDefaultAsync(cancellationToken);
-        }
-        if (owner == search.UserId) return;
-        if (owner is not null && string.IsNullOrWhiteSpace(ownerEmail))
-            ownerEmail = await _context.Users.Where(user => user.Id == owner).Select(user => user.Email).FirstOrDefaultAsync(cancellationToken);
+        // The match always goes to whoever uploaded the listing on Velven (owner or agent),
+        // to that account's bell, "Clients for you" page and email.
+        string owner = listedBy;
+        var ownerEmail = await _context.Users.Where(user => user.Id == owner).Select(user => user.Email).FirstOrDefaultAsync(cancellationToken);
 
         _context.ListingInterestNotifications.Add(new ListingInterestNotification
         {
@@ -212,6 +205,13 @@ public class ListingInterestService
 
         match.Status = ready ? ListingInterestNotification.Ready : ListingInterestNotification.Dismissed;
         match.ReviewerUserId ??= userId;
+        // Always the uploader, also for matches created when another recipient was chosen.
+        if (ready && !string.IsNullOrWhiteSpace(match.Apartment.UploadedByUserId))
+        {
+            match.OwnerUserId = match.Apartment.UploadedByUserId;
+            match.OwnerEmail = await _context.Users.Where(user => user.Id == match.OwnerUserId)
+                .Select(user => user.Email).FirstOrDefaultAsync(cancellationToken);
+        }
         match.ReviewedAt = DateTime.UtcNow;
         match.ReadAt ??= DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);

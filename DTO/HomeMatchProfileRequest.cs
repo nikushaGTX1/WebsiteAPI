@@ -7,6 +7,9 @@ public class HomeMatchProfileRequest
     /// <summary>"Apartment" or "House"; empty on older clients (= Apartment).</summary>
     public string? HomeType { get; set; }
 
+    /// <summary>Every accepted type; empty on older clients.</summary>
+    public List<string> HomeTypes { get; set; } = [];
+
     public List<string> Districts { get; set; } = [];
     public bool LocationFlexible { get; set; }
 

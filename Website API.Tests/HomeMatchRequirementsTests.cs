@@ -65,6 +65,11 @@ public class HomeMatchRequirementsTests
         Assert.Equal(RequirementStatus.Exact, Evaluate(house, Profile(p => p.HomeType = "House")));
         Assert.Equal(RequirementStatus.Alternative, Evaluate(flat, Profile(p => p.HomeType = "House")));
         Assert.Equal(RequirementStatus.Alternative, Evaluate(Listing(a => a.Description = "Type: Commercial area | Deal: For Rent"), Profile()));
+        // Both chosen: either type matches, commercial still does not.
+        var both = Profile(p => p.HomeTypes = ["Apartment", "House"]);
+        Assert.Equal(RequirementStatus.Exact, Evaluate(house, both));
+        Assert.Equal(RequirementStatus.Exact, Evaluate(flat, both));
+        Assert.Equal(RequirementStatus.Alternative, Evaluate(Listing(a => a.Description = "Type: Commercial area | Deal: For Rent"), both));
         // A listing that does not say its type is not excluded.
         Assert.Equal(RequirementStatus.Exact, Evaluate(Listing(a => { a.Description = "Deal: For Rent"; a.Title = "For rent in Saburtalo"; }), Profile()));
     }

@@ -15,6 +15,8 @@ public class SavedSearchProfile
     public string PropertyGoal { get; set; } = "";
     /// <summary>"Apartment" or "House" (private house). Older searches have none and mean Apartment.</summary>
     public string? HomeType { get; set; }
+    /// <summary>Every accepted type ("Apartment", "House" or both). Takes precedence over HomeType.</summary>
+    public List<string> HomeTypes { get; set; } = [];
     public List<string> Districts { get; set; } = [];
     public bool LocationFlexible { get; set; }
     public MapArea? SelectedMapArea { get; set; }
@@ -202,9 +204,11 @@ public static class HomeMatchRequirements
 
     public static bool MatchesHomeType(Apartment apartment, SavedSearchProfile profile)
     {
-        var wanted = string.Equals(profile.HomeType, "House", StringComparison.OrdinalIgnoreCase) ? "House" : "Apartment";
+        var wanted = profile.HomeTypes.Count > 0
+            ? profile.HomeTypes.Select(t => string.Equals(t, "House", StringComparison.OrdinalIgnoreCase) ? "House" : "Apartment").ToList()
+            : [string.Equals(profile.HomeType, "House", StringComparison.OrdinalIgnoreCase) ? "House" : "Apartment"];
         var actual = ListingHomeType(apartment);
-        return actual is null || actual == wanted;
+        return actual is null || wanted.Contains(actual);
     }
 
     public static bool MatchesPropertyGoal(Apartment apartment, SavedSearchProfile profile)
