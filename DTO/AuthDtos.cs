@@ -23,6 +23,10 @@ public class RegisterDto
 
     [Phone]
     public string? PhoneNumber { get; set; }
+
+    /// <summary>English country name, e.g. "Georgia".</summary>
+    [MaxLength(80)]
+    public string? Nationality { get; set; }
 }
 
 public class LoginDto
@@ -39,6 +43,9 @@ public class UpdateProfileDto
 
     [Phone]
     public string? PhoneNumber { get; set; }
+
+    [MaxLength(80)]
+    public string? Nationality { get; set; }
 
     // Uploaded image
     public IFormFile? ProfilePicture { get; set; }
