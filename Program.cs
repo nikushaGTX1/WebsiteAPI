@@ -49,17 +49,7 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 Window = TimeSpan.FromMinutes(10)
             }));
-    // Cap explicit image editing requests per authenticated user.
-    options.AddPolicy("ImageChecks", context => RateLimitPartition.GetFixedWindowLimiter(
-        partitionKey: context.User.FindFirstValue(ClaimTypes.NameIdentifier)
-                      ?? ClientIpResolver.Resolve(context),
-        factory: _ => new FixedWindowRateLimiterOptions
-        {
-            AutoReplenishment = true,
-            PermitLimit = 5,
-            QueueLimit = 0,
-            Window = TimeSpan.FromHours(1)
-        }));
+
 });
 builder.Services.AddOutputCache(options =>
 {

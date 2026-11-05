@@ -28,7 +28,6 @@ public class PhotoChecksController(AppDbContext context, ImageProcessingQueue qu
 
     [HttpPost("check")]
     [Authorize(Roles = "Admin")]
-    [EnableRateLimiting("ImageChecks")]
     [RequestSizeLimit(17 * 1024 * 1024)]
     public async Task<IActionResult> Check(IFormFile image, [FromForm] string mode = "clean",
         [FromForm] bool rightsConfirmed = false, [FromForm] string authorizationBasis = "owned",
@@ -71,9 +70,7 @@ public class PhotoChecksController(AppDbContext context, ImageProcessingQueue qu
             var cached = await storage.DownloadAsync(previous.ProcessedStoragePath, cancellationToken);
             return Ok(new { classification = "authorized_edit", action = "processed", cleanedImage = Convert.ToBase64String(cached), contentType = "image/png", jobId = previous.Id });
         }
-        var day = DateTime.UtcNow.Date;
-        if (await context.ImageProcessingJobs.CountAsync(j => j.RequestedByUserId == userId && j.StartedAt >= day && j.PipelineVersion != null && j.PipelineVersion.StartsWith("openai-edit-v1:"), cancellationToken) >= options.Value.DailyUserLimit)
-            return StatusCode(429, new { message = "Daily image editing limit reached." });
+
         var reservation = OpenAIImageCostCalculator.Reservation(options.Value);
         if (reservation is null) return StatusCode(503, new { message = "Verified model pricing and a matching token forecast are required before paid editing." });
         var budget = await queue.GetBudgetAsync(cancellationToken);

@@ -57,7 +57,6 @@ public class ImageProcessingController : ControllerBase
     }
 
     [HttpPost("jobs")]
-    [EnableRateLimiting("ImageChecks")]
     public async Task<IActionResult> Enqueue(
         EnqueueRequest request,
         CancellationToken cancellationToken)

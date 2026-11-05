@@ -20,11 +20,10 @@ public sealed class ImageAiOptions
     public decimal MonthlyBudgetUsd { get; set; } = 10m;
     public decimal BudgetCutoffUsd { get; set; } = 8m;
     public int MonthlyImageQuota { get; set; } = 20;
-    public int DailyUserLimit { get; set; } = 5;
     public int RequestTimeoutSeconds { get; set; } = 180;
     public int PollSeconds { get; set; } = 10;
     // Invalid optional editing settings fail closed without taking listing uploads offline.
     public bool Valid => !string.IsNullOrWhiteSpace(Model) && BudgetCutoffUsd > 0 &&
-        MonthlyImageQuota > 0 && DailyUserLimit > 0 && RequestTimeoutSeconds is >= 10 and <= 300 &&
+        MonthlyImageQuota > 0 && RequestTimeoutSeconds is >= 10 and <= 300 &&
         Quality is "low" or "medium" or "high" or "auto" && Size is "1024x1024" or "1536x1024" or "1024x1536" or "auto";
 }

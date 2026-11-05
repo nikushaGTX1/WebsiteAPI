@@ -41,8 +41,7 @@ public sealed class ImageProcessingWorker(IServiceScopeFactory scopes, IOptions<
             j.PipelineVersion == editor.CacheVersion && (j.Mode == "process" || j.Mode == "enhance"))
             .OrderBy(j => j.Id).FirstOrDefaultAsync(ct);
         if (job is null) return;
-        var day = DateTime.UtcNow.Date;
-        if (await db.ImageProcessingJobs.CountAsync(j => j.RequestedByUserId == job.RequestedByUserId && j.StartedAt >= day && j.PipelineVersion != null && j.PipelineVersion.StartsWith("openai-edit-v1:"), ct) >= options.Value.DailyUserLimit) return;
+
         job.Status = ImageJobStatus.Running;
         job.Attempts = 1;
         job.StartedAt = DateTime.UtcNow;

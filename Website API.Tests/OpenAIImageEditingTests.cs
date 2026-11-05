@@ -184,7 +184,7 @@ public class OpenAIImageEditingTests
         Assert.Equal(HttpStatusCode.Conflict, (await f.Client.PostAsync($"/api/image-processing/jobs/{job.Id}/retry", null)).StatusCode);
     }
     [Fact]
-    public async Task BusyBudgetAndDailyLimitsRejectBeforePaidRequests()
+    public async Task BusyAndBudgetLimitsRemainButDailyCapIsRemoved()
     {
         await using var f = await Fixture.Start(); f.As("Admin");
         f.Guard.Busy = true; Assert.Equal((HttpStatusCode)429, (await f.Upload()).StatusCode);
@@ -192,15 +192,19 @@ public class OpenAIImageEditingTests
         f.Settings.BudgetCutoffUsd = 0.01m;
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await f.Upload()).StatusCode);
         f.Settings.BudgetCutoffUsd = 8;
-        f.Settings.DailyUserLimit = 1;
+        Assert.Equal(0, f.ProviderCalls); Assert.Empty(f.Objects);
         using (var scope = f.App.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            db.ImageProcessingJobs.Add(new ImageProcessingJob { RequestedByUserId = "admin", StartedAt = DateTime.UtcNow, Status = ImageJobStatus.Failed, PipelineVersion = "openai-edit-v1:earlier-settings" });
+            for (var i = 0; i < 6; i++)
+                db.ImageProcessingJobs.Add(new ImageProcessingJob { RequestedByUserId = "admin", StartedAt = DateTime.UtcNow, Status = ImageJobStatus.Failed, PipelineVersion = "openai-edit-v1:earlier-settings", EstimatedCostUsd = 0.02m });
             await db.SaveChangesAsync();
         }
-        Assert.Equal((HttpStatusCode)429, (await f.Upload()).StatusCode);
-        Assert.Equal(0, f.ProviderCalls); Assert.Empty(f.Objects);
+        (await f.Upload()).EnsureSuccessStatusCode();
+        Assert.Equal(1, f.ProviderCalls); Assert.Equal(2, f.Objects.Count);
+        f.Settings.MonthlyImageQuota = 7;
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await f.Upload(data: Png(new SKColor(220, 10, 10)))).StatusCode);
+        Assert.Equal(1, f.ProviderCalls); // The monthly quota still blocks additional spend.
     }
     [Fact]
     public async Task StorageFailureNeverPublishesAndNeverRetriesProvider()
