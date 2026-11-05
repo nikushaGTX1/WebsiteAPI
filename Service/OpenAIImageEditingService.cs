@@ -80,7 +80,30 @@ public sealed class OpenAIImageEditingService
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _key);
         // Exactly one attempt. Ambiguous timeouts may already have been billed.
         using var response = await _http.SendAsync(request, ct);
-        if (!response.IsSuccessStatusCode) throw new ImageEditException((int)response.StatusCode, "OpenAI image editing failed. Check account model access, limits and configuration before a manual retry.");
+        if (!response.IsSuccessStatusCode)
+        {
+            var status = (int)response.StatusCode;
+            string? code = null;
+            try
+            {
+                using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+                if (error.RootElement.TryGetProperty("error", out var detail) && detail.ValueKind == JsonValueKind.Object &&
+                    detail.TryGetProperty("code", out var value) && value.ValueKind == JsonValueKind.String)
+                {
+                    var candidate = value.GetString();
+                    // Never expose the provider's free-text error, which can echo submitted content.
+                    if (candidate is "server_is_overloaded" or "rate_limit_exceeded" or "insufficient_quota" or
+                        "billing_hard_limit_reached" or "content_policy_violation" or "moderation_blocked" or
+                        "invalid_api_key" or "model_not_found" or "invalid_request_error") code = candidate;
+                }
+            }
+            catch (JsonException) { }
+            var message = status >= 500 ? $"OpenAI is temporarily unavailable (HTTP {status}). No automatic retry was made. An explicit retry may incur another charge."
+                : status == 429 ? "OpenAI rejected the request due to an account rate or usage limit. Check the account before explicitly retrying."
+                : $"OpenAI rejected the edit (HTTP {status}). Review the image and account configuration before explicitly retrying.";
+            throw new ImageEditException(status, message, code,
+                response.Headers.TryGetValues("x-request-id", out var requestIds) ? requestIds.FirstOrDefault() : null);
+        }
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         string? StringField(string name) => json.RootElement.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
         var usageElement = json.RootElement.TryGetProperty("usage", out var usageValue) ? usageValue.Clone() : (JsonElement?)null;
@@ -161,10 +184,11 @@ public sealed class OpenAIImageEditingService
         return mask;
     }
 }
-public sealed class ImageEditException(int statusCode, string message) : Exception(message)
+public sealed class ImageEditException(int statusCode, string message, string? code = null, string? requestId = null) : Exception(message)
 {
     public int StatusCode { get; } = statusCode;
-    public bool IsPermanent => true;
+    public string? Code { get; } = code;
+    public string? RequestId { get; } = requestId;
 }
 public sealed class ImageEditRequest
 {

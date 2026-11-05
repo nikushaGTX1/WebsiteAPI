@@ -32,7 +32,8 @@ public class PhotoChecksController(AppDbContext context, ImageProcessingQueue qu
     public async Task<IActionResult> Check(IFormFile image, [FromForm] string mode = "clean",
         [FromForm] bool rightsConfirmed = false, [FromForm] string authorizationBasis = "owned",
         [FromForm] string? permissionReference = null, [FromForm] string? instructions = null,
-        IFormFile? mask = null, CancellationToken cancellationToken = default)
+        IFormFile? mask = null, [FromForm] long? retryFailedJobId = null,
+        [FromForm] bool acknowledgePossibleCharge = false, CancellationToken cancellationToken = default)
     {
         Response.Headers.CacheControl = "no-store";
         if (!options.Value.Enabled || !editor.Configured) return StatusCode(503, new { message = "Image editing is disabled or unconfigured." });
@@ -62,14 +63,25 @@ public class PhotoChecksController(AppDbContext context, ImageProcessingQueue qu
         // User, image, mask, operation, rights and configuration all participate in duplicate prevention.
         var fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
             Convert.ToHexStringLower(SHA256.HashData(bytes)) + ":" + (maskBytes is null ? "" : Convert.ToHexStringLower(SHA256.HashData(maskBytes))) + ":" + mode + ":" + instructions + ":" + authorizationBasis + ":" + permissionReference + ":" + version)));
-        var previous = await context.ImageProcessingJobs.AsNoTracking().FirstOrDefaultAsync(j =>
-            j.SourceSha256 == fingerprint && j.RequestedByUserId == userId && j.PipelineVersion == version, cancellationToken);
+        var previous = await context.ImageProcessingJobs.AsNoTracking()
+            .Where(j => j.SourceSha256 == fingerprint && j.RequestedByUserId == userId && j.PipelineVersion == version)
+            .OrderByDescending(j => j.Id).FirstOrDefaultAsync(cancellationToken);
         if (previous is not null)
         {
-            if (previous.ProcessedStoragePath is null) return Conflict(new { message = "This edit was already attempted. Review its status; failed or interrupted calls may have been billed." });
-            var cached = await storage.DownloadAsync(previous.ProcessedStoragePath, cancellationToken);
-            return Ok(new { classification = "authorized_edit", action = "processed", cleanedImage = Convert.ToBase64String(cached), contentType = "image/png", jobId = previous.Id });
+            if (previous.ProcessedStoragePath is not null)
+            {
+                var cached = await storage.DownloadAsync(previous.ProcessedStoragePath, cancellationToken);
+                return Ok(new { classification = "authorized_edit", action = "processed", cleanedImage = Convert.ToBase64String(cached), contentType = "image/png", jobId = previous.Id });
+            }
+            if (previous.Status != ImageJobStatus.Failed || previous.Id != retryFailedJobId || !acknowledgePossibleCharge)
+                return Conflict(new { message = previous.Status == ImageJobStatus.Failed
+                    ? "This edit previously failed. Use the explicit retry button to acknowledge that another request may incur a charge."
+                    : "This edit is already in progress or its result is unknown. Review its status before making another request.",
+                    failedJobId = previous.Status == ImageJobStatus.Failed ? (long?)previous.Id : null,
+                    canRetry = previous.Status == ImageJobStatus.Failed });
         }
+        else if (retryFailedJobId is not null)
+            return Conflict(new { message = "The failed job does not match this photo, editing settings or account." });
 
         var reservation = OpenAIImageCostCalculator.Reservation(options.Value);
         if (reservation is null) return StatusCode(503, new { message = "Verified model pricing and a matching token forecast are required before paid editing." });
@@ -116,11 +128,17 @@ public class PhotoChecksController(AppDbContext context, ImageProcessingQueue qu
         catch (Exception e)
         {
             job.Status = ImageJobStatus.Failed;
-            job.LastError = e is ArgumentException ? e.Message : "Editing failed or timed out. No automatic retry; the request may have been billed.";
+            job.LastError = e is ArgumentException ? e.Message : e is ImageEditException providerError ? providerError.Message
+                : "Editing failed or timed out. No automatic retry; the request may have been billed.";
+            if (e is ImageEditException provider)
+                job.SafetyReportJson = System.Text.Json.JsonSerializer.Serialize(new { provider = "openai", model = options.Value.Model,
+                    quality = options.Value.Quality, size = options.Value.Size, providerStatus = provider.StatusCode,
+                    providerCode = provider.Code, requestId = provider.RequestId, costBasis = "reservation", invoiceVerified = false });
             job.CompletedAt = DateTime.UtcNow;
             await context.SaveChangesAsync(CancellationToken.None);
-            logger.LogWarning("Image edit {JobId} failed ({Type}); reservation retained.", job.Id, e.GetType().Name);
-            return StatusCode(e is ArgumentException ? 400 : e is OperationCanceledException ? 504 : 502, new { message = job.LastError });
+            logger.LogWarning("Image edit {JobId} failed ({Type}), provider status {Status}; no automatic retry.", job.Id, e.GetType().Name, (e as ImageEditException)?.StatusCode);
+            return StatusCode(e is ArgumentException ? 400 : e is OperationCanceledException ? 504 : 502,
+                new { message = job.LastError, failedJobId = job.Id, canRetry = true, providerStatus = (e as ImageEditException)?.StatusCode });
         }
     }
 }

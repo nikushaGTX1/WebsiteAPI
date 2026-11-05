@@ -63,7 +63,7 @@ public class OpenAIImageEditingTests
         Assert.Equal(1, calls);
     }
     [Theory]
-    [InlineData(401)] [InlineData(403)] [InlineData(404)] [InlineData(429)] [InlineData(500)]
+    [InlineData(401)] [InlineData(403)] [InlineData(404)] [InlineData(429)] [InlineData(500)] [InlineData(503)]
     public async Task ProviderFailuresNeverRetryOrExposeResponseBodies(int status)
     {
         var calls = 0;
@@ -183,6 +183,38 @@ public class OpenAIImageEditingTests
         Assert.Equal(ImageJobStatus.Failed, job.Status); Assert.Equal(0.036042m, job.EstimatedCostUsd);
         Assert.Equal(HttpStatusCode.Conflict, (await f.Client.PostAsync($"/api/image-processing/jobs/{job.Id}/retry", null)).StatusCode);
     }
+    [Fact]
+    public async Task TemporaryProviderFailureCanBeRetriedOnlyByExplicitAcknowledgedMatchingAction()
+    {
+        await using var f = await Fixture.Start(); f.As("Admin"); f.FailProvider = true; f.FailureStatus = HttpStatusCode.ServiceUnavailable;
+        var failure = await f.Upload(); Assert.Equal(HttpStatusCode.BadGateway, failure.StatusCode);
+        var error = await failure.Content.ReadFromJsonAsync<JsonElement>();
+        var failedId = error.GetProperty("failedJobId").GetInt64();
+        Assert.Equal(503, error.GetProperty("providerStatus").GetInt32());
+        Assert.Contains("temporarily unavailable", error.GetProperty("message").GetString());
+        Assert.Equal(1, f.ProviderCalls);
+        Assert.Equal(HttpStatusCode.Conflict, (await f.Upload()).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await f.Upload(retryId: failedId)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await f.Upload(retryId: failedId + 99, acknowledge: true)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await f.Upload(data: Png(new SKColor(222, 3, 4)), retryId: failedId, acknowledge: true)).StatusCode);
+        f.As("Admin", "different-admin");
+        Assert.Equal(HttpStatusCode.Conflict, (await f.Upload(retryId: failedId, acknowledge: true)).StatusCode);
+        f.As("Admin"); Assert.Equal(1, f.ProviderCalls);
+        f.FailProvider = false;
+        var retried = await f.Upload(retryId: failedId, acknowledge: true); retried.EnsureSuccessStatusCode();
+        var succeededId = (await retried.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("jobId").GetInt64();
+        Assert.NotEqual(failedId, succeededId); Assert.Equal(2, f.ProviderCalls);
+        // Normal resubmission returns the latest successful result; it must not keep selecting the old failure.
+        var cached = await f.Upload(); cached.EnsureSuccessStatusCode();
+        Assert.Equal(succeededId, (await cached.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("jobId").GetInt64());
+        Assert.Equal(2, f.ProviderCalls);
+        using var scope = f.App.Services.CreateScope();
+        var jobs = await scope.ServiceProvider.GetRequiredService<AppDbContext>().ImageProcessingJobs.OrderBy(j => j.Id).ToListAsync();
+        Assert.Equal(2, jobs.Count); Assert.Equal(ImageJobStatus.Failed, jobs[0].Status);
+        Assert.Equal(0.036042m, jobs[0].EstimatedCostUsd); Assert.Contains("providerStatus", jobs[0].SafetyReportJson);
+        Assert.Equal(0.018021m, jobs[1].EstimatedCostUsd);
+    }
+
     [Fact]
     public async Task BusyAndBudgetLimitsRemainButDailyCapIsRemoved()
     {
@@ -367,11 +399,14 @@ public class OpenAIImageEditingTests
         public readonly TestGuard Guard = new();
         public readonly byte[] Photo = Png(new SKColor(40, 50, 60));
         public int ProviderCalls;
+        public HttpStatusCode FailureStatus = HttpStatusCode.TooManyRequests;
         public bool FailProvider, FailDraftStorage, OmitUsage;
         public void As(string role, string user = "admin") { Client.DefaultRequestHeaders.Remove("X-Test-Role"); Client.DefaultRequestHeaders.Remove("X-Test-User"); Client.DefaultRequestHeaders.Add("X-Test-Role", role); Client.DefaultRequestHeaders.Add("X-Test-User", user); }
-        public async Task<HttpResponseMessage> Upload(bool rights = true, byte[]? data = null)
+        public async Task<HttpResponseMessage> Upload(bool rights = true, byte[]? data = null, long? retryId = null, bool acknowledge = false)
         {
             using var form = new MultipartFormDataContent { { new ByteArrayContent(data ?? Photo), "image", "photo.png" }, { new StringContent("clean"), "mode" }, { new StringContent(rights.ToString()), "rightsConfirmed" } };
+            if (retryId is not null) form.Add(new StringContent(retryId.Value.ToString()), "retryFailedJobId");
+            if (acknowledge) form.Add(new StringContent("true"), "acknowledgePossibleCharge");
             return await Client.PostAsync("/api/image-processing/check", form);
         }
         public static async Task<Fixture> Start()
@@ -387,7 +422,7 @@ public class OpenAIImageEditingTests
             builder.Services.AddHttpClient<OpenAIImageEditingService>().ConfigurePrimaryHttpMessageHandler(() => new Handler((request, ct) =>
             {
                 Assert.Equal("api.openai.com", request.RequestUri!.Host); f.ProviderCalls++;
-                return Task.FromResult(new HttpResponseMessage(f.FailProvider ? HttpStatusCode.TooManyRequests : HttpStatusCode.OK)
+                return Task.FromResult(new HttpResponseMessage(f.FailProvider ? f.FailureStatus : HttpStatusCode.OK)
                     { Content = JsonContent.Create(new { data = new[] { new { b64_json = Convert.ToBase64String(Png(new SKColor(100, 110, 120))) } },
                         usage = f.OmitUsage ? null : new { input_tokens = 1554, input_tokens_details = new { text_tokens = 97, image_tokens = 1457 }, output_tokens = 196, output_tokens_details = new { image_tokens = 196, text_tokens = 0 }, total_tokens = 1750 } }) });
             }));
