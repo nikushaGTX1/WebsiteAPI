@@ -1,5 +1,6 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -11,214 +12,109 @@ using Website_API.Services;
 
 namespace Website_API.Controllers;
 
-// Watermark checks for the apartment upload form. Any signed-in uploader may use them.
-// Nothing is stored: the form receives the result and decides what to upload.
 [ApiController]
 [Authorize]
 [Route("api/image-processing")]
-public class PhotoChecksController : ControllerBase
+public class PhotoChecksController(AppDbContext context, ImageProcessingQueue queue,
+    OpenAIImageEditingService editor, IImageEditingGuard guard, SupabaseStorageService storage,
+    IOptions<ImageAiOptions> options, ILogger<PhotoChecksController> logger) : ControllerBase
 {
-    private const long MaxBytes = 8 * 1024 * 1024;
-
-    private readonly AppDbContext _context;
-    private readonly ImageProcessingQueue _queue;
-    private readonly ModalImageAiClient _modal;
-    private readonly ImageAiOptions _options;
-    private readonly ILogger<PhotoChecksController> _logger;
-
-    public PhotoChecksController(
-        AppDbContext context,
-        ImageProcessingQueue queue,
-        ModalImageAiClient modal,
-        IOptions<ImageAiOptions> options,
-        ILogger<PhotoChecksController> logger)
-    {
-        _context = context;
-        _queue = queue;
-        _modal = modal;
-        _options = options.Value;
-        _logger = logger;
-    }
-
     [HttpGet("availability")]
-    public IActionResult Availability() =>
-        Ok(new { enabled = _options.Enabled, canRemove = _options.Enabled && CanRemoveWatermarks(User) });
-
-    private static bool CanRemoveWatermarks(ClaimsPrincipal user) =>
-        user.IsInRole("Admin") || user.IsInRole("Manager") ||
-        user.IsInRole("Agent") || user.IsInRole("Uploader");
-
-    // mode=detect scans only. mode=clean also removes the watermark, but only our own
-    // brand, and only when the uploader confirms they may edit the photo.
+    public IActionResult Availability() => Ok(new
+    {
+        enabled = options.Value.Enabled && editor.Configured && User.IsInRole("Admin"),
+        canRemove = options.Value.Enabled && editor.Configured && User.IsInRole("Admin")
+    });
 
     [HttpPost("check")]
+    [Authorize(Roles = "Admin")]
     [EnableRateLimiting("ImageChecks")]
-    [RequestSizeLimit(MaxBytes + 64 * 1024)]
-    public async Task<IActionResult> Check(
-        IFormFile image,
-        [FromForm] string mode = "detect",
-        [FromForm] bool rightsConfirmed = false,
-        [FromForm] string? source = null,
-        [FromForm] string watermarkScope = "brands",
-        CancellationToken cancellationToken = default)
+    [RequestSizeLimit(17 * 1024 * 1024)]
+    public async Task<IActionResult> Check(IFormFile image, [FromForm] string mode = "clean",
+        [FromForm] bool rightsConfirmed = false, [FromForm] string authorizationBasis = "owned",
+        [FromForm] string? permissionReference = null, [FromForm] string? instructions = null,
+        IFormFile? mask = null, CancellationToken cancellationToken = default)
     {
-        if (!_options.Enabled)
+        Response.Headers.CacheControl = "no-store";
+        if (!options.Value.Enabled || !editor.Configured) return StatusCode(503, new { message = "Image editing is disabled or unconfigured." });
+        if (!rightsConfirmed || authorizationBasis is not ("owned" or "licensed") ||
+            (authorizationBasis == "licensed" && string.IsNullOrWhiteSpace(permissionReference)))
+            return BadRequest(new { message = "Confirm ownership or provide a reference to explicit editing permission." });
+        if (mode is not ("clean" or "enhance" or "objects")) return BadRequest(new { message = "Choose clean, enhance or objects. Automatic scans are disabled." });
+        if (image is null || image.Length is 0 or > 8 * 1024 * 1024 || (mask?.Length ?? 0) > 8 * 1024 * 1024 || instructions?.Length > 1000 || permissionReference?.Length > 500)
+            return BadRequest(new { message = "Use images up to 8 MB and concise editing instructions." });
+        await using var source = new MemoryStream();
+        await image.CopyToAsync(source, cancellationToken);
+        var bytes = source.ToArray();
+        byte[]? maskBytes = null;
+        if (mask is not null)
         {
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "Photo check is turned off." });
+            await using var maskStream = new MemoryStream();
+            await mask.CopyToAsync(maskStream, cancellationToken);
+            maskBytes = maskStream.ToArray();
         }
-
-        if (mode is not ("detect" or "clean"))
+        try { OpenAIImageEditingService.ValidateImage(bytes); if (maskBytes is not null) OpenAIImageEditingService.ValidateImage(maskBytes, true); }
+        catch (ArgumentException e) { return BadRequest(new { message = e.Message }); }
+        await using var lease = await guard.TryEnterAsync(cancellationToken);
+        if (lease is null) return StatusCode(429, new { message = "Another image is being edited. Wait before trying again." });
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Forbid();
+        var version = editor.CacheVersion;
+        // User, image, mask, operation, rights and configuration all participate in duplicate prevention.
+        var fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
+            Convert.ToHexStringLower(SHA256.HashData(bytes)) + ":" + (maskBytes is null ? "" : Convert.ToHexStringLower(SHA256.HashData(maskBytes))) + ":" + mode + ":" + instructions + ":" + authorizationBasis + ":" + permissionReference + ":" + version)));
+        var previous = await context.ImageProcessingJobs.AsNoTracking().FirstOrDefaultAsync(j =>
+            j.SourceSha256 == fingerprint && j.RequestedByUserId == userId && j.PipelineVersion == version, cancellationToken);
+        if (previous is not null)
         {
-            return BadRequest(new { message = "Mode must be detect or clean." });
+            if (previous.ProcessedStoragePath is null) return Conflict(new { message = "This edit was already attempted. Review its status; failed or interrupted calls may have been billed." });
+            var cached = await storage.DownloadAsync(previous.ProcessedStoragePath, cancellationToken);
+            return Ok(new { classification = "authorized_edit", action = "processed", cleanedImage = Convert.ToBase64String(cached), contentType = "image/png", jobId = previous.Id });
         }
-
-        if (watermarkScope is not ("brands" or "all"))
-        {
-            return BadRequest(new { message = "Watermark scope must be brands or all." });
-        }
-
-        if (image is null || image.Length == 0 || image.Length > MaxBytes ||
-            image.ContentType is not ("image/jpeg" or "image/png" or "image/webp"))
-        {
-            return BadRequest(new { message = "Send one JPG, PNG or WebP image up to 8 MB." });
-        }
-
-        // Removal strips Velven branding, so only staff may do it; the checkbox is an
-        // extra attestation, not the authorization.
-        if (mode == "clean" && !CanRemoveWatermarks(User))
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Only Velven staff can remove watermarks." });
-        }
-
-        if (mode == "clean" && !rightsConfirmed)
-        {
-            return BadRequest(new { message = "Confirm that you may edit this photo first." });
-        }
-
-        var budget = await _queue.GetBudgetAsync(cancellationToken);
-        if (budget.Exhausted)
-        {
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "Photo check is paused for this month." });
-        }
-
-        await using var stream = new MemoryStream();
-        await image.CopyToAsync(stream, cancellationToken);
-        var bytes = stream.ToArray();
-        var sha = Convert.ToHexStringLower(SHA256.HashData(bytes));
-        var basis = mode == "clean" ? ImageAuthorizationBasis.Owned : ImageAuthorizationBasis.Unknown;
-        var modalMode = mode == "clean" ? "process" : "detect";
-        // Only a licensed partner can be named as the source (a MyHome ID means myhome.ge).
-        var knownSource = _options.PartnerBrandTerms.FirstOrDefault(term =>
-            string.Equals(term, source?.Trim(), StringComparison.OrdinalIgnoreCase));
-
-        // Same photo scanned before: reuse the answer without paying for the GPU.
-        // Answers from before the pale-logo search (or for a photo now known to come from a
-        // partner) are not reused: they said "no watermark" for faint myhome.ge logos.
-        // Only answers made by the remover version now deployed (with the same brand list) are
-        // reused, so a deploy with new rules never serves older answers.
-        var cacheVersion = mode == "detect" && knownSource is null
-            ? await _modal.CurrentCacheVersionAsync(cancellationToken)
-            : null;
-        if (cacheVersion is not null)
-        {
-            var previous = await _context.ImageProcessingJobs.AsNoTracking()
-                .Where(job => job.SourceSha256 == sha && job.Mode == "detect" &&
-                              job.Classification != null && job.PipelineVersion == cacheVersion)
-                .OrderByDescending(job => job.Id)
-                .Select(job => new { job.Classification, job.WatermarkText })
-                .FirstOrDefaultAsync(cancellationToken);
-            // A "third_party" answer is checked again: the AI service learns new partner spellings
-            // and logo layouts over time, and an old answer must not block removal forever.
-            var stillThirdParty = previous is not null &&
-                _options.PublicClassification(previous.Classification, previous.WatermarkText) == "third_party";
-            if (previous is not null && !stillThirdParty)
-            {
-                return Ok(new { classification = _options.PublicClassification(previous.Classification, previous.WatermarkText), watermarkText = previous.WatermarkText, action = "cached" });
-            }
-        }
-
+        var day = DateTime.UtcNow.Date;
+        if (await context.ImageProcessingJobs.CountAsync(j => j.RequestedByUserId == userId && j.StartedAt >= day, cancellationToken) >= options.Value.DailyUserLimit)
+            return StatusCode(429, new { message = "Daily image editing limit reached." });
+        var budget = await queue.GetBudgetAsync(cancellationToken);
+        if (budget.Exhausted || budget.SpentUsd + options.Value.EstimatedRequestUsd > options.Value.BudgetCutoffUsd)
+            return StatusCode(503, new { message = "Image editing is paused by the application budget." });
+        // Persist originals and reserve estimated spend BEFORE any billable call. Failed calls keep reservations.
+        var originalPath = await storage.UploadBytesAsync(bytes, OpenAIImageEditingService.ValidateImage(bytes), "image-edit-originals", cancellationToken);
         var job = new ImageProcessingJob
         {
-            SourceStoragePath = ImageProcessingJob.UploadFormSource,
-            SourceSha256 = sha,
-            Mode = modalMode,
-            AuthorizationBasis = basis,
-            RequestedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
-            Status = ImageJobStatus.Running,
-            Attempts = 1,
-            StartedAt = DateTime.UtcNow
+            SourceStoragePath = originalPath, SourceSha256 = fingerprint, PipelineVersion = version,
+            Mode = mode, RequestedByUserId = userId, PermissionReference = permissionReference,
+            AuthorizationBasis = authorizationBasis == "owned" ? ImageAuthorizationBasis.Owned : ImageAuthorizationBasis.Licensed,
+            Status = ImageJobStatus.Running, Attempts = 1, StartedAt = DateTime.UtcNow,
+            EstimatedCostUsd = options.Value.EstimatedRequestUsd
         };
-
-        ModalProcessResult result;
+        context.ImageProcessingJobs.Add(job);
+        await context.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Reserved estimated USD {Cost} for image edit {JobId}, model {Model}.", job.EstimatedCostUsd, job.Id, options.Value.Model);
         try
         {
-            result = await _modal.ProcessAsync(
-                new ModalProcessRequest
-                {
-                    ImageB64 = Convert.ToBase64String(bytes),
-                    ExpectedSha256 = sha,
-                    Mode = modalMode,
-                    AuthorizationBasis = basis.ToString().ToLowerInvariant(),
-                    OwnBrandTerms = _options.RemovableBrandTerms,
-                    KnownSource = knownSource,
-                    WatermarkScope = mode == "clean" ? watermarkScope : "brands"
-                },
-                cancellationToken);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            _logger.LogWarning(exception, "Upload photo check failed.");
-            return StatusCode(StatusCodes.Status502BadGateway, new { message = "Photo check failed. You can still upload the photo." });
-        }
-
-        var billedSeconds = result.GpuSeconds + (result.ColdStart ? _options.IdleSecondsPerColdStart : 0);
-        job.GpuSeconds = billedSeconds;
-        job.EstimatedCostUsd = (decimal)billedSeconds * _options.GpuUsdPerSecond;
-        job.Classification = result.Classification;
-        job.DetectionsJson = result.Detections.GetRawText();
-        job.PipelineVersion = _modal.CacheVersionFor(result.PipelineVersion);
-        job.SafetyReportJson = result.SafetyReport?.GetRawText();
-        if (result.SafetyReport is { } report && report.TryGetProperty("would_reject", out var wouldReject) &&
-            wouldReject.ValueKind == System.Text.Json.JsonValueKind.True)
-        {
-            // Report-only for now: logged so the limits can be tuned, the output is unchanged.
-            _logger.LogInformation("Photo {Sha} would be held by the safety check: {Report}", sha, report.GetRawText());
-        }
-        job.WatermarkText = string.Join(" | ", result.Detections.EnumerateArray()
-            .Select(item => item.TryGetProperty("text", out var text) ? text.GetString() : null)
-            .Where(text => !string.IsNullOrWhiteSpace(text)));
-        if (job.WatermarkText.Length == 0) job.WatermarkText = null;
-        else if (job.WatermarkText.Length > 500) job.WatermarkText = job.WatermarkText[..500];
-        job.Status = result.Action switch
-        {
-            "no_watermark" => ImageJobStatus.NoWatermark,
-            "needs_clean_original" => ImageJobStatus.NeedsCleanOriginal,
-            "processed" => ImageJobStatus.Approved,
-            "validation_failed" => ImageJobStatus.Failed,
-            _ => ImageJobStatus.DetectedOnly
-        };
-        job.CompletedAt = DateTime.UtcNow;
-        job.LockedUntil = null;
-        _context.ImageProcessingJobs.Add(job);
-        await _context.SaveChangesAsync(CancellationToken.None);
-
-        string? cleaned = null;
-        if (result.Action == "processed" && result.ProcessedB64 is not null)
-        {
-            var processed = Convert.FromBase64String(result.ProcessedB64);
-            if (Convert.ToHexStringLower(SHA256.HashData(processed)) == result.ProcessedSha256)
+            var result = await editor.ProcessAsync(new ImageEditRequest
             {
-                cleaned = result.ProcessedB64;
-            }
+                ImageB64 = Convert.ToBase64String(bytes), MaskB64 = maskBytes is null ? null : Convert.ToBase64String(maskBytes),
+                Mode = mode == "clean" ? "process" : mode, AuthorizationBasis = authorizationBasis,
+                PermissionReference = permissionReference, Instructions = instructions
+            }, cancellationToken);
+            job.ProcessedStoragePath = await storage.UploadBytesAsync(Convert.FromBase64String(result.ProcessedB64!), "image/png", "image-edit-drafts", cancellationToken);
+            job.ProcessedSha256 = result.ProcessedSha256;
+            job.SafetyReportJson = System.Text.Json.JsonSerializer.Serialize(new { provider = "openai", model = options.Value.Model, size = options.Value.Size, quality = options.Value.Quality, usage = result.UsageJson, estimateOnly = true });
+            job.Status = ImageJobStatus.AwaitingApproval;
+            job.CompletedAt = DateTime.UtcNow;
+            await context.SaveChangesAsync(CancellationToken.None);
+            logger.LogInformation("OpenAI image edit {JobId}, model {Model}, quality {Quality}, size {Size}, estimated USD {Cost}", job.Id, options.Value.Model, options.Value.Quality, options.Value.Size, job.EstimatedCostUsd);
+            return Ok(new { classification = "authorized_edit", action = "processed", cleanedImage = result.ProcessedB64, contentType = "image/png", jobId = job.Id });
         }
-
-        return Ok(new
+        catch (Exception e)
         {
-            classification = _options.PublicClassification(result.Classification, job.WatermarkText),
-            watermarkText = job.WatermarkText,
-            action = cleaned is null && result.Action == "processed" ? "validation_failed" : result.Action,
-            cleanedImage = cleaned,
-            contentType = result.ContentType
-        });
+            job.Status = ImageJobStatus.Failed;
+            job.LastError = e is ArgumentException ? e.Message : "Editing failed or timed out. No automatic retry; the request may have been billed.";
+            job.CompletedAt = DateTime.UtcNow;
+            await context.SaveChangesAsync(CancellationToken.None);
+            logger.LogWarning("Image edit {JobId} failed ({Type}); reservation retained.", job.Id, e.GetType().Name);
+            return StatusCode(e is ArgumentException ? 400 : e is OperationCanceledException ? 504 : 502, new { message = job.LastError });
+        }
     }
 }

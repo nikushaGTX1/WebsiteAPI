@@ -1,54 +1,82 @@
-# Image AI (watermark detection and authorized cleanup)
+# OpenAI image editing migration
 
-Headless Modal service built from the Florence-2 and LaMa inference code in
-[D-Ogi/WatermarkRemover-AI](https://github.com/D-Ogi/WatermarkRemover-AI)
-(MIT, commit `127108a`). The LaMa adapter is Apache-2.0 code from IOPaint.
-License texts are in `modal/vendor/licenses`. The desktop GUI is not used.
+Implementation date: 2026-11-05. No deployment, paid API call, remote deletion or production database operation was performed.
 
-## Policy
+## Audit and preserved workflows
 
-- Every photo is scanned with Florence-2. The text in each watermark is read with OCR.
-- A photo is edited only when the job says `Owned` or `Licensed`, and the watermark
-  is our own brand (`ImageAi__OwnBrandTerms`), or the job is `Licensed` with a
-  `permissionReference`.
-- Third-party or unreadable watermarks become `NeedsCleanOriginal`. Ask the owner
-  for a clean photo. Nothing is removed.
-- Processed output goes live only after an admin approves it. The original stays
-  in storage (`ApartmentImage.OriginalStoragePath`) and `revert` restores it.
+The Angular repository is `site`; the ASP.NET Core repository is the sibling `WebsiteAPI`. `server.mjs` is the Angular host/proxy, not the image processor. `WebsiteAPI-watermark-deploy` is a separate older checkout and was not changed; deploy the reviewed `WebsiteAPI` changes, not that checkout.
 
-## Modal
+Previously, `ImageAiService.check` posted multipart uploads to `PhotoChecksController` (`/api/image-processing/check`), which encoded the image and called `ModalImageAiClient` at configured `ImageAi__Endpoint` + `/v1/process`. It also fetched `/health` for cache versions. The Watermark Remover immediately processed added images and asserted permission itself. List Your Property ran concurrent background OCR checks and could automatically replace selected files after detecting own/partner marks. The admin queue used `ImageProcessingQueue` + PostgreSQL `ImageProcessingJobs` + hosted `ImageProcessingWorker`. The worker downloaded original Supabase objects, called Modal, stored processed bytes, and waited for admin approval. Apartment uploads could enqueue detection jobs through `QueueWatermarkScanAsync`.
 
-Run from `ImageAi/modal` (Windows: `py -m modal`, else `modal`):
+The provider client, live Modal test, OCR brand-assumption tests, and tracked `ImageAi/modal` Python deployment/vendor assets have been removed. The new shared `OpenAIImageEditingService` uses one multipart `POST https://api.openai.com/v1/images/edits`, with a server-side Bearer key, explicit model, size, quality and PNG output. There is no automatic retry or model fallback. SkiaSharp validates real image formats/dimensions and composites masked edits; matching Linux native assets are included for Railway.
 
-```
-modal secret create velven-image-ai VELVEN_IMAGE_AI_TOKEN=<random 48+ chars>
-modal run velven_image_ai.py::prepare_models      # one time, caches weights in Volume
-modal deploy velven_image_ai.py
-modal run velven_image_ai.py::benchmark --folder <dir of 100 authorized photos> --mode detect
-modal run velven_image_ai.py::benchmark --folder <dir> --mode process --basis owned --out bench-process.csv
-```
+Existing JWT roles, database schema, listing form, upload endpoints, listing publication, Supabase service and gallery workflows remain. No migration is required. GPU fields and historical statuses remain only for compatibility with existing database records. Legacy pending/running jobs are not resumed by this pipeline. Only explicit admin queue jobs tagged with the configured new pipeline fingerprint are eligible. Interrupted requests require manual review, since they may have been billed.
 
-GPU class: T4, `min_containers=0`, `max_containers=1`, `scaledown_window=60`.
+## User workflows
 
-Endpoint: `POST https://<workspace>--velven-image-ai.us-east.modal.run/v1/process`
-with `Authorization: Bearer <token>`. `GET /health` checks the token.
+- Both editing workflows are admin-only during this initial trial. Ordinary listing uploads remain available to existing roles and never invoke paid editing.
+- Watermark Remover: choose photos, attest ownership or explicit permission, optionally give a same-dimension PNG mask, then click Process. Review with the keyboard-accessible before/after toggle; download original or PNG result. Nothing is published.
+- List Your Property: choose natural enhancement, authorized watermark removal or unwanted movable-object removal. Object removal needs a mask and description. Licensed photos need a permission reference. Create a preview for an individual photo, compare it with the original, approve for selection or discard. Saving/submitting the listing remains a separate existing action. Restore original is available before submission.
+- Original uploads are separately retained under `image-edit-originals`; drafts under `image-edit-drafts`, referenced by the existing job table. The listing uploader sends only an approved selected file through the existing storage workflow; the original is retained in the image job even when it is not a separate gallery image.
+- Existing stored listing jobs retain the original storage path and require the existing admin approve endpoint before the gallery pointer changes. Revert restores the original.
+- Masks: PNG only, up to 8 MB, exact displayed dimensions after EXIF orientation, at least one fully transparent pixel. Fully transparent pixels are editable; every other decoded original pixel is copied back into the result. Images are limited to 8 MB, 20 megapixels, one frame, PNG/JPEG/WebP. JPEG EXIF orientation is normalized before editing. Results are PNG and returned at displayed original dimensions. Unmasked generative editing can alter detail; human review is required. Configured API size determines detail/cost before output is resized to original dimensions.
+- `/Hdreal` and `/RemoveWaterMark` are interpreted as natural photorealistic preservation and authorized watermark-removal instructions. They are not OpenAI API parameters or documented ChatGPT settings. The service sends supported fields only.
 
-## API configuration (Railway variables)
+## Railway server configuration
 
-| Variable | Test value |
+Keep `ImageAi__Enabled=false` until deployment and paid testing are approved. Do not put secrets in Angular, source, logs or browser configuration.
+
+| Variable | Initial value / purpose |
 | --- | --- |
-| `ImageAi__Enabled` | `false` until approved |
-| `ImageAi__AutoEnqueueUploads` | `false` |
-| `ImageAi__Endpoint` | Modal URL above |
-| `ImageAi__Token` | same value as the Modal secret |
-| `ImageAi__MonthlyBudgetUsd` | `15` |
-| `ImageAi__BudgetCutoffUsd` | `12` |
-| `ImageAi__MonthlyImageQuota` | `5000` |
-| `ImageAi__GpuUsdPerSecond` | `0.000164` |
+| `OPENAI_API_KEY` | Secret, restricted to the ASP.NET service; use a dedicated OpenAI project |
+| `ImageAi__Model` | REQUIRED explicit supported image-edit model accessible to your project; no default or paid fallback |
+| `ImageAi__Enabled` | `false` initially |
+| `ImageAi__Size` | `1024x1024`; allowed `1024x1024`, `1536x1024`, `1024x1536`, `auto` |
+| `ImageAi__Quality` | `low`; allowed `low`, `medium`, `high`, `auto` |
+| `ImageAi__EstimatedRequestUsd` | `0.10` conservative starting reservation, NOT an invoice or guaranteed maximum |
+| `ImageAi__DailyUserLimit` | `5` attempts per UTC day per administrator |
+| `ImageAi__MonthlyImageQuota` | `20` attempts per calendar month |
+| `ImageAi__MonthlyBudgetUsd` | `10` reporting reference |
+| `ImageAi__BudgetCutoffUsd` | `8` application estimated-spend cutoff |
+| `ImageAi__RequestTimeoutSeconds` | `180` (10–300 allowed) |
+| `ImageAi__PollSeconds` | `10`, explicit stored-listing jobs only |
 
-## Admin endpoints (`Admin` role)
+Current official documentation lists GPT Image 2.5 Sunburst/Flare and GPT Image 2 variants for edits. Choose a supported GPT Image model in your actual project; account access is unverified because no account calls were authorized or performed. `gpt-image-1` was shut down on 2026-10-23; do not configure it. A model permission/not-found error does not trigger another model or an automatic retry. Confirm model access and capabilities in the account before enabling.
 
-- `GET  /api/image-processing/status` - budget, quota, counts per status
-- `POST /api/image-processing/jobs` - `{ apartmentId | apartmentImageIds, mode, authorizationBasis, permissionReference }`
-- `GET  /api/image-processing/jobs?status=NeedsCleanOriginal`
-- `POST /api/image-processing/jobs/{id}/approve | reject | revert | retry | clean-original-requested`
+Existing PostgreSQL and Supabase connection/storage variables remain unchanged. New drafts use the existing bucket, authentication, signed URL and storage client. Keep originals and drafts private using the bucket's existing access policies. No storage policies were changed remotely.
+
+## Cost and concurrency
+
+Concurrency is fixed at ONE paid request globally across controller requests, queued work and Railway replicas using a PostgreSQL session advisory lock (`865214900172`). Concurrent callers receive 429; worker skips a busy cycle. Budget and duplicate checks and spend reservations execute while the lock is held. Before sending to OpenAI, the existing job table records a reservation. Failures, timeouts, provider errors and storage failures retain it; no automatic retry, stale-job recovery or retry endpoint is enabled. Successful duplicate upload requests return the saved draft without paying again; failed duplicates are blocked. Fingerprints include user, image bytes, mask, operation, instructions, rights and provider settings. Stored-listing job reuse is scoped to user, source, mode, authorization and pipeline settings. Quotas include failed attempts. Hourly rate limit is 5 accepted endpoint attempts per user, and admin enqueue batches contain at most 5 images.
+
+At the default reservation of $0.10, 20 monthly attempts reserve approximately $2.00, leaving room against an $8 application cutoff and initial $10 credit. This is an application estimate, NOT a hard billing limit or guaranteed cost. Actual price varies with model, image/text input tokens, output tokens, quality and size. For example, 1,000 image-input tokens at $8/M + 2,000 output tokens at $30/M cost $0.068 plus prompt text; this is illustrative token arithmetic, not a predicted token count. Provider usage (when returned), model, size and quality are retained in job metadata. Estimated cost is logged, including reservations that are retained on failed requests. Compare against OpenAI usage before raising quotas or enabling higher quality, and update the per-request estimate to include your observed input cost. Other apps or projects using credits are outside these application controls. Calendar-month counters reset; the code does not track the account's live credit balance.
+
+Sources checked 2026-11-05:
+- https://developers.openai.com/api/reference/resources/images/methods/edit
+- https://developers.openai.com/api/docs/guides/image-generation
+- https://developers.openai.com/api/docs/pricing
+
+## Modal resources to remove manually after rollout verification
+
+No remote Modal resources were modified. In the correct Modal workspace, verify no other consumers exist, then manually retire:
+
+- App/deployment: `velven-image-ai` (including `Processor`, web `/v1/process` and `/health` functions).
+- Volume: `velven-image-models` (cached Florence/LaMa model weights).
+- Modal secret: `velven-image-ai`, containing `VELVEN_IMAGE_AI_TOKEN`.
+- Railway variables: `ImageAi__Endpoint`, `ImageAi__Token`, `ImageAi__AutoEnqueueUploads`, `ImageAi__GpuUsdPerSecond`, `ImageAi__IdleSecondsPerColdStart`, `ImageAi__MaxAttempts`, `ImageAi__OwnBrandTerms__*`, `ImageAi__PartnerBrandTerms__*`; remove any separately configured `VELVEN_IMAGE_AI_TOKEN` for this integration.
+- Personal Modal CLI credentials (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`), if present, may serve other projects. Do not delete them without a separate account audit.
+
+Old database jobs, original Supabase objects, volumes and secrets are not automatically deleted. No Python/Modal dependency remains in application runtime. Any ignored local Python caches are excluded from the Docker build context.
+
+## Validation and deployment
+
+Offline integration tests use TestServer, an EF in-memory database, mocked OpenAI and Supabase HTTP handlers, and a test lock. They cover real multipart upload routes, admin authorization, permission attestation, corrupt uploads, PNG/JPEG/WebP, mask validation/compositing, provider failure/cancellation, duplicate prevention, estimated-spend retention, quota/busy responses, draft approval, original/result downloads and storage failure. They do not prove production PostgreSQL locking, real account access, model output quality or remote Supabase policies.
+
+Run:
+```
+dotnet test "Website API.Tests/Website API.Tests.csproj" --filter FullyQualifiedName~OpenAIImageEditingTests
+dotnet publish "Website API.csproj" -c Release -o <local-output-directory>
+```
+From `site`, run `npx ng build --configuration production` and `node scripts/test-image-editing-ui.mjs` against a local Angular server. UI requests are intercepted with fixtures; no provider calls are made. Production PostgreSQL/Supabase and paid output fidelity require a separately approved deployment/smoke test. Do not enable, deploy, delete remote resources or make paid tests as part of these local checks.
+
+Final local verification: 175 backend tests passed, 11 PostgreSQL-dependent tests skipped (including the optional real advisory-lock test). The image-editing subset has 18 passing offline tests and one optional PostgreSQL test. Angular production build, offline browser checks, and API Release publish passed. Existing Angular CSS budget / CommonJS warnings and pre-existing transitive `System.Security.Cryptography.Pkcs` vulnerability warnings remain. Native Linux binaries are included but this Windows session did not execute the Railway Linux container.

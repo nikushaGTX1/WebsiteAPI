@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Website_API.Data;
 using Website_API.Models;
@@ -56,6 +57,7 @@ public class ImageProcessingController : ControllerBase
     }
 
     [HttpPost("jobs")]
+    [EnableRateLimiting("ImageChecks")]
     public async Task<IActionResult> Enqueue(
         EnqueueRequest request,
         CancellationToken cancellationToken)
@@ -65,13 +67,12 @@ public class ImageProcessingController : ControllerBase
             return Conflict(new { message = "Image AI is disabled." });
         }
 
-        if (request.Mode is not ("detect" or "process"))
+        if (request.Mode is not ("process" or "enhance"))
         {
-            return BadRequest(new { message = "Mode must be detect or process." });
+            return BadRequest(new { message = "Mode must be process or enhance." });
         }
 
-        if (request.Mode == "process" &&
-            request.AuthorizationBasis == ImageAuthorizationBasis.Unknown)
+        if (request.AuthorizationBasis is not (ImageAuthorizationBasis.Owned or ImageAuthorizationBasis.Licensed))
         {
             return BadRequest(new
             {
@@ -88,6 +89,7 @@ public class ImageProcessingController : ControllerBase
             });
         }
 
+        if (request.PermissionReference?.Length > 500) return BadRequest(new { message = "Permission reference must be at most 500 characters." });
         var query = _context.ApartmentImages.AsQueryable();
         if (request.ApartmentImageIds is { Length: > 0 })
         {
@@ -102,7 +104,7 @@ public class ImageProcessingController : ControllerBase
             return BadRequest(new { message = "Give apartmentImageIds or apartmentId." });
         }
 
-        var images = await query.Take(200).ToListAsync(cancellationToken);
+        var images = await query.Take(5).ToListAsync(cancellationToken);
         var jobs = await _queue.EnqueueAsync(
             images,
             request.Mode,
@@ -175,6 +177,33 @@ public class ImageProcessingController : ControllerBase
         }
 
         return Ok(items);
+    }
+
+    [HttpPost("jobs/{id:long}/approve-draft")]
+    public async Task<IActionResult> ApproveDraft(long id, CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var job = await _context.ImageProcessingJobs.FirstOrDefaultAsync(j => j.Id == id && j.RequestedByUserId == userId, cancellationToken);
+        if (job is null) return NotFound();
+        if (job.ApartmentImageId is not null || job.ProcessedStoragePath is null || job.Status != ImageJobStatus.AwaitingApproval)
+            return Conflict(new { message = "Only your pending upload previews can be approved." });
+        job.Status = ImageJobStatus.Approved;
+        job.ReviewedAt = DateTime.UtcNow;
+        job.ReviewedByUserId = userId;
+        await _context.SaveChangesAsync(cancellationToken);
+        return Ok(new { message = "Draft approved for selection. Publish the listing separately." });
+    }
+
+    [HttpGet("jobs/{id:long}/download")]
+    public async Task<IActionResult> Download(long id, [FromQuery] bool original = false, CancellationToken cancellationToken = default)
+    {
+        var job = await _context.ImageProcessingJobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+        var path = original ? job?.SourceStoragePath : job?.ProcessedStoragePath;
+        if (path is null || path == ImageProcessingJob.UploadFormSource) return NotFound();
+        var bytes = await _storageService.DownloadAsync(path, cancellationToken);
+        Response.Headers.CacheControl = "no-store";
+        var type = OpenAIImageEditingService.ValidateImage(bytes);
+        return File(bytes, type, original ? "original" + Path.GetExtension(path) : "edited.png");
     }
 
     [HttpPost("jobs/{id:long}/approve")]
@@ -255,16 +284,8 @@ public class ImageProcessingController : ControllerBase
     [HttpPost("jobs/{id:long}/retry")]
     public async Task<IActionResult> Retry(long id, CancellationToken cancellationToken)
     {
-        var updated = await _context.ImageProcessingJobs
-            .Where(job => job.Id == id && job.Status == ImageJobStatus.Failed)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(job => job.Status, ImageJobStatus.Pending)
-                    .SetProperty(job => job.Attempts, 0)
-                    .SetProperty(job => job.NextAttemptAt, DateTime.UtcNow),
-                cancellationToken);
-
-        return updated == 1 ? Ok() : Conflict(new { message = "Only failed jobs can be retried." });
+        await Task.CompletedTask;
+        return Conflict(new { message = "Retries are disabled during the initial credit trial; review potentially billed failures first." });
     }
 
     // Records that the listing owner was asked for an unwatermarked original.

@@ -16,7 +16,7 @@ public sealed class ImageProcessingQueue
         _options = options.Value;
     }
 
-    public bool Enabled => _options.Enabled;
+    public bool Enabled => _options.Enabled && _options.Valid;
 
     // Inserts rows only; the worker does the slow part, so callers never wait on GPU.
     public async Task<List<ImageProcessingJob>> EnqueueAsync(
@@ -27,6 +27,9 @@ public sealed class ImageProcessingQueue
         string? requestedByUserId,
         CancellationToken cancellationToken)
     {
+        if (!Enabled) throw new InvalidOperationException("Image editing is disabled or unconfigured.");
+        if (mode is not ("process" or "enhance") || basis == ImageAuthorizationBasis.Unknown)
+            throw new ArgumentException("Only explicitly authorized editing jobs can be queued.");
         var list = images.ToList();
         var imageIds = list.Select(image => image.Id).ToList();
         var openIds = await _context.ImageProcessingJobs
@@ -47,6 +50,7 @@ public sealed class ImageProcessingQueue
                 // Always process the original, even if a processed version is live.
                 SourceStoragePath = image.OriginalStoragePath ?? image.StoragePath,
                 Mode = mode,
+                PipelineVersion = OpenAIImageEditingService.BuildCacheVersion(_options),
                 AuthorizationBasis = basis,
                 PermissionReference = permissionReference,
                 RequestedByUserId = requestedByUserId
@@ -70,7 +74,7 @@ public sealed class ImageProcessingQueue
             DateTimeKind.Utc);
 
         var month = _context.ImageProcessingJobs
-            .Where(job => job.StartedAt >= monthStart && job.GpuSeconds > 0);
+            .Where(job => job.StartedAt >= monthStart);
         var spent = await month.SumAsync(job => job.EstimatedCostUsd, cancellationToken);
         var count = await month.CountAsync(cancellationToken);
         var gpuSeconds = await month.SumAsync(job => job.GpuSeconds, cancellationToken);
