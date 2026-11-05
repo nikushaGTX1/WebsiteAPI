@@ -28,4 +28,7 @@ public class AppUser : IdentityUser
 
     /// <summary>"ka", "en" or "ru"; used for alert emails.</summary>
     public string? PreferredLanguage { get; set; }
+
+    /// <summary>English country name chosen at sign-up ("Georgia"); Velven Match uses it instead of asking again.</summary>
+    public string? Nationality { get; set; }
 }

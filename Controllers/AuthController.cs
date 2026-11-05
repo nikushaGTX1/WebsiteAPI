@@ -69,7 +69,8 @@ public class AuthController : ControllerBase
             UserName = string.IsNullOrWhiteSpace(dto.UserName) ? dto.Email.Trim() : dto.UserName.Trim(),
             Email = dto.Email,
             FullName = dto.FullName,
-            PhoneNumber = phone
+            PhoneNumber = phone,
+            Nationality = string.IsNullOrWhiteSpace(dto.Nationality) ? null : dto.Nationality.Trim()
         };
 
         var result = await _userManager.CreateAsync(user, dto.Password);
@@ -125,6 +126,7 @@ public class AuthController : ControllerBase
                 user.Email,
                 user.FullName,
                 user.PhoneNumber,
+                user.Nationality,
                 ProfilePicture = profilePicture,
                 ProfilePicturePath = user.ProfilePicture,
                 user.Bio,

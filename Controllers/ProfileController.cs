@@ -53,6 +53,7 @@ public class ProfileController : ControllerBase
             user.FullName,
             user.Bio,
             user.PhoneNumber,
+            user.Nationality,
             ProfilePicture = profilePicture,
             ProfilePicturePath = user.ProfilePicture,
             user.IsAgent,
@@ -75,6 +76,9 @@ public class ProfileController : ControllerBase
             user.FullName = dto.FullName;
 
         user.Bio = dto.Bio;
+
+        if (dto.Nationality is not null)
+            user.Nationality = string.IsNullOrWhiteSpace(dto.Nationality) ? null : dto.Nationality.Trim();
 
         if (dto.PhoneNumber is not null)
         {

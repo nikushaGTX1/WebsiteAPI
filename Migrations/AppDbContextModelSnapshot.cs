@@ -562,6 +562,101 @@ namespace Website_API.Migrations
                     b.ToTable("ApartmentImage", (string)null);
                 });
 
+            modelBuilder.Entity("Website_API.Models.ApartmentOffer", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ApartmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("ClientProfileId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReviewedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReviewerUserId")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("ShareWithOtherClients")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("pending");
+
+                    b.Property<string>("SubmittedByUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApartmentId");
+
+                    b.HasIndex("ReviewedByUserId");
+
+                    b.HasIndex("SubmittedByUserId");
+
+                    b.HasIndex("ClientProfileId", "ApartmentId")
+                        .IsUnique();
+
+                    b.HasIndex("ReviewerUserId", "Status");
+
+                    b.ToTable("ApartmentOffers");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ApartmentOfferMatch", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AgentUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("ApartmentOfferId")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("ClientProfileId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientProfileId");
+
+                    b.HasIndex("AgentUserId", "ReadAt");
+
+                    b.HasIndex("ApartmentOfferId", "ClientProfileId")
+                        .IsUnique();
+
+                    b.ToTable("ApartmentOfferMatches");
+                });
+
             modelBuilder.Entity("Website_API.Models.AppUser", b =>
                 {
                     b.Property<string>("Id")
@@ -603,6 +698,9 @@ namespace Website_API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(true);
+
+                    b.Property<string>("Nationality")
+                        .HasColumnType("text");
 
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)
@@ -882,101 +980,6 @@ namespace Website_API.Migrations
                         .IsUnique();
 
                     b.ToTable("ClientIntakeLinks");
-                });
-
-            modelBuilder.Entity("Website_API.Models.ApartmentOffer", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ApartmentId")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("ClientProfileId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("ReadAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("ReviewedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ReviewedByUserId")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ReviewerUserId")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("ShareWithOtherClients")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("pending");
-
-                    b.Property<string>("SubmittedByUserId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApartmentId");
-
-                    b.HasIndex("ReviewedByUserId");
-
-                    b.HasIndex("SubmittedByUserId");
-
-                    b.HasIndex("ClientProfileId", "ApartmentId")
-                        .IsUnique();
-
-                    b.HasIndex("ReviewerUserId", "Status");
-
-                    b.ToTable("ApartmentOffers");
-                });
-
-            modelBuilder.Entity("Website_API.Models.ApartmentOfferMatch", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AgentUserId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("ApartmentOfferId")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("ClientProfileId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("ReadAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClientProfileId");
-
-                    b.HasIndex("AgentUserId", "ReadAt");
-
-                    b.HasIndex("ApartmentOfferId", "ClientProfileId")
-                        .IsUnique();
-
-                    b.ToTable("ApartmentOfferMatches");
                 });
 
             modelBuilder.Entity("Website_API.Models.ClientNotification", b =>
@@ -2258,47 +2261,6 @@ namespace Website_API.Migrations
                     b.Navigation("Apartment");
                 });
 
-            modelBuilder.Entity("Website_API.Models.CanonicalStreet", b =>
-                {
-                    b.HasOne("Website_API.Models.LocationArea", "City")
-                        .WithMany()
-                        .HasForeignKey("CityId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Website_API.Models.LocationArea", "District")
-                        .WithMany()
-                        .HasForeignKey("DistrictId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("City");
-
-                    b.Navigation("District");
-                });
-
-            modelBuilder.Entity("Website_API.Models.ClientCoupon", b =>
-                {
-                    b.HasOne("Website_API.Models.AppUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Website_API.Models.ClientIntakeLink", b =>
-                {
-                    b.HasOne("Website_API.Models.AppUser", "Agent")
-                        .WithMany()
-                        .HasForeignKey("AgentUserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Agent");
-                });
-
             modelBuilder.Entity("Website_API.Models.ApartmentOffer", b =>
                 {
                     b.HasOne("Website_API.Models.Apartment", "Apartment")
@@ -2367,9 +2329,45 @@ namespace Website_API.Migrations
                     b.Navigation("Offer");
                 });
 
-            modelBuilder.Entity("Website_API.Models.ApartmentOffer", b =>
+            modelBuilder.Entity("Website_API.Models.CanonicalStreet", b =>
                 {
-                    b.Navigation("Matches");
+                    b.HasOne("Website_API.Models.LocationArea", "City")
+                        .WithMany()
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Website_API.Models.LocationArea", "District")
+                        .WithMany()
+                        .HasForeignKey("DistrictId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("City");
+
+                    b.Navigation("District");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ClientCoupon", b =>
+                {
+                    b.HasOne("Website_API.Models.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ClientIntakeLink", b =>
+                {
+                    b.HasOne("Website_API.Models.AppUser", "Agent")
+                        .WithMany()
+                        .HasForeignKey("AgentUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Agent");
                 });
 
             modelBuilder.Entity("Website_API.Models.ClientNotification", b =>
@@ -2653,6 +2651,11 @@ namespace Website_API.Migrations
                     b.Navigation("Images");
 
                     b.Navigation("ListingUploads");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ApartmentOffer", b =>
+                {
+                    b.Navigation("Matches");
                 });
 
             modelBuilder.Entity("Website_API.Models.AppUser", b =>
