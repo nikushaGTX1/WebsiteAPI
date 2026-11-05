@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
@@ -29,8 +31,30 @@ public class ClientBoardController(AppDbContext db, SupabaseStorageService stora
 
     [Authorize(Roles = StaffRoles)]
     [HttpGet("client-intake-links")]
-    public async Task<IActionResult> Links(CancellationToken ct) => Ok(await OwnLinks.AsNoTracking()
-        .OrderByDescending(x => x.CreatedAt).Select(x => new { x.Id, x.Token, x.Slug, x.IsActive, x.CreatedAt }).ToListAsync(ct));
+    public async Task<IActionResult> Links(CancellationToken ct)
+    {
+        // Links created before agent-name slugs existed get one on the next load, so a shared
+        // URL is always short and recognisable (velven.ge/m/nika instead of a 48-character token).
+        var links = await OwnLinks.OrderByDescending(x => x.CreatedAt).ToListAsync(ct);
+        var agent = await db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == UserId, ct);
+        var changed = false;
+        foreach (var link in links.Where(x => string.IsNullOrWhiteSpace(x.Slug)).OrderBy(x => x.CreatedAt))
+        {
+            link.Slug = await UniqueSlugAsync(AgentSlug(agent), link.Id, ct);
+            changed = true;
+        }
+        if (changed)
+        {
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: "23505" })
+            {
+                // Another request claimed the same slug first; the next load picks another one.
+                db.ChangeTracker.Clear();
+                links = await OwnLinks.AsNoTracking().OrderByDescending(x => x.CreatedAt).ToListAsync(ct);
+            }
+        }
+        return Ok(links.Select(x => new { x.Id, x.Token, x.Slug, x.IsActive, x.CreatedAt }).ToList());
+    }
 
     [Authorize(Roles = StaffRoles)]
     [HttpPost("client-intake-links")]
@@ -38,10 +62,52 @@ public class ClientBoardController(AppDbContext db, SupabaseStorageService stora
     {
         if (UserId is null || !await StaffIds.ContainsAsync(UserId, ct)) return Forbid();
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
-        var link = new ClientIntakeLink { Token = token, AgentUserId = UserId };
+        var agent = await db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == UserId, ct);
+        var link = new ClientIntakeLink { Token = token, Slug = await UniqueSlugAsync(AgentSlug(agent), null, ct), AgentUserId = UserId };
         db.ClientIntakeLinks.Add(link);
         await db.SaveChangesAsync(ct);
         return Ok(new { link.Id, link.Token, link.Slug, link.IsActive, link.CreatedAt });
+    }
+
+    /// <summary>
+    /// A short intake path built from the agent's name ("Nika Beridze" -> "nika-beridze"),
+    /// falling back to the login name and finally to "agent".
+    /// </summary>
+    private static string AgentSlug(AppUser? agent)
+    {
+        var slug = Slugify(agent?.FullName);
+        if (slug.Length < 3) slug = Slugify(agent?.UserName?.Split('@')[0]);
+        if (slug.Length < 3) slug = Slugify(agent?.UserName);
+        if (slug.Length < 3) return "agent";
+        // The slug pattern requires a letter first.
+        return char.IsAsciiLetter(slug[0]) ? slug : $"agent-{slug}";
+    }
+
+    private static string Slugify(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        var builder = new StringBuilder(value.Length);
+        foreach (var character in value.Normalize(NormalizationForm.FormD))
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark) continue;
+            var ascii = character is >= 'A' and <= 'Z' ? (char)(character + 32) : character;
+            if (ascii is >= 'a' and <= 'z' or >= '0' and <= '9') builder.Append(ascii);
+            else if (ascii is ' ' or '-' or '_' or '.') builder.Append('-');
+        }
+        var slug = Regex.Replace(builder.ToString(), "-+", "-").Trim('-');
+        return slug.Length > 48 ? slug[..48].Trim('-') : slug;
+    }
+
+    private async Task<string> UniqueSlugAsync(string baseSlug, long? excludeId, CancellationToken ct)
+    {
+        for (var suffix = 1; suffix <= 100; suffix++)
+        {
+            var candidate = suffix == 1 ? baseSlug : $"{baseSlug}-{suffix}";
+            var taken = await db.ClientIntakeLinks.AnyAsync(x =>
+                (!excludeId.HasValue || x.Id != excludeId.Value) && (x.Slug == candidate || x.Token == candidate), ct);
+            if (!taken) return candidate;
+        }
+        return $"{baseSlug}-{Guid.NewGuid():N}"[..Math.Min(baseSlug.Length + 9, 64)];
     }
 
     [Authorize(Roles = StaffRoles)]
