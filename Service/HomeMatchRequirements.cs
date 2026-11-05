@@ -13,6 +13,8 @@ namespace Website_API.Services;
 public class SavedSearchProfile
 {
     public string PropertyGoal { get; set; } = "";
+    /// <summary>"Apartment" or "House" (private house). Older searches have none and mean Apartment.</summary>
+    public string? HomeType { get; set; }
     public List<string> Districts { get; set; } = [];
     public bool LocationFlexible { get; set; }
     public MapArea? SelectedMapArea { get; set; }
@@ -143,6 +145,8 @@ public static class HomeMatchRequirements
     public static RequirementStatus Evaluate(Apartment apartment, SavedSearchProfile profile, DateTime today)
     {
         if (!MatchesPropertyGoal(apartment, profile)) return RequirementStatus.Alternative;
+        // Same rule as the website: a private house never matches "apartment", and back.
+        if (!MatchesHomeType(apartment, profile)) return RequirementStatus.Alternative;
         if (!WithinBudgetCeiling(apartment.Price, profile)) return RequirementStatus.Alternative;
 
         var mismatch = false;
@@ -181,6 +185,27 @@ public static class HomeMatchRequirements
 
     private static bool IsRent(SavedSearchProfile profile) =>
         string.Equals(profile.PropertyGoal, "Rent", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>"Apartment", "House", "Other" (plot, commercial, hotel) or null when the listing does not say.</summary>
+    public static string? ListingHomeType(Apartment apartment)
+    {
+        var type = Regex.Match(apartment.Description ?? "", @"(?:^|[|
+])s*Type:s*([^|
+]+)", RegexOptions.IgnoreCase).Groups[1].Value.Trim().ToLowerInvariant();
+        var text = type.Length > 0 ? type : (apartment.Title ?? "").ToLowerInvariant();
+        if (text.Length == 0) return null;
+        if (Regex.IsMatch(text, "commercial|office|shop|store|plot|land|hotel|კომერციულ|ფართი|მიწ|სასტუმრო|коммерч|участ|гостиниц")) return "Other";
+        if (Regex.IsMatch(text, "house|cottage|villa|სახლი|აგარაკი|дом|коттедж")) return "House";
+        if (Regex.IsMatch(text, "apartment|apartament|flat|ბინა|квартир")) return "Apartment";
+        return type.Length > 0 ? "Other" : null;
+    }
+
+    public static bool MatchesHomeType(Apartment apartment, SavedSearchProfile profile)
+    {
+        var wanted = string.Equals(profile.HomeType, "House", StringComparison.OrdinalIgnoreCase) ? "House" : "Apartment";
+        var actual = ListingHomeType(apartment);
+        return actual is null || actual == wanted;
+    }
 
     public static bool MatchesPropertyGoal(Apartment apartment, SavedSearchProfile profile)
     {

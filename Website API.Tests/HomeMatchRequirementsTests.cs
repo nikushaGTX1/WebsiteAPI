@@ -55,6 +55,21 @@ public class HomeMatchRequirementsTests
         Assert.Equal(RequirementStatus.Exact, Evaluate(Listing(), Profile()));
 
     [Fact]
+    public void HomeTypeMustMatchTheFollowUpAnswer()
+    {
+        var house = Listing(a => a.Description = "Type: Private house | Deal: For Rent");
+        var flat = Listing(a => a.Description = "Type: Apartment | Deal: For Rent");
+        // Older searches have no answer: they meant an apartment.
+        Assert.Equal(RequirementStatus.Alternative, Evaluate(house, Profile()));
+        Assert.Equal(RequirementStatus.Exact, Evaluate(flat, Profile()));
+        Assert.Equal(RequirementStatus.Exact, Evaluate(house, Profile(p => p.HomeType = "House")));
+        Assert.Equal(RequirementStatus.Alternative, Evaluate(flat, Profile(p => p.HomeType = "House")));
+        Assert.Equal(RequirementStatus.Alternative, Evaluate(Listing(a => a.Description = "Type: Commercial area | Deal: For Rent"), Profile()));
+        // A listing that does not say its type is not excluded.
+        Assert.Equal(RequirementStatus.Exact, Evaluate(Listing(a => { a.Description = "Deal: For Rent"; a.Title = "For rent in Saburtalo"; }), Profile()));
+    }
+
+    [Fact]
     public void BudgetBelowMinimumAndInsideRange()
     {
         var profile = Profile(p => { p.BudgetMin = 1300; p.BudgetMax = 1500; });

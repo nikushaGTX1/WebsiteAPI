@@ -4,6 +4,9 @@ public class HomeMatchProfileRequest
 {
     public string PropertyGoal { get; set; } = string.Empty;
 
+    /// <summary>"Apartment" or "House"; empty on older clients (= Apartment).</summary>
+    public string? HomeType { get; set; }
+
     public List<string> Districts { get; set; } = [];
     public bool LocationFlexible { get; set; }
 
