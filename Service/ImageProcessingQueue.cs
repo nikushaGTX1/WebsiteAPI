@@ -78,9 +78,11 @@ public sealed class ImageProcessingQueue
             // Provider budgets span configuration changes but exclude historical Modal work.
             .Where(job => job.StartedAt >= monthStart && job.PipelineVersion != null &&
                 job.PipelineVersion.StartsWith("openai-edit-v1:"));
-        var spent = await month.SumAsync(job => job.EstimatedCostUsd, cancellationToken);
-        var count = await month.CountAsync(cancellationToken);
-        var gpuSeconds = await month.SumAsync(job => job.GpuSeconds, cancellationToken);
+        var rows = await month.Select(job => new { job.EstimatedCostUsd, job.SafetyReportJson, job.DuplicateOfJobId }).ToListAsync(cancellationToken);
+        var charges = rows.Select(row => OpenAIImageCostCalculator.ForJob(row.SafetyReportJson, row.EstimatedCostUsd, row.DuplicateOfJobId)).ToList();
+        var spent = charges.Sum(charge => charge.Usd);
+        var count = rows.Count;
+        var gpuSeconds = 0d; // Kept for response compatibility; OpenAI is token-billed.
 
         var daysElapsed = Math.Max(1, (DateTime.UtcNow - monthStart).TotalDays);
         var daysInMonth = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);
@@ -92,12 +94,16 @@ public sealed class ImageProcessingQueue
             ImagesProcessed: count,
             MonthlyImageQuota: _options.MonthlyImageQuota,
             GpuSeconds: Math.Round(gpuSeconds, 1),
-            SpentUsd: Math.Round(spent, 4),
+            SpentUsd: spent,
             ProjectedUsd: Math.Round(projected, 2),
             BudgetCutoffUsd: _options.BudgetCutoffUsd,
             MonthlyBudgetUsd: _options.MonthlyBudgetUsd,
             Exhausted: spent >= _options.BudgetCutoffUsd ||
-                       count >= _options.MonthlyImageQuota);
+                       count >= _options.MonthlyImageQuota,
+            UsageCostUsd: charges.Where(charge => charge.Basis == "usage").Sum(charge => charge.Usd),
+            ReservedCostUsd: charges.Where(charge => charge.Basis == "reservation").Sum(charge => charge.Usd),
+            UsagePricedRequests: charges.Count(charge => charge.Basis == "usage"),
+            UnreconciledRequests: charges.Count(charge => charge.Basis == "reservation"));
     }
 }
 
@@ -111,4 +117,8 @@ public sealed record ImageBudgetStatus(
     decimal ProjectedUsd,
     decimal BudgetCutoffUsd,
     decimal MonthlyBudgetUsd,
-    bool Exhausted);
+    bool Exhausted,
+    decimal UsageCostUsd,
+    decimal ReservedCostUsd,
+    int UsagePricedRequests,
+    int UnreconciledRequests);

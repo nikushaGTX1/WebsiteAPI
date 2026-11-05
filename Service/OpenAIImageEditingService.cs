@@ -34,7 +34,7 @@ public sealed class OpenAIImageEditingService
         return codec.EncodedFormat switch { SKEncodedImageFormat.Png => "image/png", SKEncodedImageFormat.Jpeg => "image/jpeg", SKEncodedImageFormat.Webp when !mask => "image/webp", _ => throw new ArgumentException("Use PNG, JPEG or WebP.") };
     }
 
-    public async Task<ImageEditResult> ProcessAsync(ImageEditRequest body, CancellationToken ct)
+    public async Task<ImageEditResult> ProcessAsync(ImageEditRequest body, CancellationToken ct, Func<ImageEditAccounting, Task>? recordUsage = null)
     {
         if (!_options.Enabled || !Configured) throw new InvalidOperationException("Image editing is disabled or unconfigured.");
         if (body.Mode is not ("process" or "enhance" or "objects")) throw new ArgumentException("Choose an explicit editing operation; automatic detection is disabled.");
@@ -82,6 +82,17 @@ public sealed class OpenAIImageEditingService
         using var response = await _http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode) throw new ImageEditException((int)response.StatusCode, "OpenAI image editing failed. Check account model access, limits and configuration before a manual retry.");
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        string? StringField(string name) => json.RootElement.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        var usageElement = json.RootElement.TryGetProperty("usage", out var usageValue) ? usageValue.Clone() : (JsonElement?)null;
+        var responseModel = StringField("model");
+        // Unknown or conflicting response models never inherit another model's rates.
+        var pricedModel = responseModel ?? _options.Model;
+        var accounting = new ImageEditAccounting(_options.Model!, _options.Quality, _options.Size,
+            responseModel, StringField("quality"), StringField("size"),
+            response.Headers.TryGetValues("x-request-id", out var ids) ? ids.FirstOrDefault() : null,
+            usageElement, usageElement is { } found ? OpenAIImageCostCalculator.Calculate(pricedModel, found) : null);
+        // Persist usage before decoding/compositing or storage, which can fail after the API has billed.
+        if (recordUsage is not null) await recordUsage(accounting);
         var encoded = json.RootElement.GetProperty("data")[0].GetProperty("b64_json").GetString() ?? throw new InvalidOperationException("OpenAI returned no image.");
         var output = Convert.FromBase64String(encoded);
         ValidateImage(output);
@@ -104,7 +115,7 @@ public sealed class OpenAIImageEditingService
             ProcessedB64 = Convert.ToBase64String(output),
             ProcessedSha256 = Convert.ToHexStringLower(SHA256.HashData(output)),
             ContentType = "image/png", Action = "processed", Classification = "authorized_edit",
-            PipelineVersion = CacheVersion, EstimatedCostUsd = _options.EstimatedRequestUsd,
+            PipelineVersion = CacheVersion, Accounting = accounting,
             Width = original.Width, Height = original.Height,
             UsageJson = json.RootElement.TryGetProperty("usage", out var usage) ? usage.GetRawText() : null
         };
@@ -175,7 +186,7 @@ public sealed class ImageEditResult
     public string? PipelineVersion { get; set; }
     public int Width { get; set; }
     public int Height { get; set; }
-    public decimal EstimatedCostUsd { get; set; }
+    public ImageEditAccounting? Accounting { get; set; }
     public string? UsageJson { get; set; }
     public JsonElement Detections { get; set; } = JsonSerializer.SerializeToElement(Array.Empty<object>());
     public JsonElement? SafetyReport { get; set; }

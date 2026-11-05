@@ -44,7 +44,11 @@ public class OpenAIImageEditingTests
             Assert.Equal("test-key", request.Headers.Authorization!.Parameter);
             Assert.IsType<MultipartFormDataContent>(request.Content);
             var form = await request.Content!.ReadAsStringAsync(ct);
-            Assert.Contains("account-configured-model", form);
+            Assert.Contains("gpt-image-2.5-sunburst", form);
+            var parts = Assert.IsType<MultipartFormDataContent>(request.Content);
+            async Task<string> Field(string name) => await parts.Single(p => p.Headers.ContentDisposition?.Name?.Trim('"') == name).ReadAsStringAsync(ct);
+            Assert.Equal("low", await Field("quality")); Assert.Equal("1024x1024", await Field("size"));
+            Assert.Equal("1", await Field("n")); Assert.Equal("png", await Field("output_format"));
             Assert.Contains("mask.png", form);
             Assert.DoesNotContain("/Hdreal", form);
             Assert.DoesNotContain("/RemoveWaterMark", form);
@@ -152,7 +156,7 @@ public class OpenAIImageEditingTests
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var job = await db.ImageProcessingJobs.SingleAsync();
             Assert.Equal(ImageJobStatus.AwaitingApproval, job.Status);
-            Assert.Equal(0.1m, job.EstimatedCostUsd);
+            Assert.Equal(0.018021m, job.EstimatedCostUsd);
             Assert.Empty(await db.ApartmentImages.ToListAsync()); // No automatic publishing or listing mutation.
         }
         var download = await f.Client.GetAsync($"/api/image-processing/jobs/{id}/download"); download.EnsureSuccessStatusCode();
@@ -176,7 +180,7 @@ public class OpenAIImageEditingTests
         Assert.Equal(1, f.ProviderCalls);
         using var scope = f.App.Services.CreateScope();
         var job = await scope.ServiceProvider.GetRequiredService<AppDbContext>().ImageProcessingJobs.SingleAsync();
-        Assert.Equal(ImageJobStatus.Failed, job.Status); Assert.Equal(0.1m, job.EstimatedCostUsd);
+        Assert.Equal(ImageJobStatus.Failed, job.Status); Assert.Equal(0.036042m, job.EstimatedCostUsd);
         Assert.Equal(HttpStatusCode.Conflict, (await f.Client.PostAsync($"/api/image-processing/jobs/{job.Id}/retry", null)).StatusCode);
     }
     [Fact]
@@ -185,7 +189,7 @@ public class OpenAIImageEditingTests
         await using var f = await Fixture.Start(); f.As("Admin");
         f.Guard.Busy = true; Assert.Equal((HttpStatusCode)429, (await f.Upload()).StatusCode);
         f.Guard.Busy = false;
-        f.Settings.BudgetCutoffUsd = 0.05m;
+        f.Settings.BudgetCutoffUsd = 0.01m;
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await f.Upload()).StatusCode);
         f.Settings.BudgetCutoffUsd = 8;
         f.Settings.DailyUserLimit = 1;
@@ -205,6 +209,26 @@ public class OpenAIImageEditingTests
         Assert.Equal(HttpStatusCode.BadGateway, (await f.Upload()).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await f.Upload()).StatusCode);
         Assert.Equal(1, f.ProviderCalls); Assert.Single(f.Objects);
+        using var scope = f.App.Services.CreateScope();
+        var job = await scope.ServiceProvider.GetRequiredService<AppDbContext>().ImageProcessingJobs.SingleAsync();
+        Assert.Equal(0.018021m, job.EstimatedCostUsd); // API usage remains recorded even if storing its output fails.
+        Assert.Equal("usage", OpenAIImageCostCalculator.ForJob(job.SafetyReportJson, job.EstimatedCostUsd).Basis);
+    }
+
+    [Fact]
+    public async Task MissingUsageKeepsReservationAndUnknownPricingBlocksBeforeProvider()
+    {
+        await using var f = await Fixture.Start(); f.As("Admin"); f.OmitUsage = true;
+        (await f.Upload()).EnsureSuccessStatusCode();
+        using (var scope = f.App.Services.CreateScope())
+        {
+            var job = await scope.ServiceProvider.GetRequiredService<AppDbContext>().ImageProcessingJobs.SingleAsync();
+            Assert.Equal(0.036042m, job.EstimatedCostUsd);
+            Assert.Equal("reservation", OpenAIImageCostCalculator.ForJob(job.SafetyReportJson, job.EstimatedCostUsd).Basis);
+        }
+        f.Settings.Model = "new-unpriced-model";
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await f.Upload()).StatusCode);
+        Assert.Equal(1, f.ProviderCalls);
     }
     [Fact]
     public async Task TrialBudgetExcludesModalHistoryAndRetainsOpenAIReservationsAcrossSettings()
@@ -229,7 +253,7 @@ public class OpenAIImageEditingTests
         using (var scope = f.App.Services.CreateScope())
         {
             var budget = await scope.ServiceProvider.GetRequiredService<ImageProcessingQueue>().GetBudgetAsync(default);
-            Assert.Equal(2, budget.ImagesProcessed); Assert.Equal(0.3m, budget.SpentUsd);
+            Assert.Equal(2, budget.ImagesProcessed); Assert.Equal(0.218021m, budget.SpentUsd);
             Assert.Equal(32, await scope.ServiceProvider.GetRequiredService<AppDbContext>().ImageProcessingJobs.CountAsync());
         }
     }
@@ -288,7 +312,7 @@ public class OpenAIImageEditingTests
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var failed = await db.ImageProcessingJobs.SingleAsync(j => j.Mode == "process");
-            Assert.Equal(ImageJobStatus.Failed, failed.Status); Assert.Equal(0.1m, failed.EstimatedCostUsd);
+            Assert.Equal(ImageJobStatus.Failed, failed.Status); Assert.Equal(0.036042m, failed.EstimatedCostUsd);
             Assert.Equal(1, failed.Attempts);
         }
     }
@@ -309,7 +333,7 @@ public class OpenAIImageEditingTests
         await using var next = await second.TryEnterAsync(default); Assert.NotNull(next);
     }
 
-    private static OpenAIImageEditingService Editor(HttpMessageHandler handler) => new(new HttpClient(handler), Options.Create(new ImageAiOptions { Enabled = true, Model = "account-configured-model" }),
+    private static OpenAIImageEditingService Editor(HttpMessageHandler handler) => new(new HttpClient(handler), Options.Create(new ImageAiOptions { Enabled = true, Model = "gpt-image-2.5-sunburst" }),
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["OPENAI_API_KEY"] = "test-key" }).Build());
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
     { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) => send(request, ct); }
@@ -335,11 +359,11 @@ public class OpenAIImageEditingTests
         public WebApplication App = null!;
         public HttpClient Client = null!;
         public readonly Dictionary<string, byte[]> Objects = new();
-        public readonly ImageAiOptions Settings = new() { Enabled = true, Model = "account-configured-model" };
+        public readonly ImageAiOptions Settings = new() { Enabled = true, Model = "gpt-image-2.5-sunburst" };
         public readonly TestGuard Guard = new();
         public readonly byte[] Photo = Png(new SKColor(40, 50, 60));
         public int ProviderCalls;
-        public bool FailProvider, FailDraftStorage;
+        public bool FailProvider, FailDraftStorage, OmitUsage;
         public void As(string role, string user = "admin") { Client.DefaultRequestHeaders.Remove("X-Test-Role"); Client.DefaultRequestHeaders.Remove("X-Test-User"); Client.DefaultRequestHeaders.Add("X-Test-Role", role); Client.DefaultRequestHeaders.Add("X-Test-User", user); }
         public async Task<HttpResponseMessage> Upload(bool rights = true, byte[]? data = null)
         {
@@ -360,7 +384,8 @@ public class OpenAIImageEditingTests
             {
                 Assert.Equal("api.openai.com", request.RequestUri!.Host); f.ProviderCalls++;
                 return Task.FromResult(new HttpResponseMessage(f.FailProvider ? HttpStatusCode.TooManyRequests : HttpStatusCode.OK)
-                    { Content = JsonContent.Create(new { data = new[] { new { b64_json = Convert.ToBase64String(Png(new SKColor(100, 110, 120))) } } }) });
+                    { Content = JsonContent.Create(new { data = new[] { new { b64_json = Convert.ToBase64String(Png(new SKColor(100, 110, 120))) } },
+                        usage = f.OmitUsage ? null : new { input_tokens = 1554, input_tokens_details = new { text_tokens = 97, image_tokens = 1457 }, output_tokens = 196, output_tokens_details = new { image_tokens = 196, text_tokens = 0 }, total_tokens = 1750 } }) });
             }));
             builder.Services.AddHttpClient<SupabaseStorageService>().ConfigurePrimaryHttpMessageHandler(() => new Handler(async (request, ct) =>
             {

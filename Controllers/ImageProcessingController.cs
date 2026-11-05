@@ -147,6 +147,7 @@ public class ImageProcessingController : ControllerBase
         var items = new List<object>(jobs.Count);
         foreach (var job in jobs)
         {
+            var charge = OpenAIImageCostCalculator.ForJob(job.SafetyReportJson, job.EstimatedCostUsd, job.DuplicateOfJobId);
             items.Add(new
             {
                 job.Id,
@@ -161,7 +162,9 @@ public class ImageProcessingController : ControllerBase
                 job.Attempts,
                 job.LastError,
                 job.GpuSeconds,
-                job.EstimatedCostUsd,
+                EstimatedCostUsd = charge.Usd,
+                CostBasis = charge.Basis,
+                UsageCost = charge.Usage,
                 job.CreatedAt,
                 job.CompletedAt,
                 job.CleanOriginalRequestedAt,

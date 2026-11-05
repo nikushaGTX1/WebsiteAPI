@@ -74,8 +74,10 @@ public class PhotoChecksController(AppDbContext context, ImageProcessingQueue qu
         var day = DateTime.UtcNow.Date;
         if (await context.ImageProcessingJobs.CountAsync(j => j.RequestedByUserId == userId && j.StartedAt >= day && j.PipelineVersion != null && j.PipelineVersion.StartsWith("openai-edit-v1:"), cancellationToken) >= options.Value.DailyUserLimit)
             return StatusCode(429, new { message = "Daily image editing limit reached." });
+        var reservation = OpenAIImageCostCalculator.Reservation(options.Value);
+        if (reservation is null) return StatusCode(503, new { message = "Verified model pricing and a matching token forecast are required before paid editing." });
         var budget = await queue.GetBudgetAsync(cancellationToken);
-        if (budget.Exhausted || budget.SpentUsd + options.Value.EstimatedRequestUsd > options.Value.BudgetCutoffUsd)
+        if (budget.Exhausted || budget.SpentUsd + reservation.Value > options.Value.BudgetCutoffUsd)
             return StatusCode(503, new { message = budget.ImagesProcessed >= budget.MonthlyImageQuota
                 ? $"Monthly OpenAI image limit reached ({budget.ImagesProcessed}/{budget.MonthlyImageQuota} attempts)."
                 : "Image editing is paused by the OpenAI estimated-spend cutoff.",
@@ -88,7 +90,7 @@ public class PhotoChecksController(AppDbContext context, ImageProcessingQueue qu
             Mode = mode, RequestedByUserId = userId, PermissionReference = permissionReference,
             AuthorizationBasis = authorizationBasis == "owned" ? ImageAuthorizationBasis.Owned : ImageAuthorizationBasis.Licensed,
             Status = ImageJobStatus.Running, Attempts = 1, StartedAt = DateTime.UtcNow,
-            EstimatedCostUsd = options.Value.EstimatedRequestUsd
+            EstimatedCostUsd = reservation.Value
         };
         context.ImageProcessingJobs.Add(job);
         await context.SaveChangesAsync(cancellationToken);
@@ -100,10 +102,14 @@ public class PhotoChecksController(AppDbContext context, ImageProcessingQueue qu
                 ImageB64 = Convert.ToBase64String(bytes), MaskB64 = maskBytes is null ? null : Convert.ToBase64String(maskBytes),
                 Mode = mode == "clean" ? "process" : mode, AuthorizationBasis = authorizationBasis,
                 PermissionReference = permissionReference, Instructions = instructions
-            }, cancellationToken);
+            }, cancellationToken, async accounting =>
+            {
+                job.SafetyReportJson = accounting.ToMetadataJson();
+                if (accounting.Cost is not null) job.EstimatedCostUsd = accounting.Cost.TotalUsd;
+                await context.SaveChangesAsync(CancellationToken.None);
+            });
             job.ProcessedStoragePath = await storage.UploadBytesAsync(Convert.FromBase64String(result.ProcessedB64!), "image/png", "image-edit-drafts", cancellationToken);
             job.ProcessedSha256 = result.ProcessedSha256;
-            job.SafetyReportJson = System.Text.Json.JsonSerializer.Serialize(new { provider = "openai", model = options.Value.Model, size = options.Value.Size, quality = options.Value.Quality, usage = result.UsageJson, estimateOnly = true });
             job.Status = ImageJobStatus.AwaitingApproval;
             job.CompletedAt = DateTime.UtcNow;
             await context.SaveChangesAsync(CancellationToken.None);

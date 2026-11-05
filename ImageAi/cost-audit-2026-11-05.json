@@ -1,0 +1,144 @@
+{
+  "readOnlyAudit": true,
+  "invoiceVerified": false,
+  "rateCard": "openai-images-standard-2026-11-05",
+  "endpoint": "https://api.openai.com/v1/images/edits",
+  "sampleSize": 5,
+  "records": [
+    {
+      "jobId": 902,
+      "status": "AwaitingApproval",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "low",
+      "size": "1024x1024",
+      "oldRecordedReservationUsd": "0.100000",
+      "usage": {
+        "input_tokens": 1554,
+        "input_tokens_details": {
+          "image_tokens": 1457,
+          "text_tokens": 97
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "image_tokens": 196,
+          "text_tokens": 0
+        },
+        "total_tokens": 1750
+      },
+      "usagePricedUsd": {
+        "textInput": "0.000485",
+        "imageInput": "0.011656",
+        "imageOutput": "0.00588",
+        "total": "0.018021"
+      }
+    },
+    {
+      "jobId": 901,
+      "status": "AwaitingApproval",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "low",
+      "size": "1024x1024",
+      "oldRecordedReservationUsd": "0.100000",
+      "usage": {
+        "input_tokens": 1554,
+        "input_tokens_details": {
+          "image_tokens": 1457,
+          "text_tokens": 97
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "image_tokens": 196,
+          "text_tokens": 0
+        },
+        "total_tokens": 1750
+      },
+      "usagePricedUsd": {
+        "textInput": "0.000485",
+        "imageInput": "0.011656",
+        "imageOutput": "0.00588",
+        "total": "0.018021"
+      }
+    },
+    {
+      "jobId": 900,
+      "status": "AwaitingApproval",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "low",
+      "size": "1024x1024",
+      "oldRecordedReservationUsd": "0.100000",
+      "usage": {
+        "input_tokens": 1554,
+        "input_tokens_details": {
+          "image_tokens": 1457,
+          "text_tokens": 97
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "image_tokens": 196,
+          "text_tokens": 0
+        },
+        "total_tokens": 1750
+      },
+      "usagePricedUsd": {
+        "textInput": "0.000485",
+        "imageInput": "0.011656",
+        "imageOutput": "0.00588",
+        "total": "0.018021"
+      }
+    },
+    {
+      "jobId": 899,
+      "status": "AwaitingApproval",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "low",
+      "size": "1024x1024",
+      "oldRecordedReservationUsd": "0.100000",
+      "usage": {
+        "input_tokens": 1554,
+        "input_tokens_details": {
+          "image_tokens": 1457,
+          "text_tokens": 97
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "image_tokens": 196,
+          "text_tokens": 0
+        },
+        "total_tokens": 1750
+      },
+      "usagePricedUsd": {
+        "textInput": "0.000485",
+        "imageInput": "0.011656",
+        "imageOutput": "0.00588",
+        "total": "0.018021"
+      }
+    },
+    {
+      "jobId": 898,
+      "status": "AwaitingApproval",
+      "model": "gpt-image-2.5-sunburst",
+      "quality": "low",
+      "size": "1024x1024",
+      "oldRecordedReservationUsd": "0.100000",
+      "usage": {
+        "input_tokens": 1554,
+        "input_tokens_details": {
+          "image_tokens": 1457,
+          "text_tokens": 97
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "image_tokens": 196,
+          "text_tokens": 0
+        },
+        "total_tokens": 1750
+      },
+      "usagePricedUsd": {
+        "textInput": "0.000485",
+        "imageInput": "0.011656",
+        "imageOutput": "0.00588",
+        "total": "0.018021"
+      }
+    }
+  ]
+}

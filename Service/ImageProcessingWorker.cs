@@ -33,8 +33,10 @@ public sealed class ImageProcessingWorker(IServiceScopeFactory scopes, IOptions<
         await using var lease = await scope.ServiceProvider.GetRequiredService<IImageEditingGuard>().TryEnterAsync(ct);
         if (lease is null) return;
         var queue = scope.ServiceProvider.GetRequiredService<ImageProcessingQueue>();
+        var reservation = OpenAIImageCostCalculator.Reservation(options.Value);
+        if (reservation is null) return;
         var budget = await queue.GetBudgetAsync(ct);
-        if (budget.Exhausted || budget.SpentUsd + options.Value.EstimatedRequestUsd > options.Value.BudgetCutoffUsd) return;
+        if (budget.Exhausted || budget.SpentUsd + reservation.Value > options.Value.BudgetCutoffUsd) return;
         var job = await db.ImageProcessingJobs.Where(j => j.Status == ImageJobStatus.Pending && j.Attempts == 0 &&
             j.PipelineVersion == editor.CacheVersion && (j.Mode == "process" || j.Mode == "enhance"))
             .OrderBy(j => j.Id).FirstOrDefaultAsync(ct);
@@ -66,7 +68,7 @@ public sealed class ImageProcessingWorker(IServiceScopeFactory scopes, IOptions<
             }
             else
             {
-                job.EstimatedCostUsd = options.Value.EstimatedRequestUsd;
+                job.EstimatedCostUsd = reservation.Value;
                 await db.SaveChangesAsync(ct); // Reserve spend before sending to OpenAI.
                 logger.LogInformation("Reserved estimated USD {Cost} for image job {Id}, model {Model}.", job.EstimatedCostUsd, job.Id, options.Value.Model);
                 var result = await editor.ProcessAsync(new ImageEditRequest
@@ -74,10 +76,14 @@ public sealed class ImageProcessingWorker(IServiceScopeFactory scopes, IOptions<
                     ImageB64 = Convert.ToBase64String(bytes), Mode = job.Mode,
                     AuthorizationBasis = job.AuthorizationBasis.ToString().ToLowerInvariant(),
                     PermissionReference = job.PermissionReference
-                }, ct);
+                }, ct, async accounting =>
+                {
+                    job.SafetyReportJson = accounting.ToMetadataJson();
+                    if (accounting.Cost is not null) job.EstimatedCostUsd = accounting.Cost.TotalUsd;
+                    await db.SaveChangesAsync(CancellationToken.None);
+                });
                 job.ProcessedStoragePath = await storage.UploadBytesAsync(Convert.FromBase64String(result.ProcessedB64!), "image/png", "processed", ct);
                 job.ProcessedSha256 = result.ProcessedSha256;
-                job.SafetyReportJson = System.Text.Json.JsonSerializer.Serialize(new { provider = "openai", model = options.Value.Model, size = options.Value.Size, quality = options.Value.Quality, usage = result.UsageJson, estimateOnly = true });
             }
             job.Status = ImageJobStatus.AwaitingApproval;
             logger.LogInformation("Image job {Id}, model {Model}, size {Size}, quality {Quality}, estimated USD {Cost}; awaiting approval.", job.Id, options.Value.Model, options.Value.Size, options.Value.Quality, job.EstimatedCostUsd);
