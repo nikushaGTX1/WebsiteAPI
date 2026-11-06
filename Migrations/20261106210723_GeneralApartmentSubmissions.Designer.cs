@@ -12,7 +12,7 @@ using Website_API.Data;
 namespace Website_API.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261104181133_GeneralApartmentSubmissions")]
+    [Migration("20261106210723_GeneralApartmentSubmissions")]
     partial class GeneralApartmentSubmissions
     {
         /// <inheritdoc />
@@ -701,6 +701,9 @@ namespace Website_API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(true);
+
+                    b.Property<string>("Nationality")
+                        .HasColumnType("text");
 
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)
