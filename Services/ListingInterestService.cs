@@ -149,6 +149,9 @@ public class ListingInterestService
                 ReviewerName = n.Reviewer != null ? n.Reviewer.FullName ?? n.Reviewer.UserName : null,
                 Search = new { n.SavedSearch.Id, n.SavedSearch.Name, n.SavedSearch.ProfileJson, n.SavedSearch.CreatedAt },
                 Client = new { n.SavedSearch.User.FullName, n.SavedSearch.User.Email, n.SavedSearch.User.PhoneNumber },
+                // Who the match is sent to: the account that uploaded the listing.
+                Uploader = _context.Users.Where(user => user.Id == n.Apartment.UploadedByUserId)
+                    .Select(user => new { Name = user.FullName ?? user.UserName, user.Email }).FirstOrDefault(),
                 Apartment = new
                 {
                     n.Apartment.Id, n.Apartment.Title, n.Apartment.TitleEn, n.Apartment.TitleKa, n.Apartment.TitleRu,
@@ -187,6 +190,8 @@ public class ListingInterestService
             OwnerPhone = row.Apartment.OwnerPhoneNumber,
             OwnerEmail = row.OwnerEmail,
             OwnerHasAccount = row.OwnerUserId != null,
+            UploaderName = row.Uploader?.Name,
+            UploaderEmail = row.Uploader?.Email,
         }).ToList();
     }
 
@@ -381,4 +386,7 @@ public class ReviewView
     public string? OwnerPhone { get; set; }
     public string? OwnerEmail { get; set; }
     public bool OwnerHasAccount { get; set; }
+    /// <summary>The account that uploaded the listing; "Send" notifies and emails it.</summary>
+    public string? UploaderName { get; set; }
+    public string? UploaderEmail { get; set; }
 }
