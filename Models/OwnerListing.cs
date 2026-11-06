@@ -26,7 +26,13 @@ public class OwnerSubmission
 {
     public long Id { get; set; }
 
-    public long LinkId { get; set; }
+    public long? LinkId { get; set; }
+
+    public bool IsGeneralSubmission { get; set; }
+    public Guid? SubmissionKey { get; set; }
+    public DateTime? ReadAt { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string? ApprovedByUserId { get; set; }
 
     public string AgentUserId { get; set; } = string.Empty;
 
@@ -57,4 +63,27 @@ public class OwnerSubmission
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Audit events are append-only; SEND is serialized on the parent submission.</summary>
+public class SubmissionEvent
+{
+    public long Id { get; set; }
+    public long OwnerSubmissionId { get; set; }
+    public OwnerSubmission Submission { get; set; } = null!;
+    public string Action { get; set; } = "";
+    public string? ActorUserId { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public int MatchedClients { get; set; }
+}
+
+public class SubmissionClientMatch
+{
+    public long Id { get; set; }
+    public long OwnerSubmissionId { get; set; }
+    public OwnerSubmission Submission { get; set; } = null!;
+    public long ClientProfileId { get; set; }
+    public ClientProfile ClientProfile { get; set; } = null!;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? ReadAt { get; set; }
 }
