@@ -822,6 +822,30 @@ public class ApartmentsController : ControllerBase
                 }
             }
 
+            // The edit form sends the whole order (kept photos and new uploads, cover first).
+            if (dto.ImageOrder.Count > 0)
+            {
+                var added = apartment.Images.Where(image => newImagePaths.Contains(image.StoragePath))
+                    .OrderBy(image => newImagePaths.IndexOf(image.StoragePath)).ToList();
+                var ordered = new List<ApartmentImage>();
+                foreach (var token in dto.ImageOrder)
+                {
+                    ApartmentImage? image = null;
+                    if (token.StartsWith("id:") && int.TryParse(token[3..], out var imageId))
+                        image = apartment.Images.FirstOrDefault(item => item.Id == imageId);
+                    else if (token.StartsWith("new:") && int.TryParse(token[4..], out var newIndex) && newIndex >= 0 && newIndex < added.Count)
+                        image = added[newIndex];
+                    if (image is not null && !ordered.Contains(image)) ordered.Add(image);
+                }
+                // Anything the order did not mention keeps its place after the listed photos.
+                ordered.AddRange(apartment.Images.Where(image => !ordered.Contains(image)).OrderBy(image => image.SortOrder));
+                for (var position = 0; position < ordered.Count; position++)
+                {
+                    ordered[position].SortOrder = position;
+                    ordered[position].IsCover = position == 0;
+                }
+            }
+
             if (apartment.Images.Count > 0 &&
                 apartment.Images.All(image => !image.IsCover))
             {

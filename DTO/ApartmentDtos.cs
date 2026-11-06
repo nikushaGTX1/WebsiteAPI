@@ -170,6 +170,12 @@ public class UpdateApartmentDto
     // A newly uploaded image cannot be selected here until it has an ID.
     public int? CoverImageId { get; set; }
 
+    /// <summary>
+    /// Full photo order after an edit: "id:12" for a kept photo, "new:0" for the first file in
+    /// Images, and so on. The first entry becomes the cover. Empty keeps the old order.
+    /// </summary>
+    public List<string> ImageOrder { get; set; } = [];
+
     // Location
     public string? City { get; set; }
     public string? Region { get; set; }
