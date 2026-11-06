@@ -8,7 +8,7 @@ namespace Website_API.Services;
 public static class ClientBoardEligibility
 {
     /// <summary>
-    /// The only clients the public may see: agent intake-link profiles that are Active,
+    /// The only clients the public may see or offer to: agent intake-link profiles that are Active,
     /// consented to publication and still assigned to staff. Self-serve Velven Match searches live
     /// in SavedSearches and are not ClientProfiles, so they can never pass this query.
     /// </summary>
@@ -18,7 +18,7 @@ public static class ClientBoardEligibility
             (role.Name == "Admin" || role.Name == "Manager" || role.Name == "Agent"))));
 }
 
-public static class ApartmentSubmissionMatching
+public static class ApartmentOfferMatching
 {
     /// <summary>
     /// Mandatory filters only: anything short of an exact match, including details the listing leaves
@@ -27,8 +27,8 @@ public static class ApartmentSubmissionMatching
     public static bool IsCompatible(Apartment apartment, ClientRequirements client, DateTime today)
     {
         if (HomeMatchRequirements.Evaluate(apartment, client, today) != RequirementStatus.Exact) return false;
-        if (apartment.Price <= 0 && (client.BudgetMin > 0 || client.BudgetMax > 0)) return false;
-        return true;
+        // Requirements the shared Velven Match check does not cover. An unknown size (0) cannot prove a minimum.
+        if (client.MinSize is > 0 && apartment.SizeSquareMeters < (double)client.MinSize.Value) return false;
+        return apartment.MaxOccupants is not int occupants || occupants >= client.Adults + client.Children;
     }
-
 }

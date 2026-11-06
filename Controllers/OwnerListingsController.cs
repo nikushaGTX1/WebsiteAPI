@@ -23,13 +23,11 @@ public class OwnerListingsController : ControllerBase
     private readonly UserManager<AppUser> _userManager;
     private readonly SupabaseStorageService _storage;
 
-    private readonly ApartmentSubmissionService _workflow;
-    public OwnerListingsController(AppDbContext context, UserManager<AppUser> userManager, SupabaseStorageService storage, ApartmentSubmissionService workflow)
+    public OwnerListingsController(AppDbContext context, UserManager<AppUser> userManager, SupabaseStorageService storage)
     {
         _context = context;
         _userManager = userManager;
         _storage = storage;
-        _workflow = workflow;
     }
 
     [Authorize(Roles = StaffRoles)]
@@ -121,37 +119,8 @@ public class OwnerListingsController : ControllerBase
     [HttpPatch("submissions/{id:long}")]
     public async Task<IActionResult> UpdateSubmission(long id, [FromBody] UpdateSubmissionRequest request, CancellationToken cancellationToken)
     {
-        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-        await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({id})", cancellationToken);
         var row = await AccessibleSubmissions().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (row is null) return NotFound(new { message = "Submission not found." });
-        if (row.IsGeneralSubmission)
-        {
-            // Serialize edits against approve/SEND as well as other edits.
-            await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"OwnerSubmissions\" WHERE \"Id\" = {id} FOR UPDATE", cancellationToken);
-            await _context.Entry(row).ReloadAsync(cancellationToken);
-            if (row.Status is "sent" or "rejected") return Conflict(new { message = "ეს განაცხადი უკვე დასრულებულია." });
-            if (request.PublishedApartmentId.HasValue || request.Status is not (null or "contacted" or "visited")) return BadRequest(new { message = "გამოიყენეთ დამტკიცების ან უარყოფის მოქმედება." });
-            if (request.Data is JsonElement raw)
-            {
-                var data = SubmissionProperty.Read(raw.GetRawText());
-                var name = request.OwnerName ?? row.OwnerName; var phone = request.OwnerPhone ?? row.OwnerPhone;
-                if (data is null) return BadRequest(new { message = "ბინის მონაცემები არასწორია." });
-                var error = data.Validate(name, phone);
-                if (error is not null) return BadRequest(new { message = error });
-                var apartment = await _context.Apartments.SingleAsync(x => x.Id == row.PublishedApartmentId, cancellationToken);
-                data.Apply(apartment, name, phone); row.OwnerName = name.Trim(); row.OwnerPhone = phone.Trim();
-                row.DataJson = JsonSerializer.Serialize(data, SubmissionProperty.Json); row.DealType = data.DealType == "For Rent" ? "Rent" : "Sale";
-                row.VerificationJson = "{}"; row.Status = "new"; row.ApprovedAt = null; row.ApprovedByUserId = null;
-                _workflow.History(row, "edited", User.FindFirstValue(ClaimTypes.NameIdentifier));
-            }
-            else if (request.Verification.HasValue || request.Status is not null)
-            {
-                row.ApprovedAt = null; row.ApprovedByUserId = null;
-                if (row.Status == "approved") row.Status = "contacted";
-                _workflow.History(row, request.Status ?? "reviewed", User.FindFirstValue(ClaimTypes.NameIdentifier));
-            }
-        }
         if (request.Status is not null)
         {
             if (!AllowedStatuses.Contains(request.Status)) return BadRequest(new { message = "Invalid status." });
@@ -162,7 +131,6 @@ public class OwnerListingsController : ControllerBase
         if (request.PublishedApartmentId.HasValue) row.PublishedApartmentId = request.PublishedApartmentId;
         row.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
         return Ok(await ToResponse(row, cancellationToken));
     }
 
@@ -170,8 +138,7 @@ public class OwnerListingsController : ControllerBase
     {
         var elevated = User.IsInRole("Admin") || User.IsInRole("Manager");
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var reviewer = elevated || User.IsInRole("Agent");
-        return _context.OwnerSubmissions.Where(x => (elevated || x.AgentUserId == userId) && (!x.IsGeneralSubmission || reviewer));
+        return _context.OwnerSubmissions.Where(x => elevated || x.AgentUserId == userId);
     }
 
     private async Task<object> ToResponse(OwnerSubmission row, CancellationToken cancellationToken)
@@ -183,16 +150,14 @@ public class OwnerListingsController : ControllerBase
             row.DealType, row.OwnerName, row.OwnerPhone, row.OwnerEmail,
             data = Deserialize<JsonElement>(row.DataJson), photos = photos.Where(x => x is not null),
             row.Status, verification = Deserialize<JsonElement>(row.VerificationJson), row.AgentNotes,
-            row.PublishedApartmentId, row.CreatedAt, row.UpdatedAt, row.IsGeneralSubmission, row.ApprovedAt,
-            history = await _context.SubmissionEvents.AsNoTracking().Where(x => x.OwnerSubmissionId == row.Id).OrderBy(x => x.CreatedAt).ThenBy(x => x.Id)
-                .Select(x => new { x.Id, x.Action, x.CreatedAt, x.MatchedClients }).ToListAsync(cancellationToken) };
+            row.PublishedApartmentId, row.CreatedAt, row.UpdatedAt };
     }
 
     private static T? Deserialize<T>(string json) { try { return JsonSerializer.Deserialize<T>(json); } catch { return default; } }
 }
 
 public sealed record CreateLinkRequest(string DealType);
-public class OwnerSubmissionForm
+public sealed class OwnerSubmissionForm
 {
     public string? Data { get; set; }
     public string OwnerName { get; set; } = string.Empty;
@@ -202,9 +167,6 @@ public class OwnerSubmissionForm
 }
 public sealed class UpdateSubmissionRequest
 {
-    public JsonElement? Data { get; set; }
-    public string? OwnerName { get; set; }
-    public string? OwnerPhone { get; set; }
     public string? Status { get; set; }
     public JsonElement? Verification { get; set; }
     public string? AgentNotes { get; set; }

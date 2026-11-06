@@ -13,7 +13,6 @@ namespace Website_API.Services;
 public class SavedSearchProfile
 {
     public string PropertyGoal { get; set; } = "";
-    public string City { get; set; } = "Tbilisi";
     /// <summary>"Apartment" or "House" (private house). Older searches have none and mean Apartment.</summary>
     public string? HomeType { get; set; }
     /// <summary>Every accepted type ("Apartment", "House" or both). Takes precedence over HomeType.</summary>
@@ -34,10 +33,6 @@ public class SavedSearchProfile
         public decimal UsdEur { get; set; }
     }
     public int? Bedrooms { get; set; }
-    public int Adults { get; set; } = 1;
-    public int Children { get; set; }
-    public decimal? MinSize { get; set; }
-    public List<string> PropertyConditions { get; set; } = [];
     public List<int> BedroomChoices { get; set; } = [];
     public string? RentalDuration { get; set; }
     public string? MoveInTiming { get; set; }
@@ -77,8 +72,7 @@ public class SavedSearchProfile
         {
             var p = JsonSerializer.Deserialize<SavedSearchProfile>(json, Json);
             if (p is null || p.PropertyGoal is not ("Rent" or "Buy") ||
-                p.City is null || p.City.Length > 100 ||
-                p.Districts is null || p.BedroomChoices is null || p.PetTypes is null || p.PropertyConditions is null ||
+                p.Districts is null || p.BedroomChoices is null || p.PetTypes is null ||
                 p.Districts.Any(x => string.IsNullOrWhiteSpace(x)) ||
                 p.PetTypes.Any(x => x is not ("Dog" or "Cat" or "Other")) ||
                 p.BedroomChoices.Any(x => x < 0 || x > 4) ||
@@ -152,15 +146,10 @@ public static class HomeMatchRequirements
     /// </summary>
     public static RequirementStatus Evaluate(Apartment apartment, SavedSearchProfile profile, DateTime today)
     {
-        static string CityName(string value) => value.Trim().ToLowerInvariant() is "თბილისი" or "тбилиси" or "tbilisi" ? "tbilisi" : value.Trim().ToLowerInvariant();
-        if (!string.IsNullOrWhiteSpace(apartment.City) && !string.IsNullOrWhiteSpace(profile.City) && CityName(apartment.City) != CityName(profile.City)) return RequirementStatus.Alternative;
         if (!MatchesPropertyGoal(apartment, profile)) return RequirementStatus.Alternative;
         // Same rule as the website: a private house never matches "apartment", and back.
         if (!MatchesHomeType(apartment, profile)) return RequirementStatus.Alternative;
         if (!WithinBudgetCeiling(apartment.Price, profile)) return RequirementStatus.Alternative;
-        if (profile.MinSize is > 0 && apartment.SizeSquareMeters < (double)profile.MinSize.Value ||
-            apartment.MaxOccupants is int occupants && occupants < profile.Adults + profile.Children ||
-            !MatchesCondition(apartment, profile)) return RequirementStatus.Alternative;
 
         var mismatch = false;
         var confirm = false;
@@ -198,23 +187,6 @@ public static class HomeMatchRequirements
 
     private static bool IsRent(SavedSearchProfile profile) =>
         string.Equals(profile.PropertyGoal, "Rent", StringComparison.OrdinalIgnoreCase);
-
-    // Conditions already live in the listing's upload-form tag; no duplicate database field.
-    private static bool MatchesCondition(Apartment apartment, SavedSearchProfile profile)
-    {
-        if (profile.PropertyGoal != "Buy" || profile.PropertyConditions.Count == 0 || profile.PropertyConditions.Contains("Any")) return true;
-        var condition = Regex.Match(apartment.Description ?? "", @"(?:^|[|\r\n])\s*Condition:\s*([^|\r\n]+)", RegexOptions.IgnoreCase)
-            .Groups[1].Value.Trim().TrimEnd('.').ToLowerInvariant();
-        return profile.PropertyConditions.Any(code => code switch
-        {
-            "MoveInReady" or "Renovated" => condition is "newly renovated" or "old renovated",
-            "WhiteFrame" => condition is "white frame" or "white plus",
-            "BlackFrame" => condition == "black frame",
-            "GreenFrame" => condition == "green frame",
-            "NeedsRenovation" => condition is "current renovation" or "repairing",
-            _ => false,
-        });
-    }
 
     /// <summary>"Apartment", "House", "Other" (plot, commercial, hotel) or null when the listing does not say.</summary>
     public static string? ListingHomeType(Apartment apartment)
@@ -373,7 +345,6 @@ public static class HomeMatchRequirements
     private static Check CheckAvailability(Apartment apartment, SavedSearchProfile profile, DateTime today)
     {
         if (!IsRent(profile)) return Check.Pass;
-        if (profile.MoveInTiming == "Flexible") return Check.Pass;
         if (apartment.AvailableFrom is null) return Check.Pass;
         var requested = RequestedMoveInDate(profile, today);
         if (requested is null) return Check.Unknown;

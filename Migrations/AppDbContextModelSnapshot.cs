@@ -64,7 +64,7 @@ namespace Website_API.Migrations
                     b.HasIndex("Token")
                         .IsUnique();
 
-                    b.ToTable("CrmQuestionnaireLinks", (string)null);
+                    b.ToTable("CrmQuestionnaireLinks");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -230,7 +230,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("AgentId", "CreatedAt");
 
-                    b.ToTable("AgentRatings", (string)null);
+                    b.ToTable("AgentRatings");
                 });
 
             modelBuilder.Entity("Website_API.Models.AgentReview", b =>
@@ -273,7 +273,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("IpHash", "CreatedAt");
 
-                    b.ToTable("AgentReviews", null, t =>
+                    b.ToTable("AgentReviews", t =>
                         {
                             t.HasCheckConstraint("CK_AgentReviews_Rating", "\"Rating\" >= 1 AND \"Rating\" <= 5");
                         });
@@ -525,7 +525,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("City", "Region", "District", "Street");
 
-                    b.ToTable("Apartments", (string)null);
+                    b.ToTable("Apartments");
                 });
 
             modelBuilder.Entity("Website_API.Models.ApartmentImage", b =>
@@ -618,7 +618,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("ReviewerUserId", "Status");
 
-                    b.ToTable("ApartmentOffers", (string)null);
+                    b.ToTable("ApartmentOffers");
                 });
 
             modelBuilder.Entity("Website_API.Models.ApartmentOfferMatch", b =>
@@ -654,7 +654,7 @@ namespace Website_API.Migrations
                     b.HasIndex("ApartmentOfferId", "ClientProfileId")
                         .IsUnique();
 
-                    b.ToTable("ApartmentOfferMatches", (string)null);
+                    b.ToTable("ApartmentOfferMatches");
                 });
 
             modelBuilder.Entity("Website_API.Models.AppUser", b =>
@@ -787,7 +787,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("CreatedAt");
 
-                    b.ToTable("BlogPosts", (string)null);
+                    b.ToTable("BlogPosts");
                 });
 
             modelBuilder.Entity("Website_API.Models.CanonicalStreet", b =>
@@ -872,7 +872,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("DistrictId", "NameKa");
 
-                    b.ToTable("CanonicalStreets", (string)null);
+                    b.ToTable("CanonicalStreets");
                 });
 
             modelBuilder.Entity("Website_API.Models.ClientCoupon", b =>
@@ -937,7 +937,7 @@ namespace Website_API.Migrations
                     b.HasIndex("UserId", "Kind")
                         .IsUnique();
 
-                    b.ToTable("ClientCoupons", (string)null);
+                    b.ToTable("ClientCoupons");
                 });
 
             modelBuilder.Entity("Website_API.Models.ClientIntakeLink", b =>
@@ -979,7 +979,7 @@ namespace Website_API.Migrations
                     b.HasIndex("Token")
                         .IsUnique();
 
-                    b.ToTable("ClientIntakeLinks", (string)null);
+                    b.ToTable("ClientIntakeLinks");
                 });
 
             modelBuilder.Entity("Website_API.Models.ClientNotification", b =>
@@ -1030,7 +1030,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("UserId", "ReadAt");
 
-                    b.ToTable("ClientNotifications", (string)null);
+                    b.ToTable("ClientNotifications");
                 });
 
             modelBuilder.Entity("Website_API.Models.ClientProfile", b =>
@@ -1123,7 +1123,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("Status", "CreatedAt", "Id");
 
-                    b.ToTable("ClientProfiles", (string)null);
+                    b.ToTable("ClientProfiles");
                 });
 
             modelBuilder.Entity("Website_API.Models.CrmActivity", b =>
@@ -1159,7 +1159,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("LeadId", "CreatedAt");
 
-                    b.ToTable("CrmActivities", (string)null);
+                    b.ToTable("CrmActivities");
                 });
 
             modelBuilder.Entity("Website_API.Models.CrmJobApplication", b =>
@@ -1222,7 +1222,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("CreatedAt");
 
-                    b.ToTable("CrmJobApplications", (string)null);
+                    b.ToTable("CrmJobApplications");
                 });
 
             modelBuilder.Entity("Website_API.Models.CrmLead", b =>
@@ -1341,7 +1341,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("AssignedAgentId", "Status", "UpdatedAt");
 
-                    b.ToTable("CrmLeads", (string)null);
+                    b.ToTable("CrmLeads");
                 });
 
             modelBuilder.Entity("Website_API.Models.CrmLeadNotification", b =>
@@ -1388,7 +1388,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("UserId", "CreatedAt", "Id");
 
-                    b.ToTable("CrmLeadNotifications", (string)null);
+                    b.ToTable("CrmLeadNotifications");
                 });
 
             modelBuilder.Entity("Website_API.Models.CrmTask", b =>
@@ -1442,7 +1442,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("AssignedAgentId", "CompletedAt", "DueAt");
 
-                    b.ToTable("CrmTasks", (string)null);
+                    b.ToTable("CrmTasks");
                 });
 
             modelBuilder.Entity("Website_API.Models.CrmVacancyPosition", b =>
@@ -1471,7 +1471,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("IsActive", "CreatedAt");
 
-                    b.ToTable("CrmVacancyPositions", (string)null);
+                    b.ToTable("CrmVacancyPositions");
                 });
 
             modelBuilder.Entity("Website_API.Models.FavoriteApartment", b =>
@@ -1491,7 +1491,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("UserId", "CreatedAt");
 
-                    b.ToTable("FavoriteApartments", (string)null);
+                    b.ToTable("FavoriteApartments");
                 });
 
             modelBuilder.Entity("Website_API.Models.ImageProcessingJob", b =>
@@ -1616,7 +1616,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("Status", "NextAttemptAt");
 
-                    b.ToTable("ImageProcessingJobs", (string)null);
+                    b.ToTable("ImageProcessingJobs");
                 });
 
             modelBuilder.Entity("Website_API.Models.ListingInterestNotification", b =>
@@ -1684,7 +1684,7 @@ namespace Website_API.Migrations
                     b.HasIndex("UserId", "ApartmentId", "SavedSearchId")
                         .IsUnique();
 
-                    b.ToTable("ListingInterestNotifications", (string)null);
+                    b.ToTable("ListingInterestNotifications");
                 });
 
             modelBuilder.Entity("Website_API.Models.ListingUpload", b =>
@@ -1748,7 +1748,7 @@ namespace Website_API.Migrations
                     b.HasIndex("SourcePlatform", "SourceListingId", "AgentUserId", "Platform", "PublishedListingId")
                         .IsUnique();
 
-                    b.ToTable("ListingUploads", (string)null);
+                    b.ToTable("ListingUploads");
                 });
 
             modelBuilder.Entity("Website_API.Models.LocationArea", b =>
@@ -1814,7 +1814,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("Type", "NameEn");
 
-                    b.ToTable("LocationAreas", (string)null);
+                    b.ToTable("LocationAreas");
                 });
 
             modelBuilder.Entity("Website_API.Models.MyHomeCheck", b =>
@@ -1861,7 +1861,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("JobId", "Status");
 
-                    b.ToTable("MyHomeChecks", (string)null);
+                    b.ToTable("MyHomeChecks");
                 });
 
             modelBuilder.Entity("Website_API.Models.MyHomeJob", b =>
@@ -1916,7 +1916,7 @@ namespace Website_API.Migrations
                         .IsUnique()
                         .HasFilter("\"State\" = 'RUNNING'");
 
-                    b.ToTable("MyHomeJobs", (string)null);
+                    b.ToTable("MyHomeJobs");
                 });
 
             modelBuilder.Entity("Website_API.Models.OwnerListingLink", b =>
@@ -1955,7 +1955,7 @@ namespace Website_API.Migrations
                     b.HasIndex("Token")
                         .IsUnique();
 
-                    b.ToTable("OwnerListingLinks", (string)null);
+                    b.ToTable("OwnerListingLinks");
                 });
 
             modelBuilder.Entity("Website_API.Models.OwnerSubmission", b =>
@@ -2025,7 +2025,7 @@ namespace Website_API.Migrations
 
                     b.HasIndex("AgentUserId");
 
-                    b.ToTable("OwnerSubmissions", (string)null);
+                    b.ToTable("OwnerSubmissions");
                 });
 
             modelBuilder.Entity("Website_API.Models.SavedSearch", b =>
@@ -2071,7 +2071,7 @@ namespace Website_API.Migrations
                     b.HasIndex("UserId", "CriteriaHash")
                         .IsUnique();
 
-                    b.ToTable("SavedSearches", (string)null);
+                    b.ToTable("SavedSearches");
                 });
 
             modelBuilder.Entity("Website_API.Models.SavedSearchMatch", b =>
@@ -2101,7 +2101,7 @@ namespace Website_API.Migrations
                     b.HasIndex("SavedSearchId", "ApartmentId")
                         .IsUnique();
 
-                    b.ToTable("SavedSearchMatches", (string)null);
+                    b.ToTable("SavedSearchMatches");
                 });
 
             modelBuilder.Entity("Website_API.Models.StreetGeometry", b =>
@@ -2149,7 +2149,7 @@ namespace Website_API.Migrations
                     b.HasIndex("OsmWayId", "District")
                         .IsUnique();
 
-                    b.ToTable("StreetGeometries", (string)null);
+                    b.ToTable("StreetGeometries");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
