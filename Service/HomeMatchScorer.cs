@@ -277,14 +277,20 @@ public class HomeMatchScorer
 
         if (profile.Lifestyles.Contains("RemoteWorker"))
         {
-            if (apartment.HasHomeOfficeSpace)
+            // A home office, or a spare room: more rooms than bedrooms plus a living room,
+            // or more bedrooms than the client needs.
+            var spareRoom = (apartment.Rooms > 0 && apartment.Bedrooms > 0 && apartment.Rooms - apartment.Bedrooms >= 2) ||
+                (profile.Bedrooms is > 0 && apartment.Bedrooms > profile.Bedrooms);
+            if (apartment.HasHomeOfficeSpace || spareRoom)
             {
                 earned += 6;
 
                 AddReason(
                     result,
                     "Workspace",
-                    "The apartment has dedicated home-office space.",
+                    apartment.HasHomeOfficeSpace
+                        ? "The apartment has dedicated home-office space."
+                        : "The apartment has a spare room you can use as an office.",
                     6,
                     6
                 );
@@ -308,6 +314,16 @@ public class HomeMatchScorer
             if (IsWithin(apartment.ParkDistanceMinutes, 15))
                 earned += 3;
         }
+
+        if (profile.Lifestyles.Contains("QuietLifestyle") && IsQuiet(apartment))
+            earned += 6;
+
+        if (profile.Lifestyles.Contains("Student") && IsWithin(apartment.UniversityDistanceMinutes, 15))
+            earned += 5;
+
+        if (profile.Lifestyles.Contains("BusinessProfessional") &&
+            (IsWithin(apartment.MetroDistanceMinutes, 10) || apartment.HasParking))
+            earned += 5;
 
         if (profile.Lifestyles.Contains("SocialLifestyle") ||
             profile.Lifestyles.Contains("HostsGuests"))
@@ -545,7 +561,8 @@ public class HomeMatchScorer
 
             "LargeKitchen" => apartment.HasLargeKitchen,
 
-            "SeparateWorkspace" => apartment.HasHomeOfficeSpace,
+            "SeparateWorkspace" or "Workspace" => apartment.HasHomeOfficeSpace ||
+                (apartment.Rooms > 0 && apartment.Bedrooms > 0 && apartment.Rooms - apartment.Bedrooms >= 2),
 
             "GoodView" => apartment.HasView,
 
