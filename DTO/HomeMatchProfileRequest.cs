@@ -18,6 +18,12 @@ public class HomeMatchProfileRequest
     public double? ProximityLatitude { get; set; }
     public double? ProximityLongitude { get; set; }
 
+    /// <summary>Follow-up to "Business professional": "NearOffice" or "HomeBusiness".</summary>
+    public string? BusinessMode { get; set; }
+    public string? OfficeAddress { get; set; }
+    public double? OfficeLatitude { get; set; }
+    public double? OfficeLongitude { get; set; }
+
     public decimal BudgetMin { get; set; }
     public decimal BudgetMax { get; set; }
     public string Currency { get; set; } = "USD";

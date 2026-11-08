@@ -321,9 +321,8 @@ public class HomeMatchScorer
         if (profile.Lifestyles.Contains("Student") && IsWithin(apartment.UniversityDistanceMinutes, 15))
             earned += 5;
 
-        if (profile.Lifestyles.Contains("BusinessProfessional") &&
-            (IsWithin(apartment.MetroDistanceMinutes, 10) || apartment.HasParking))
-            earned += 5;
+        if (profile.Lifestyles.Contains("BusinessProfessional"))
+            earned += ScoreBusiness(apartment, profile, result);
 
         if (profile.Lifestyles.Contains("SocialLifestyle") ||
             profile.Lifestyles.Contains("HostsGuests"))
@@ -623,6 +622,63 @@ public class HomeMatchScorer
         distance.HasValue && distance.Value <= maximum;
 
     // The upload form records "Quiet street: Yes" in the listing details; NoiseLevel is rarely set.
+    /// <summary>
+    /// "Business professional": near the office the client marked on the map (closer ranks higher),
+    /// a home office for people who run their business from home, or otherwise metro / parking.
+    /// </summary>
+    private static int ScoreBusiness(Apartment apartment, HomeMatchProfileRequest profile, HomeMatchResultDto result)
+    {
+        if (string.Equals(profile.BusinessMode, "HomeBusiness", StringComparison.OrdinalIgnoreCase))
+        {
+            // Same workspace rule as "I work from home"; not counted twice when both are chosen.
+            if (profile.Lifestyles.Contains("RemoteWorker")) return 0;
+            if (!HasWorkspace(apartment, profile)) return 0;
+            AddReason(result, "Room for your business",
+                apartment.HasHomeOfficeSpace
+                    ? "The apartment has dedicated home-office space."
+                    : "The apartment has a spare room you can use as an office.",
+                6, 6);
+            return 6;
+        }
+
+        if (string.Equals(profile.BusinessMode, "NearOffice", StringComparison.OrdinalIgnoreCase) &&
+            profile.OfficeLatitude is double officeLat && profile.OfficeLongitude is double officeLng)
+        {
+            var lat = apartment.PropertyLatitude ?? apartment.Latitude;
+            var lng = apartment.PropertyLongitude ?? apartment.Longitude;
+            if (lat is null || lng is null) return 0;
+            var km = DistanceKm(lat.Value, lng.Value, officeLat, officeLng);
+            var points = OfficeDistancePoints(km);
+            if (points > 0)
+                AddReason(result, "Close to your office", $"About {km:0.#} km from your office.", points, 10);
+            else
+                AddTradeOff(result, "Office distance", $"About {km:0.#} km from your office.", "Medium", 10);
+            return points;
+        }
+
+        return IsWithin(apartment.MetroDistanceMinutes, 10) || apartment.HasParking ? 5 : 0;
+    }
+
+    /// <summary>Points for straight-line distance to the office: the closer, the higher.</summary>
+    public static int OfficeDistancePoints(double km) =>
+        km <= 1.5 ? 10 : km <= 3 ? 8 : km <= 5 ? 5 : km <= 8 ? 2 : 0;
+
+    internal static double DistanceKm(double lat1, double lng1, double lat2, double lng2)
+    {
+        const double R = 6371;
+        var dLat = (lat2 - lat1) * Math.PI / 180;
+        var dLng = (lng2 - lng1) * Math.PI / 180;
+        var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+            Math.Cos(lat1 * Math.PI / 180) * Math.Cos(lat2 * Math.PI / 180) * Math.Sin(dLng / 2) * Math.Sin(dLng / 2);
+        return R * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+    }
+
+    /// <summary>A home office, or a spare room (rooms beyond bedrooms + living room, or more bedrooms than needed).</summary>
+    internal static bool HasWorkspace(Apartment apartment, HomeMatchProfileRequest profile) =>
+        apartment.HasHomeOfficeSpace ||
+        (apartment.Rooms > 0 && apartment.Bedrooms > 0 && apartment.Rooms - apartment.Bedrooms >= 2) ||
+        (profile.Bedrooms is > 0 && apartment.Bedrooms > profile.Bedrooms);
+
     internal static bool IsQuiet(Apartment apartment) =>
         System.Text.RegularExpressions.Regex.IsMatch(
             apartment.Description ?? string.Empty,

@@ -1282,6 +1282,11 @@ public class CrmController : ControllerBase
             });
         }
 
+        var lostReason = dto.LostReason?.Trim();
+        var lostComment = dto.Comment?.Trim();
+        if (status == CrmLeadStatus.Lost && string.IsNullOrWhiteSpace(lostReason))
+            return BadRequest(new { message = "Please enter the reason for losing the lead." });
+
         var lead = await AccessibleLeads(userId)
             .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (lead is null)
@@ -1296,6 +1301,17 @@ public class CrmController : ControllerBase
             lead.ClosedAt = status is CrmLeadStatus.Won or CrmLeadStatus.Lost
                 ? now
                 : null;
+            // A lead that was won before keeps its first win date, so moving it away and back
+            // (e.g. Lost by mistake, then Won again) does not count it as a new deal this month.
+            if (status == CrmLeadStatus.Won)
+            {
+                var firstWin = await _context.CrmActivities.AsNoTracking()
+                    .Where(item => item.LeadId == lead.Id && item.Type == CrmActivityType.Status && item.Content.Contains(" to won."))
+                    .OrderBy(item => item.CreatedAt)
+                    .Select(item => (DateTime?)item.CreatedAt)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (firstWin is DateTime firstWinAt) lead.ClosedAt = firstWinAt;
+            }
             // A newly won lead gets an estimated commission the agent can correct.
             if (status == CrmLeadStatus.Won && lead.DealAmountUsd is null)
                 lead.DealAmountUsd = EstimateCommissionUsd(lead.Apartment ?? (lead.ApartmentId is int apartmentId
@@ -1304,9 +1320,12 @@ public class CrmController : ControllerBase
             lead.Activities.Add(new CrmActivity
             {
                 Type = CrmActivityType.Status,
+                // Extra lines are read by the CRM timeline ("Lost reason:" / "Comment:").
                 Content =
                     $"Status changed from {oldStatus.ToApiValue()} " +
-                    $"to {status.ToApiValue()}.",
+                    $"to {status.ToApiValue()}." +
+                    (status == CrmLeadStatus.Lost ? $"\nLost reason: {lostReason}" : "") +
+                    (status == CrmLeadStatus.Lost && !string.IsNullOrWhiteSpace(lostComment) ? $"\nComment: {lostComment}" : ""),
                 CreatedByUserId = userId,
                 CreatedAt = now
             });

@@ -125,7 +125,8 @@ public class CrmNotificationTests
             Assert.Equal(1, (await Feed()).GetProperty("items").EnumerateArray().Count(n => n.GetProperty("type").GetString() == "crm-status"));
             // An agent's own update alerts managers, not the agent themselves.
             As("agent", "Agent");
-            Assert.Equal(HttpStatusCode.OK, (await client.PatchAsJsonAsync($"/api/Crm/leads/{leadId}/status", new { status = "lost" })).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.PatchAsJsonAsync($"/api/Crm/leads/{leadId}/status", new { status = "lost" })).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.PatchAsJsonAsync($"/api/Crm/leads/{leadId}/status", new { status = "lost", lostReason = "Chose another agency", comment = "May come back in spring" })).StatusCode);
             Assert.Equal(0, (await Feed("/summary")).GetProperty("unread").GetInt32());
             As("actor", "Manager");
             Assert.Equal(1, (await Feed("/summary")).GetProperty("unread").GetInt32());

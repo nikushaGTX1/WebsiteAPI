@@ -39,6 +39,12 @@ public class ClientRequirements : SavedSearchProfile
     public double? ProximityLatitude { get; set; }
     public double? ProximityLongitude { get; set; }
 
+    /// <summary>Follow-up to "Business professional": "NearOffice" or "HomeBusiness".</summary>
+    public string? BusinessMode { get; set; }
+    public string? OfficeAddress { get; set; }
+    public double? OfficeLatitude { get; set; }
+    public double? OfficeLongitude { get; set; }
+
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public static ClientRequirements Read(string json) => JsonSerializer.Deserialize<ClientRequirements>(json, Json)!;
 
@@ -77,7 +83,8 @@ public class ClientRequirements : SavedSearchProfile
                 !Code(p.RentalDuration, "ThreeToFiveMonths SixMonths TwelveMonths MoreThanTwelveMonths Unknown") ||
                 !Code(p.MoveInTiming, "Immediately WithinOneWeek WithinOneMonth SpecificDate Flexible") ||
                 !Code(p.PetType, "None Dog Cat Other") || !Code(p.DogSize, "Small Medium Large") ||
-                !Code(p.CarFuelType, "Electric Fuel") || !Code(p.ApartmentStyle, "Modern Vintage Other") ||
+                !Code(p.CarFuelType, "Electric Fuel") || !Code(p.BusinessMode, "NearOffice HomeBusiness") || (p.OfficeAddress?.Length ?? 0) > 500 ||
+                p.OfficeLatitude is < -90 or > 90 || p.OfficeLongitude is < -180 or > 180 || !Code(p.ApartmentStyle, "Modern Vintage Other") ||
                 !Code(p.PurchaseTiming, "Immediately WithinOneMonth WithinOneToThreeMonths WithinThreeToSixMonths MoreThanSixMonths Exploring Flexible") ||
                 (p.PetOtherType?.Length ?? 0) > 120 || (p.ProximityAddress?.Length ?? 0) > 500 ||
                 (p.ProximityTarget?.Length ?? 0) > 80 || p.MetroDistanceMinutes is < 0 or > 120 ||

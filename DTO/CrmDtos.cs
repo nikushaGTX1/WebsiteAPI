@@ -110,6 +110,14 @@ public class UpdateCrmLeadStatusDto
 {
     [Required]
     public string Status { get; set; } = string.Empty;
+
+    /// <summary>Required when the lead is moved to Lost.</summary>
+    [MaxLength(1000)]
+    public string? LostReason { get; set; }
+
+    /// <summary>Optional extra comment saved with a Lost change.</summary>
+    [MaxLength(2000)]
+    public string? Comment { get; set; }
 }
 
 public class AssignCrmLeadDto
