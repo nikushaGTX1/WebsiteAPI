@@ -104,6 +104,8 @@ builder.Services.AddScoped<HomeMatchScorer>();
 builder.Services.AddSingleton<ApartmentMatchQueue>();
 builder.Services.AddScoped<SavedSearchMatcher>();
 builder.Services.AddScoped<ListingInterestService>();
+// Owner submissions: approve / send / client matches (used by OwnerListingsController and ApartmentSubmissionsController).
+builder.Services.AddScoped<ApartmentSubmissionService>();
 builder.Services.AddHostedService<SavedSearchMatchWorker>();
 
 // OpenAI image editing. Off unless ImageAi__Enabled=true.
