@@ -1301,17 +1301,6 @@ public class CrmController : ControllerBase
             lead.ClosedAt = status is CrmLeadStatus.Won or CrmLeadStatus.Lost
                 ? now
                 : null;
-            // A lead that was won before keeps its first win date, so moving it away and back
-            // (e.g. Lost by mistake, then Won again) does not count it as a new deal this month.
-            if (status == CrmLeadStatus.Won)
-            {
-                var firstWin = await _context.CrmActivities.AsNoTracking()
-                    .Where(item => item.LeadId == lead.Id && item.Type == CrmActivityType.Status && item.Content.Contains(" to won."))
-                    .OrderBy(item => item.CreatedAt)
-                    .Select(item => (DateTime?)item.CreatedAt)
-                    .FirstOrDefaultAsync(cancellationToken);
-                if (firstWin is DateTime firstWinAt) lead.ClosedAt = firstWinAt;
-            }
             // A newly won lead gets an estimated commission the agent can correct.
             if (status == CrmLeadStatus.Won && lead.DealAmountUsd is null)
                 lead.DealAmountUsd = EstimateCommissionUsd(lead.Apartment ?? (lead.ApartmentId is int apartmentId
