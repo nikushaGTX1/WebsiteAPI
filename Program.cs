@@ -322,24 +322,6 @@ using (var scope = app.Services.CreateScope())
 
         await context.Database.MigrateAsync();
 
-        var importedOfficialStreets =
-            await OfficialStreetCatalogSeeder.SeedAsync(context);
-        if (importedOfficialStreets > 0)
-        {
-            app.Logger.LogInformation(
-                "Imported {StreetCount} official Tbilisi street catalog records.",
-                importedOfficialStreets);
-        }
-
-        var repairedLocations =
-            await ApartmentLocationBackfill.RepairAsync(context);
-        if (repairedLocations > 0)
-        {
-            app.Logger.LogInformation(
-                "Automatically repaired the locations of {ApartmentCount} apartments.",
-                repairedLocations);
-        }
-
         var roleManager =
             services.GetRequiredService<
                 RoleManager<IdentityRole>>();
@@ -474,5 +456,26 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// The street catalog seed and location repair run thousands of queries. Running them before
+// app.Run() kept the API from listening (Railway returned 502), so they run after start-up.
+app.Lifetime.ApplicationStarted.Register(() => _ = Task.Run(async () =>
+{
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var importedOfficialStreets = await OfficialStreetCatalogSeeder.SeedAsync(context);
+        if (importedOfficialStreets > 0)
+            app.Logger.LogInformation("Imported {StreetCount} official Tbilisi street catalog records.", importedOfficialStreets);
+        var repairedLocations = await ApartmentLocationBackfill.RepairAsync(context);
+        if (repairedLocations > 0)
+            app.Logger.LogInformation("Automatically repaired the locations of {ApartmentCount} apartments.", repairedLocations);
+    }
+    catch (Exception exception)
+    {
+        app.Logger.LogError(exception, "Street catalog seed or location repair failed.");
+    }
+}));
 
 app.Run();
