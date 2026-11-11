@@ -416,6 +416,32 @@ using (var scope = app.Services.CreateScope())
                 admin,
                 "Admin");
         }
+
+        // Railway Admin__Email / Admin__Password are the source of truth for the admin login:
+        // when they change, the existing admin account is updated at the next start.
+        if (admin is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(adminEmail) &&
+                !string.Equals(admin.Email, adminEmail, StringComparison.OrdinalIgnoreCase) &&
+                await userManager.FindByEmailAsync(adminEmail) is null)
+            {
+                admin.Email = adminEmail;
+                admin.EmailConfirmed = true;
+                var emailResult = await userManager.UpdateAsync(admin);
+                if (!emailResult.Succeeded)
+                    app.Logger.LogWarning("Could not update the admin email: {Errors}", string.Join(", ", emailResult.Errors.Select(e => e.Description)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(adminPassword) && !await userManager.CheckPasswordAsync(admin, adminPassword))
+            {
+                var token = await userManager.GeneratePasswordResetTokenAsync(admin);
+                var passwordResult = await userManager.ResetPasswordAsync(admin, token, adminPassword);
+                if (passwordResult.Succeeded)
+                    app.Logger.LogInformation("Admin password updated from configuration.");
+                else
+                    app.Logger.LogWarning("Could not update the admin password: {Errors}", string.Join(", ", passwordResult.Errors.Select(e => e.Description)));
+            }
+        }
     }
     catch (Exception exception)
     {
