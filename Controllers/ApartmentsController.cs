@@ -1198,7 +1198,7 @@ public class ApartmentsController : ControllerBase
         });
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [Authorize(Roles = "Admin,Manager,Agent")]
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> DeleteApartment(
         int id,
@@ -1218,8 +1218,12 @@ public class ApartmentsController : ControllerBase
             });
         }
 
-        // Managers may only decline listings still waiting for approval.
-        if (!User.IsInRole("Admin") && apartment.IsApproved)
+        // Admins delete anything. Agents and managers delete the listings they uploaded;
+        // managers may also decline any listing still waiting for approval.
+        var isOwnListing = !string.IsNullOrEmpty(apartment.UploadedByUserId) &&
+            apartment.UploadedByUserId == User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!User.IsInRole("Admin") && !isOwnListing &&
+            !(User.IsInRole("Manager") && !apartment.IsApproved))
         {
             return Forbid();
         }

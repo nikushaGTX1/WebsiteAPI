@@ -368,7 +368,9 @@ using (var scope = app.Services.CreateScope())
             builder.Configuration["Admin:Password"];
 
         var admin =
-            await userManager.FindByEmailAsync(adminEmail);
+            await userManager.FindByEmailAsync(adminEmail)
+            // Admin__Email may change in Railway; the existing "admin" account is still the admin.
+            ?? await userManager.FindByNameAsync("admin");
 
         if (admin == null)
         {
