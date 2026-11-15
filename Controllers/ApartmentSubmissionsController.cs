@@ -51,7 +51,7 @@ public sealed class ApartmentSubmissionsController(AppDbContext db, SupabaseStor
                 if (path is null) throw new InvalidOperationException("Photo upload failed.");
                 paths.Add(path);
             }
-            var apartment = new Apartment { IsApproved = false, UploadedByUserId = reviewer };
+            var apartment = new Apartment { IsApproved = false, UploadedByUserId = reviewer, OwnerUserId = string.IsNullOrWhiteSpace(UserId) ? null : UserId };
             data.Apply(apartment, form.OwnerName, form.OwnerPhone);
             apartment.ImageUrl = paths[0];
             apartment.Images = paths.Select((p, i) => new ApartmentImage { StoragePath = p, SortOrder = i, IsCover = i == 0 }).ToList();

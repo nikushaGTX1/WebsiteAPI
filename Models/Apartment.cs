@@ -59,6 +59,12 @@ public class Apartment
     // the uploader's behalf after approval.
     public string? UploadedByUserId { get; set; }
 
+    /// <summary>
+    /// The signed-in owner who offered this home through "Submit apartment". The listing is
+    /// uploaded under the reviewing agent, so this links it back to the owner's "My listings".
+    /// </summary>
+    public string? OwnerUserId { get; set; }
+
     [JsonIgnore]
     public AppUser? UploadedByUser { get; set; }
 

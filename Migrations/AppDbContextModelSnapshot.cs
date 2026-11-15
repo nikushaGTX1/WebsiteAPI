@@ -426,6 +426,9 @@ namespace Website_API.Migrations
                     b.Property<string>("OwnerPhoneNumber")
                         .HasColumnType("text");
 
+                    b.Property<string>("OwnerUserId")
+                        .HasColumnType("text");
+
                     b.Property<int?>("ParkDistanceMinutes")
                         .HasColumnType("integer");
 

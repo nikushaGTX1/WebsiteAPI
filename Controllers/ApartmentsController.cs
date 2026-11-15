@@ -557,12 +557,16 @@ public class ApartmentsController : ControllerBase
             });
         }
 
-        if (!User.IsInRole("Admin") && !User.IsInRole("Manager") &&
-            (string.IsNullOrEmpty(apartment.UploadedByUserId) ||
-             apartment.UploadedByUserId != User.FindFirstValue(ClaimTypes.NameIdentifier)))
+        var editorId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var editorIsStaff = User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Agent");
+        var editorIsOwner = !string.IsNullOrEmpty(editorId) &&
+            (apartment.UploadedByUserId == editorId || apartment.OwnerUserId == editorId);
+        if (!User.IsInRole("Admin") && !User.IsInRole("Manager") && !editorIsOwner)
         {
             return Forbid();
         }
+        // A property owner's (non-staff) changes are hidden until a manager approves them again.
+        var needsReapproval = !editorIsStaff && editorIsOwner;
 
         CanonicalStreet? canonicalStreet = null;
         if (dto.StreetId.HasValue)
@@ -863,6 +867,7 @@ public class ApartmentsController : ControllerBase
             var coverImage = apartment.Images
                 .FirstOrDefault(image => image.IsCover);
             apartment.ImageUrl = coverImage?.StoragePath;
+            if (needsReapproval) apartment.IsApproved = false;
 
             await _context.SaveChangesAsync(cancellationToken);
             await InvalidateApartmentCacheAsync(cancellationToken);
@@ -1104,7 +1109,7 @@ public class ApartmentsController : ControllerBase
         var apartments = await _context.Apartments
             .AsNoTracking()
             .Include(apartment => apartment.Images)
-            .Where(apartment => apartment.UploadedByUserId == userId)
+            .Where(apartment => apartment.UploadedByUserId == userId || apartment.OwnerUserId == userId)
             // Same exclusion as the public list: scraped myhome/ss imports saved under the
             // agent's account are not the agent's own listings.
             .Where(apartment =>
@@ -1198,7 +1203,7 @@ public class ApartmentsController : ControllerBase
         });
     }
 
-    [Authorize(Roles = "Admin,Manager,Agent")]
+    [Authorize]
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> DeleteApartment(
         int id,
@@ -1220,8 +1225,9 @@ public class ApartmentsController : ControllerBase
 
         // Admins delete anything. Agents and managers delete the listings they uploaded;
         // managers may also decline any listing still waiting for approval.
-        var isOwnListing = !string.IsNullOrEmpty(apartment.UploadedByUserId) &&
-            apartment.UploadedByUserId == User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var isOwnListing = !string.IsNullOrEmpty(currentUserId) &&
+            (apartment.UploadedByUserId == currentUserId || apartment.OwnerUserId == currentUserId);
         if (!User.IsInRole("Admin") && !isOwnListing &&
             !(User.IsInRole("Manager") && !apartment.IsApproved))
         {
