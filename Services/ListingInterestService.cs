@@ -20,13 +20,16 @@ public class ListingInterestService
     private readonly ILogger<ListingInterestService> _logger;
     private readonly ResendEmailService? _email;
     private readonly IConfiguration? _configuration;
+    private readonly SupabaseStorageService? _storage;
 
     public ListingInterestService(
         AppDbContext context,
         ILogger<ListingInterestService> logger,
         ResendEmailService? email = null,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        SupabaseStorageService? storage = null)
     {
+        _storage = storage;
         _context = context;
         _logger = logger;
         _email = email;
@@ -299,6 +302,11 @@ public class ListingInterestService
             .OrderByDescending(apartment => apartment.PublishedAt ?? apartment.CreatedAt)
             .ToListAsync(cancellationToken);
 
+        // Agent photos are private storage paths: sign them so the owner's browser can load them.
+        var photoUrls = new Dictionary<string, string?>();
+        foreach (var path in ready.Select(item => item.AgentPhoto).Where(path => !string.IsNullOrWhiteSpace(path)).Distinct())
+            photoUrls[path!] = _storage is null ? null : await _storage.CreateSignedUrlAsync(path!, 604800, cancellationToken);
+
         return apartments.Select(apartment => new ListingInterestView
         {
             ApartmentId = apartment.Id,
@@ -321,7 +329,7 @@ public class ListingInterestService
                 IsNew = item.OwnerReadAt == null,
                 AgentName = item.AgentName,
                 AgentPhone = item.AgentPhone,
-                AgentPhoto = item.AgentPhoto,
+                AgentPhoto = item.AgentPhoto != null && photoUrls.TryGetValue(item.AgentPhoto, out var photoUrl) ? photoUrl : null,
             }).ToList(),
         }).ToList();
     }
