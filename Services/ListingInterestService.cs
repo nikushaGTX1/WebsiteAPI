@@ -41,7 +41,7 @@ public class ListingInterestService
     [
         "propertyGoal", "districts", "locationFlexible", "budgetMin", "budgetMax", "currency", "bedrooms",
         "minSize", "adults", "children", "hasPet", "petType", "petTypes", "petCount", "dogSize",
-        "moveInDate", "moveInTiming", "rentalDuration", "topPriorities", "householdType", "gender",
+        "moveInDate", "moveInTiming", "rentalDuration", "topPriorities", "householdType", "gender", "nationality",
     ];
 
     public static JsonObject PublicProfile(string json)
