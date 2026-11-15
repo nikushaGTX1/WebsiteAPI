@@ -290,6 +290,7 @@ public class ListingInterestService
                 ProfileJson = n.SavedSearch.ProfileJson,
                 AgentName = n.Reviewer != null ? n.Reviewer.FullName ?? n.Reviewer.UserName : null,
                 AgentPhone = n.Reviewer != null ? n.Reviewer.PhoneNumber : null,
+                AgentPhoto = n.Reviewer != null ? n.Reviewer.ProfilePicture : null,
             })
             .ToListAsync(cancellationToken);
         var readyIds = ready.Select(item => item.ApartmentId).Distinct().ToList();
@@ -320,6 +321,7 @@ public class ListingInterestService
                 IsNew = item.OwnerReadAt == null,
                 AgentName = item.AgentName,
                 AgentPhone = item.AgentPhone,
+                AgentPhoto = item.AgentPhoto,
             }).ToList(),
         }).ToList();
     }
@@ -353,6 +355,7 @@ public class InterestedClientView
     public bool IsNew { get; set; }
     public string? AgentName { get; set; }
     public string? AgentPhone { get; set; }
+    public string? AgentPhoto { get; set; }
 }
 
 /// <summary>What the reviewing agent sees in the CRM, including the client's contact details.</summary>
