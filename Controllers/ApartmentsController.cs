@@ -868,6 +868,7 @@ public class ApartmentsController : ControllerBase
                 .FirstOrDefault(image => image.IsCover);
             apartment.ImageUrl = coverImage?.StoragePath;
             if (needsReapproval) apartment.IsApproved = false;
+            else apartment.LastConfirmedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync(cancellationToken);
             await InvalidateApartmentCacheAsync(cancellationToken);
@@ -1173,6 +1174,25 @@ public class ApartmentsController : ControllerBase
             .ToListAsync(cancellationToken);
 
         return Ok(rows);
+    }
+
+    /// <summary>
+    /// "Still available": the uploader (or the owner, or a manager) confirms the listing is still
+    /// on the market. Resets the 6-day reminder shown on rentals in "My listings".
+    /// </summary>
+    [Authorize]
+    [HttpPost("{id:int}/confirm-available")]
+    public async Task<IActionResult> ConfirmAvailable(int id, CancellationToken cancellationToken)
+    {
+        var apartment = await _context.Apartments.FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+        if (apartment is null) return NotFound(new { message = "Apartment not found" });
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var own = !string.IsNullOrEmpty(userId) && (apartment.UploadedByUserId == userId || apartment.OwnerUserId == userId);
+        if (!own && !User.IsInRole("Admin") && !User.IsInRole("Manager")) return Forbid();
+        apartment.LastConfirmedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+        await InvalidateApartmentCacheAsync(cancellationToken);
+        return Ok(new { lastConfirmedAt = apartment.LastConfirmedAt });
     }
 
     [Authorize(Roles = "Admin,Manager")]
