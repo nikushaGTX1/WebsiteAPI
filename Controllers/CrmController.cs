@@ -488,6 +488,12 @@ public class CrmController : ControllerBase
                         task.UpdatedAt
                     })
                     .FirstOrDefault(),
+                // Open "Appointment" (viewing task): the board shows the lead green until it is finished.
+                OpenAppointment = lead.Tasks
+                    .Where(task => task.CompletedAt == null && task.Type == CrmTaskType.Viewing)
+                    .OrderBy(task => task.DueAt)
+                    .Select(task => new { task.Id, task.Title, task.Details, task.DueAt })
+                    .FirstOrDefault(),
                 LastActivityAt = lead.Activities
                     .OrderByDescending(activity => activity.CreatedAt)
                     .Select(activity => (DateTime?)activity.CreatedAt)
@@ -525,6 +531,18 @@ public class CrmController : ControllerBase
             CustomerUserId = row.CustomerUserId,
             CreatedByUserId = row.CreatedByUserId,
             NextFollowUpAt = row.NextFollowUpAt,
+            OpenAppointment = row.OpenAppointment is null
+                ? null
+                : new CrmTaskResponseDto
+                {
+                    Id = row.OpenAppointment.Id,
+                    LeadId = row.Id,
+                    Type = "viewing",
+                    Title = row.OpenAppointment.Title,
+                    Description = row.OpenAppointment.Details,
+                    DueAt = row.OpenAppointment.DueAt,
+                    Status = "open",
+                },
             NextTask = row.NextTask is null
                 ? null
                 : new CrmTaskResponseDto

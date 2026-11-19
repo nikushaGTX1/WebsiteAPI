@@ -269,6 +269,9 @@ public class CrmLeadListItemDto
     public string? CreatedByUserId { get; set; }
     public DateTime? NextFollowUpAt { get; set; }
     public CrmTaskResponseDto? NextTask { get; set; }
+
+    /// <summary>Open appointment (viewing task) shown as a green badge on the lead card.</summary>
+    public CrmTaskResponseDto? OpenAppointment { get; set; }
     public DateTime? LastActivityAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
