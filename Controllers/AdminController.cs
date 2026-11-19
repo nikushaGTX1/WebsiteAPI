@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 using Website_API.Data;
 using Website_API.DTO;
@@ -279,13 +280,55 @@ public class AdminController : ControllerBase
         return Ok(new { message = "User is now an agent" });
     }
 
+    /// <summary>How much work an agent leaves behind, shown before removing them.</summary>
+    [HttpGet("agents/{userId}/holdings")]
+    public async Task<IActionResult> AgentHoldings(string userId, CancellationToken cancellationToken)
+    {
+        var apartments = await _context.Apartments.CountAsync(a => a.UploadedByUserId == userId, cancellationToken);
+        var openLeads = await _context.CrmLeads.CountAsync(l => l.AssignedAgentId == userId && l.ClosedAt == null, cancellationToken);
+        return Ok(new { apartments, openLeads });
+    }
+
+    /// <summary>
+    /// Removes the agent role. With ?transferTo=, their website apartments (and the agent
+    /// name/phone shown on them), open CRM leads and owner submissions go to that person first.
+    /// </summary>
     [HttpPost("remove-agent/{userId}")]
-    public async Task<IActionResult> RemoveAgent(string userId)
+    public async Task<IActionResult> RemoveAgent(string userId, [FromQuery] string? transferTo, CancellationToken cancellationToken)
     {
         var user = await _userManager.FindByIdAsync(userId);
 
         if (user == null)
             return NotFound(new { message = "User not found" });
+
+        var moved = 0;
+        if (!string.IsNullOrWhiteSpace(transferTo))
+        {
+            if (transferTo == userId) return BadRequest(new { message = "Choose a different agent to receive the apartments." });
+            var target = await _userManager.FindByIdAsync(transferTo);
+            if (target is null) return BadRequest(new { message = "The agent who should receive the apartments was not found." });
+            var targetIsStaff = target.IsAgent ||
+                await _userManager.IsInRoleAsync(target, "Agent") ||
+                await _userManager.IsInRoleAsync(target, "Manager") ||
+                await _userManager.IsInRoleAsync(target, "Admin");
+            if (!targetIsStaff) return BadRequest(new { message = "Apartments can only be given to an agent, manager or admin." });
+
+            var targetName = target.FullName ?? target.UserName;
+            var apartments = await _context.Apartments.Where(a => a.UploadedByUserId == userId).ToListAsync(cancellationToken);
+            foreach (var apartment in apartments)
+            {
+                apartment.UploadedByUserId = target.Id;
+                apartment.AgentName = targetName;
+                if (!string.IsNullOrWhiteSpace(target.PhoneNumber)) apartment.AgentPhoneNumber = target.PhoneNumber;
+            }
+            moved = apartments.Count;
+            var leads = await _context.CrmLeads.Where(l => l.AssignedAgentId == userId && l.ClosedAt == null).ToListAsync(cancellationToken);
+            foreach (var lead in leads) lead.AssignedAgentId = target.Id;
+            var submissions = await _context.OwnerSubmissions.Where(x => x.AgentUserId == userId && x.Status != "sent" && x.Status != "rejected").ToListAsync(cancellationToken);
+            foreach (var submission in submissions) submission.AgentUserId = target.Id;
+            await _context.SaveChangesAsync(cancellationToken);
+            await HttpContext.RequestServices.GetRequiredService<IOutputCacheStore>().EvictByTagAsync("apartments", cancellationToken);
+        }
 
         user.IsAgent = false;
 
@@ -299,7 +342,7 @@ public class AdminController : ControllerBase
             await _userManager.RemoveFromRoleAsync(user, "Agent");
         }
 
-        return Ok(new { message = "User is no longer an agent" });
+        return Ok(new { message = "User is no longer an agent", movedApartments = moved });
     }
 
     [HttpPut("users/{id}/crm-role")]
