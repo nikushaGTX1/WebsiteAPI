@@ -280,6 +280,52 @@ public class AdminController : ControllerBase
         return Ok(new { message = "User is now an agent" });
     }
 
+public sealed record TransferApartmentsDto(string? FromUserId, string ToUserId, int? ApartmentId);
+
+    /// <summary>
+    /// Gives apartments to another agent: every apartment of FromUserId (e.g. an agent who left),
+    /// or a single ApartmentId. The listing's agent name and phone follow; for a whole-agent
+    /// transfer their open CRM leads and owner submissions move too.
+    /// </summary>
+    [HttpPost("transfer-apartments")]
+    public async Task<IActionResult> TransferApartments([FromBody] TransferApartmentsDto dto, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(dto.ToUserId)) return BadRequest(new { message = "Choose the agent who receives the apartments." });
+        if (dto.ApartmentId is null && string.IsNullOrWhiteSpace(dto.FromUserId)) return BadRequest(new { message = "Choose whose apartments to move." });
+        if (dto.FromUserId == dto.ToUserId) return BadRequest(new { message = "Choose a different agent to receive the apartments." });
+        var target = await _userManager.FindByIdAsync(dto.ToUserId);
+        if (target is null) return BadRequest(new { message = "The agent who should receive the apartments was not found." });
+        var targetIsStaff = target.IsAgent ||
+            await _userManager.IsInRoleAsync(target, "Agent") ||
+            await _userManager.IsInRoleAsync(target, "Manager") ||
+            await _userManager.IsInRoleAsync(target, "Admin");
+        if (!targetIsStaff) return BadRequest(new { message = "Apartments can only be given to an agent, manager or admin." });
+
+        var query = _context.Apartments.AsQueryable();
+        query = dto.ApartmentId is int id ? query.Where(x => x.Id == id) : query.Where(x => x.UploadedByUserId == dto.FromUserId);
+        var apartments = await query.ToListAsync(cancellationToken);
+        if (dto.ApartmentId is not null && apartments.Count == 0) return NotFound(new { message = "Apartment not found" });
+        var targetName = target.FullName ?? target.UserName;
+        foreach (var apartment in apartments)
+        {
+            apartment.UploadedByUserId = target.Id;
+            apartment.AgentName = targetName;
+            if (!string.IsNullOrWhiteSpace(target.PhoneNumber)) apartment.AgentPhoneNumber = target.PhoneNumber;
+        }
+        var leadsMoved = 0;
+        if (dto.ApartmentId is null)
+        {
+            var leads = await _context.CrmLeads.Where(l => l.AssignedAgentId == dto.FromUserId && l.ClosedAt == null).ToListAsync(cancellationToken);
+            foreach (var lead in leads) lead.AssignedAgentId = target.Id;
+            leadsMoved = leads.Count;
+            var submissions = await _context.OwnerSubmissions.Where(x => x.AgentUserId == dto.FromUserId && x.Status != "sent" && x.Status != "rejected").ToListAsync(cancellationToken);
+            foreach (var submission in submissions) submission.AgentUserId = target.Id;
+        }
+        await _context.SaveChangesAsync(cancellationToken);
+        await HttpContext.RequestServices.GetRequiredService<IOutputCacheStore>().EvictByTagAsync("apartments", cancellationToken);
+        return Ok(new { movedApartments = apartments.Count, movedLeads = leadsMoved, toName = targetName });
+    }
+
     /// <summary>How much work an agent leaves behind, shown before removing them.</summary>
     [HttpGet("agents/{userId}/holdings")]
     public async Task<IActionResult> AgentHoldings(string userId, CancellationToken cancellationToken)
