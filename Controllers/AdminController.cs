@@ -302,6 +302,12 @@ public class AdminController : ControllerBase
             return NotFound(new { message = "User not found" });
 
         var moved = 0;
+        if (string.IsNullOrWhiteSpace(transferTo) &&
+            (await _context.Apartments.AnyAsync(a => a.UploadedByUserId == userId, cancellationToken) ||
+             await _context.CrmLeads.AnyAsync(l => l.AssignedAgentId == userId && l.ClosedAt == null, cancellationToken)))
+        {
+            return Conflict(new { message = "This agent still has apartments or open leads. Choose who receives them." });
+        }
         if (!string.IsNullOrWhiteSpace(transferTo))
         {
             if (transferTo == userId) return BadRequest(new { message = "Choose a different agent to receive the apartments." });
