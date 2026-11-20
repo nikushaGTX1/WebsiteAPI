@@ -964,7 +964,7 @@ public class ApartmentsController : ControllerBase
                     ?? "Unknown user",
                 submittedByEmail = apartment.UploadedByUser?.Email ?? string.Empty,
                 submittedByPhone = apartment.UploadedByUser?.PhoneNumber,
-                submittedByPicture = apartment.UploadedByUser?.ProfilePicture,
+                submittedByPicture = await SignedPictureAsync(apartment.UploadedByUser?.ProfilePicture, cancellationToken),
                 submittedByIsAgent = apartment.UploadedByUser?.IsAgent ?? false,
             });
         }
@@ -1173,7 +1173,21 @@ public class ApartmentsController : ControllerBase
             })
             .ToListAsync(cancellationToken);
 
-        return Ok(rows);
+        // Profile photos are private storage paths: sign each one once so browsers can load it.
+        var signed = new Dictionary<string, string?>();
+        foreach (var path in rows.Select(row => row.picture).Where(path => !string.IsNullOrWhiteSpace(path)).Distinct())
+            signed[path!] = await SignedPictureAsync(path, cancellationToken);
+        return Ok(rows.Select(row => new
+        {
+            row.apartmentId,
+            row.userId,
+            row.name,
+            row.email,
+            row.phone,
+            picture = row.picture != null && signed.TryGetValue(row.picture, out var url) ? url : null,
+            row.isAgent,
+            row.imageCount,
+        }));
     }
 
     /// <summary>
@@ -1281,6 +1295,15 @@ public class ApartmentsController : ControllerBase
         {
             message = "Apartment deleted successfully"
         });
+    }
+
+    /// <summary>A loadable (signed) URL for a profile photo path; full URLs are returned as they are.</summary>
+    private async Task<string?> SignedPictureAsync(string? path, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        if (path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return path;
+        try { return await _storageService.CreateSignedUrlAsync(path, 604800, cancellationToken); }
+        catch { return null; }
     }
 
     private ValueTask InvalidateApartmentCacheAsync(
