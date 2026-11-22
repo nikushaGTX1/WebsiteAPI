@@ -78,14 +78,13 @@ public class AgentsController : ControllerBase
             return new
             {
                 agent.Id,
-                agent.UserName,
+                UserName = PublicUserName(agent.UserName),
                 agent.FullName,
                 agent.Bio,
                 Languages = ParseLanguages(agent.SpokenLanguages),
                 PhoneNumber = ContactPhone(agent.PhoneNumber, agent.ListingPhone),
                 ProfilePicture = profilePicture,
                 ProfilePictureUrl = profilePicture,
-                agent.ProfilePicturePath,
                 AverageRating = agent.RatingCount == 0 ? 0 : agent.RatingSum / (double)agent.RatingCount,
                 agent.RatingCount,
                 agent.ClosedDeals,
@@ -171,14 +170,13 @@ public class AgentsController : ControllerBase
         return Ok(new
         {
             agent.Id,
-            agent.UserName,
+            UserName = PublicUserName(agent.UserName),
             agent.FullName,
             agent.Bio,
             Languages = ParseLanguages(agent.SpokenLanguages),
             PhoneNumber = ContactPhone(agent.PhoneNumber, agent.ListingPhone),
             ProfilePicture = profilePicture,
             ProfilePictureUrl = profilePicture,
-            agent.ProfilePicturePath,
             AverageRating = agent.RatingCount == 0 ? 0 : agent.RatingSum / (double)agent.RatingCount,
             agent.RatingCount,
             agent.ClosedDeals,
@@ -291,6 +289,10 @@ public class AgentsController : ControllerBase
 
         return Ok(new { languages = ordered });
     }
+
+    /// <summary>A login name is shown only when it is not an email address.</summary>
+    private static string? PublicUserName(string? userName) =>
+        string.IsNullOrWhiteSpace(userName) || userName.Contains('@') ? null : userName;
 }
 
 public class AgentLanguagesDto

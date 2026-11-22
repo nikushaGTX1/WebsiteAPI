@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Website_API.Data;
@@ -23,12 +24,29 @@ public class CouponsController : ControllerBase
 
     private readonly AppDbContext _context;
     private readonly IConfiguration _configuration;
+    private readonly ITimeLimitedDataProtector _gameTickets;
 
-    public CouponsController(AppDbContext context, IConfiguration configuration)
+    public CouponsController(AppDbContext context, IConfiguration configuration, IDataProtectionProvider dataProtection)
     {
         _context = context;
         _configuration = configuration;
+        _gameTickets = dataProtection.CreateProtector("Velven.GameTicket").ToTimeLimitedDataProtector();
     }
+
+    /// <summary>
+    /// Shortest real play time before a win counts: about two seconds per floor (60 s for floor 30).
+    /// The browser cannot fake this, because the start time sits inside a ticket only the server can read.
+    /// </summary>
+    private TimeSpan MinPlayTime => TimeSpan.FromSeconds(_configuration.GetValue("Game:MinSecondsPerFloor", 2) * RewardFloor);
+
+    /// <summary>
+    /// The game page asks for a signed ticket when a game starts. The win must bring it back.
+    /// A ticket lasts 12 hours, so a win made before signing in can still be saved afterwards.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("game-start")]
+    public IActionResult StartGame() =>
+        Ok(new { ticket = _gameTickets.Protect(DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), TimeSpan.FromHours(12)) });
 
     /// <summary>
     /// Reward floor in use. Set Game__RewardFloor (e.g. 3) on the server to test the reward
@@ -41,7 +59,7 @@ public class CouponsController : ControllerBase
     [HttpGet("game-rules")]
     public IActionResult GetGameRules() => Ok(new { rewardFloor = RewardFloor, amountUsd = 50 });
 
-    public record GameRewardRequest(int Floor);
+    public record GameRewardRequest(int Floor, string? Ticket = null);
 
     [HttpGet]
     public async Task<IActionResult> GetMine(CancellationToken cancellationToken)
@@ -65,8 +83,24 @@ public class CouponsController : ControllerBase
     {
         var userId = GetUserId();
         if (userId is null) return Unauthorized();
-        if (request.Floor < RewardFloor)
+        // Staff accounts cannot win client cashback.
+        if (User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Agent") || User.IsInRole("Uploader"))
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Staff accounts cannot win the cashback." });
+        if (request.Floor < RewardFloor || request.Floor > 10_000)
             return BadRequest(new { message = $"Reach floor {RewardFloor} to win the cashback." });
+        // The floor number comes from the browser; the play time does not.
+        long startedAt;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.Ticket) || !long.TryParse(_gameTickets.Unprotect(request.Ticket), out startedAt))
+                return BadRequest(new { message = "Play the game to win the cashback." });
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            return BadRequest(new { message = "Play the game to win the cashback." });
+        }
+        if (DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(startedAt) < MinPlayTime)
+            return BadRequest(new { message = "Play the game to win the cashback." });
 
         var existing = await _context.ClientCoupons
             .FirstOrDefaultAsync(coupon => coupon.UserId == userId && coupon.Kind == GameRewardKind, cancellationToken);
@@ -162,8 +196,9 @@ public class CouponsController : ControllerBase
         var note = Clip(request?.Note, 200);
         var now = DateTime.UtcNow;
         var userId = GetUserId();
+        // Nobody applies their own coupon.
         var updated = await _context.ClientCoupons
-            .Where(c => c.Id == id && c.RedeemedAt == null && c.VoidedAt == null)
+            .Where(c => c.Id == id && c.RedeemedAt == null && c.VoidedAt == null && c.UserId != userId)
             .ExecuteUpdateAsync(set => set
                 .SetProperty(c => c.RedeemedAt, now)
                 .SetProperty(c => c.RedeemedById, userId)
@@ -171,6 +206,8 @@ public class CouponsController : ControllerBase
         var coupon = await _context.ClientCoupons.AsNoTracking().Include(c => c.User)
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
         if (coupon is null) return NotFound();
+        if (updated == 0 && coupon.UserId == userId)
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "You cannot redeem your own coupon." });
         if (updated == 0)
             return Conflict(new { message = coupon.VoidedAt is not null ? "This coupon was cancelled." : "This coupon was already used." });
         return Ok(StaffDto(coupon, await StaffNamesAsync([coupon], cancellationToken)));

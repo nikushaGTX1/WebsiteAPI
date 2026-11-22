@@ -17,8 +17,9 @@ public static class ClientIpResolver
 
         if (string.IsNullOrWhiteSpace(sharedKey))
         {
-            // Legacy behaviour until Proxy__SharedKey is set on the API and the site.
-            return Parse(FirstForwarded(context)) ?? Remote(context);
+            // No shared key configured: the first X-Forwarded-For entry is client-controlled,
+            // so only the entry the hosting edge appends (the last one) is trusted.
+            return Parse(LastForwarded(context)) ?? Remote(context);
         }
 
         // The site proxy proves itself with the shared key and passes the visitor IP.
@@ -38,9 +39,6 @@ public static class ClientIpResolver
         CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(supplied),
             Encoding.UTF8.GetBytes(expected));
-
-    private static string FirstForwarded(HttpContext context) =>
-        context.Request.Headers["X-Forwarded-For"].ToString().Split(',', 2)[0].Trim();
 
     private static string LastForwarded(HttpContext context) =>
         context.Request.Headers["X-Forwarded-For"].ToString().Split(',').Last().Trim();

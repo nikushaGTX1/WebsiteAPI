@@ -9,7 +9,7 @@ namespace Website_API.Tests;
 public class StorageUploadTests
 {
     private static SupabaseStorageService Service(HttpMessageHandler handler) => new(new HttpClient(handler), new MemoryCache(new MemoryCacheOptions()), new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["Supabase:Url"] = "https://example.invalid", ["Supabase:SecretKey"] = "test", ["Supabase:Bucket"] = "apartments" }).Build(), NullLogger<SupabaseStorageService>.Instance);
-    private static FormFile Photo() => new(new MemoryStream([1,2,3,4]), 0, 4, "photo", "photo.jpg") { Headers = new HeaderDictionary(), ContentType = "image/jpeg" };
+    private static FormFile Photo() => new(new MemoryStream([0xFF,0xD8,0xFF,4]), 0, 4, "photo", "photo.jpg") { Headers = new HeaderDictionary(), ContentType = "image/jpeg" };
     [Fact] public async Task Transient502RetriesSamePathWithFreshBody() {
         var urls = new List<string>(); var upserts = new List<string>(); var bodies = new List<byte[]>();
         using var handler = new StubHandler(async (request, token) => {
@@ -18,7 +18,7 @@ public class StorageUploadTests
         });
         Assert.NotNull(await Service(handler).UploadImageAsync(Photo()));
         Assert.Equal(2, urls.Count); Assert.Single(urls.Distinct()); Assert.Equal(new[] { "false", "true" }, upserts);
-        Assert.All(bodies, bytes => Assert.Equal(new byte[] {1,2,3,4}, bytes));
+        Assert.All(bodies, bytes => Assert.Equal(new byte[] {0xFF,0xD8,0xFF,4}, bytes));
     }
     [Fact] public async Task PersistentFailureIsBoundedAndCleanupCannotMaskCause() {
         var attempts = 0;

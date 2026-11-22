@@ -38,6 +38,17 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(10)
             });
     });
+    // Sign-in: at most 10 attempts per client IP per minute, on top of the per-account lockout.
+    options.AddPolicy("Login", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: ClientIpResolver.Resolve(context),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 10,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1)
+            }));
     // Public review links (no sign-in): a few submissions per client IP per 10 minutes.
     options.AddPolicy("PublicReviews", context =>
         RateLimitPartition.GetFixedWindowLimiter(
@@ -157,11 +168,16 @@ builder.Services.AddDbContextPool<AppDbContext>(
 builder.Services
     .AddIdentity<AppUser, IdentityRole>(options =>
     {
-        options.Password.RequireDigit = false;
+        // New and changed passwords: at least 8 characters with a number. Existing passwords keep working.
+        options.Password.RequireDigit = true;
         options.Password.RequireLowercase = false;
         options.Password.RequireUppercase = false;
         options.Password.RequireNonAlphanumeric = false;
-        options.Password.RequiredLength = 6;
+        options.Password.RequiredLength = 8;
+        // 5 wrong passwords in a row lock the account for 15 minutes.
+        options.Lockout.AllowedForNewUsers = true;
+        options.Lockout.MaxFailedAccessAttempts = 5;
+        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
     })
     .AddEntityFrameworkStores<AppDbContext>()
     .AddDefaultTokenProviders();
@@ -239,15 +255,23 @@ builder.Services
 
                 var dbContext = context.HttpContext.RequestServices
                     .GetRequiredService<AppDbContext>();
-                var userExists = await dbContext.Users
+                var currentStamp = await dbContext.Users
                     .AsNoTracking()
-                    .AnyAsync(
-                        user => user.Id == userId,
-                        context.HttpContext.RequestAborted);
+                    .Where(user => user.Id == userId)
+                    .Select(user => new { user.SecurityStamp })
+                    .FirstOrDefaultAsync(context.HttpContext.RequestAborted);
 
-                if (!userExists)
+                if (currentStamp is null)
                 {
                     context.Fail("The user account no longer exists.");
+                    return;
+                }
+
+                // Password reset, role change or agent removal changes the stamp: older sessions end.
+                var tokenStamp = context.Principal?.FindFirstValue(Website_API.Controllers.AuthController.SecurityStampClaim);
+                if (tokenStamp is null || tokenStamp != (currentStamp.SecurityStamp ?? ""))
+                {
+                    context.Fail("The session is no longer valid. Please sign in again.");
                 }
             }
         };
@@ -301,11 +325,41 @@ builder.Services.AddSwaggerGen(options =>
 var app = builder.Build();
 
 // =========================
-// SWAGGER
+// ERRORS
+// =========================
+// Wrong input from the user becomes a 400 with a clear message. Anything else is a plain 500:
+// internal exception text never reaches the client.
+app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
+{
+    var error = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+    var userError = error as Website_API.Services.UserInputException
+        ?? (error as AggregateException)?.InnerExceptions.OfType<Website_API.Services.UserInputException>().FirstOrDefault();
+    context.Response.ContentType = "application/json";
+    if (userError is not null)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new { message = userError.Message });
+        return;
+    }
+    if (error is BadHttpRequestException badRequest)
+    {
+        context.Response.StatusCode = badRequest.StatusCode;
+        await context.Response.WriteAsJsonAsync(new { message = "The request is not valid." });
+        return;
+    }
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    await context.Response.WriteAsJsonAsync(new { message = "Something went wrong. Please try again." });
+}));
+
+// =========================
+// SWAGGER (development only: API docs are not public in production)
 // =========================
 
-app.UseSwagger();
-app.UseSwaggerUI();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 // =========================
 // DATABASE MIGRATION + SEED
@@ -496,7 +550,10 @@ app.Lifetime.ApplicationStarted.Register(() => _ = Task.Run(async () =>
         var importedOfficialStreets = await OfficialStreetCatalogSeeder.SeedAsync(context);
         if (importedOfficialStreets > 0)
             app.Logger.LogInformation("Imported {StreetCount} official Tbilisi street catalog records.", importedOfficialStreets);
-        var repairedLocations = await ApartmentLocationBackfill.RepairAsync(context);
+        // Rewriting listing districts on every restart is opt-in: set Startup__RepairLocations=true.
+        var repairedLocations = app.Configuration.GetValue("Startup:RepairLocations", false)
+            ? await ApartmentLocationBackfill.RepairAsync(context)
+            : 0;
         if (repairedLocations > 0)
             app.Logger.LogInformation("Automatically repaired the locations of {ApartmentCount} apartments.", repairedLocations);
     }

@@ -176,6 +176,17 @@ public class ClientBoardController(AppDbContext db, SupabaseStorageService stora
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var link = await db.ClientIntakeLinks.FromSqlInterpolated($"SELECT * FROM \"ClientIntakeLinks\" WHERE (\"Token\" = {token} OR \"Slug\" = {token}) FOR UPDATE").FirstOrDefaultAsync(ct);
         if (link is null || !link.IsActive || !await StaffIds.ContainsAsync(link.AgentUserId, ct)) return NotFound(new { code = "invalid_intake" });
+        // Abuse limits: one card per phone per link per day, and at most 30 cards per link per day.
+        var dayAgo = DateTime.UtcNow.AddDays(-1);
+        var phone = request.Phone.Trim();
+        if (await db.ClientProfiles.AnyAsync(x => x.IntakeLinkId == link.Id && x.Phone == phone && x.CreatedAt > dayAgo, ct))
+            return Conflict(new { code = "duplicate_intake" });
+        if (await db.ClientProfiles.CountAsync(x => x.IntakeLinkId == link.Id && x.CreatedAt > dayAgo, ct) >= 30)
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { code = "intake_limit" });
+        // The short public link (agent name) can be opened by anyone, so its cards wait for the
+        // agent to switch them on before they reach the public Clients board. The private token
+        // link the agent sends to one client publishes straight away, as before.
+        var viaPublicSlug = !string.Equals(link.Token, token, StringComparison.Ordinal);
         var p = ClientRequirements.Read(request.Profile.GetRawText());
         var profileJson = JsonSerializer.Serialize(p, ClientRequirements.Json);
         var now = DateTime.UtcNow;
@@ -196,7 +207,8 @@ public class ClientBoardController(AppDbContext db, SupabaseStorageService stora
                 p.MoveInTiming is "Immediately" or "WithinOneWeek" ? DateOnly.FromDateTime(now.AddDays(p.MoveInTiming == "Immediately" ? 0 : 7)) :
                 p.MoveInTiming == "WithinOneMonth" ? DateOnly.FromDateTime(now.AddDays(30)) : null,
             MoveInTiming = p.MoveInTiming ?? "", Residents = p.Adults + p.Children,
-            HasPets = p.HasPet == true || p.PetTypes.Count > 0 || p.PetType is "Dog" or "Cat" or "Other" };
+            HasPets = p.HasPet == true || p.PetTypes.Count > 0 || p.PetType is "Dog" or "Cat" or "Other",
+            Status = viaPublicSlug ? "Paused" : "Active" };
         db.ClientProfiles.Add(profile);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -245,10 +257,12 @@ public class ClientBoardController(AppDbContext db, SupabaseStorageService stora
     public static PublicClientCard ToPublic(ClientProfile row, string? agentPhoto)
     {
         var p = ClientRequirements.Read(row.ProfileJson);
-        return new(row.Id, row.IdentityVerified, row.Nationality,
+        // Public card: no nationality, children's ages or exact move-in date (personal data);
+        // the agent sees those in the CRM.
+        return new(row.Id, row.IdentityVerified, null,
             new(p.BudgetMin, p.BudgetMax, p.Currency, p.Districts.Where(x => x != "SelectOnMap").ToArray(), p.LocationFlexible,
-                p.Gender, p.HouseholdType, p.Adults, p.Children, p.ChildrenAgeGroups.ToArray(), p.Bedrooms,
-                p.BedroomChoices.ToArray(), p.MinSize, p.RentalDuration, p.MoveInTiming, p.MoveInDate,
+                p.Gender, p.HouseholdType, p.Adults, p.Children, Array.Empty<string>(), p.Bedrooms,
+                p.BedroomChoices.ToArray(), p.MinSize, p.RentalDuration, p.MoveInTiming, null,
                 row.HasPets, p.PetType, p.PetTypes.ToArray(), p.DogSize, p.PetCount, p.TopPriorities.Take(3).ToArray(),
                 p.PropertyConditions.ToArray()),
             new(row.Agent.FullName ?? "Velven agent", row.Agent.PhoneNumber, agentPhoto));

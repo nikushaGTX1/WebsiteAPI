@@ -60,12 +60,26 @@ public sealed class SubmissionProperty
         return null;
     }
 
+    /// <summary>Owners cannot add the "Verified listing" tag (only staff set it); same rule as direct uploads.</summary>
+    private static string StripVerifiedTag(string text)
+    {
+        string previous;
+        do
+        {
+            previous = text;
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\|?\s*Verified\s*listing\s*:\s*\w*", string.Empty,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
+        while (text != previous);
+        return text;
+    }
+
     public void Apply(Apartment apartment, string ownerName, string ownerPhone)
     {
         apartment.Title = $"{(DealType == "For Rent" ? "ქირავდება" : "იყიდება")} {Bedrooms}-საძინებლიანი {(RealEstateType == "Apartment" ? "ბინა" : "სახლი")} — {Location.Trim()}";
         // Canonical tags are consumed by the existing matching engine. Owner free text is
         // kept after the tags so it cannot override deal/condition/pet restrictions.
-        apartment.Description = $"Deal: {DealType} | Condition: {Condition} | Pet-friendly: {(IsPetFriendly ? "yes" : "no")} | Building: {BuildingType}\n{Description.Trim()}";
+        apartment.Description = $"Deal: {DealType} | Condition: {Condition} | Pet-friendly: {(IsPetFriendly ? "yes" : "no")} | Building: {BuildingType}\n{StripVerifiedTag(Description.Trim())}";
         apartment.Price = TotalPrice; apartment.City = City.Trim(); apartment.District = Location.Trim();
         apartment.Street = Street.Trim(); apartment.BuildingNumber = StreetNumber.Trim(); apartment.StreetId = StreetId;
         apartment.Address = $"{Street.Trim()} {StreetNumber.Trim()}, {Location.Trim()}, {City.Trim()}";

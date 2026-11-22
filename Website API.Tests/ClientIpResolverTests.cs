@@ -21,9 +21,10 @@ public sealed class ClientIpResolverTests
     }
 
     [Fact]
-    public void WithoutKeyKeepsLegacyFirstForwardedIp()
+    public void WithoutKeyTrustsOnlyTheEdgeAddedLastForwardedIp()
     {
-        Assert.Equal("1.1.1.1", ClientIpResolver.Resolve(Context(null, ("X-Forwarded-For", "1.1.1.1, 2.2.2.2"))));
+        // The first entry is client-controlled; the hosting edge appends the real peer last.
+        Assert.Equal("2.2.2.2", ClientIpResolver.Resolve(Context(null, ("X-Forwarded-For", "1.1.1.1, 2.2.2.2"))));
     }
 
     [Fact]

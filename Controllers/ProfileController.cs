@@ -160,6 +160,26 @@ public class ProfileController : ControllerBase
         }
     }
 
+    /// <summary>"Remove profile photo": clears the photo and deletes the stored file.</summary>
+    [HttpDelete("picture")]
+    public async Task<IActionResult> DeletePicture(CancellationToken cancellationToken)
+    {
+        var user = await GetCurrentUser();
+        if (user == null)
+            return Unauthorized();
+
+        var oldProfilePicture = user.ProfilePicture;
+        user.ProfilePicture = null;
+        var result = await _userManager.UpdateAsync(user);
+        if (!result.Succeeded)
+            return BadRequest(result.Errors);
+
+        if (!string.IsNullOrWhiteSpace(oldProfilePicture) && oldProfilePicture.Contains('/'))
+            await _storageService.DeleteImageAsync(oldProfilePicture, CancellationToken.None);
+
+        return await Me(cancellationToken);
+    }
+
     [HttpPut("picture")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> UpdatePicture(
@@ -194,6 +214,15 @@ public class ProfileController : ControllerBase
             return BadRequest(new
             {
                 message = "The password you entered is incorrect."
+            });
+        }
+
+        if (await _userManager.IsInRoleAsync(user, "Admin") &&
+            (await _userManager.GetUsersInRoleAsync("Admin")).Count <= 1)
+        {
+            return BadRequest(new
+            {
+                message = "You are the only admin. Make someone else an admin before deleting your account."
             });
         }
 

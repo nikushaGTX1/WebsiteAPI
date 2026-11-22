@@ -62,7 +62,7 @@ public class ApartmentsController : ControllerBase
         [FromQuery] bool? isFurnished = null,
         CancellationToken cancellationToken = default)
     {
-        page = Math.Max(page, 1);
+        page = Math.Clamp(page, 1, 10_000);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         if (minPrice.HasValue && maxPrice.HasValue &&
@@ -311,17 +311,21 @@ public class ApartmentsController : ControllerBase
 
         if (duplicate is not null)
         {
+            // A listing still in review is not public: only staff learn its number.
+            var showId = duplicate.IsApproved || User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Agent");
             return Conflict(new
             {
                 message = duplicate.IsApproved
                     ? $"Duplicate Found. This apartment is already listed (#{duplicate.Id})."
-                    : $"Duplicate Found. This apartment is already waiting for review (#{duplicate.Id}).",
-                duplicateId = duplicate.Id
+                    : showId
+                        ? $"Duplicate Found. This apartment is already waiting for review (#{duplicate.Id})."
+                        : "Duplicate Found. This apartment is already waiting for review.",
+                duplicateId = showId ? duplicate.Id : (int?)null
             });
         }
 
-        // A listing verified from an owner link goes live straight away: the owner
-        // supplied it and the assigned agent checked it, so it skips the admin queue.
+        // A listing made from an owner link goes to the review queue like any other upload:
+        // only managers and admins publish directly.
         var isElevated = User.IsInRole("Admin") || User.IsInRole("Manager");
         OwnerSubmission? ownerSubmission = null;
         if (dto.OwnerSubmissionId is long submissionId)
@@ -380,9 +384,9 @@ public class ApartmentsController : ControllerBase
                     : dto.PhoneNumber.Trim(),
                 ImageUrl = storedImagePaths.FirstOrDefault(),
                 UploadedByUserId = uploadedByUserId,
-                IsApproved = isElevated || ownerSubmission is not null,
-                LastConfirmedAt = isElevated || ownerSubmission is not null ? DateTime.UtcNow : null,
-                PublishedAt = isElevated || ownerSubmission is not null ? DateTime.UtcNow : null,
+                IsApproved = isElevated,
+                LastConfirmedAt = isElevated ? DateTime.UtcNow : null,
+                PublishedAt = isElevated ? DateTime.UtcNow : null,
                 Images = storedImagePaths
                     .Select((path, index) => new ApartmentImage
                     {
@@ -867,7 +871,23 @@ public class ApartmentsController : ControllerBase
             var coverImage = apartment.Images
                 .FirstOrDefault(image => image.IsCover);
             apartment.ImageUrl = coverImage?.StoragePath;
-            if (needsReapproval) apartment.IsApproved = false;
+            if (needsReapproval)
+            {
+                apartment.IsApproved = false;
+                // An owner edit after an agent approved the submission sends it back for review,
+                // so the next Send cannot publish changes nobody checked.
+                var approvedSubmissions = await _context.OwnerSubmissions
+                    .Where(s => s.PublishedApartmentId == apartment.Id && s.ApprovedAt != null && s.Status != "sent" && s.Status != "rejected")
+                    .ToListAsync(cancellationToken);
+                foreach (var submission in approvedSubmissions)
+                {
+                    submission.ApprovedAt = null;
+                    submission.ApprovedByUserId = null;
+                    submission.VerificationJson = "{}";
+                    if (submission.Status == "approved") submission.Status = "contacted";
+                    submission.UpdatedAt = DateTime.UtcNow;
+                }
+            }
             else apartment.LastConfirmedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync(cancellationToken);
@@ -1451,7 +1471,7 @@ public class ApartmentsController : ControllerBase
 
         if (uploads.Count > 15)
         {
-            throw new InvalidOperationException(
+            throw new Website_API.Services.UserInputException(
                 "A maximum of 15 apartment images can be uploaded.");
         }
 

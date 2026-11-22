@@ -673,7 +673,9 @@ public class CrmController : ControllerBase
                 task.Lead.Status != CrmLeadStatus.Won &&
                 task.Lead.Status != CrmLeadStatus.Lost);
         var now = DateTime.UtcNow;
-        var today = now.Date;
+        // "Today" is the Tbilisi day (UTC+4, no daylight saving), expressed in UTC.
+        var tbilisiOffset = TimeSpan.FromHours(4);
+        var today = DateTime.SpecifyKind((now + tbilisiOffset).Date - tbilisiOffset, DateTimeKind.Utc);
         var tomorrow = today.AddDays(1);
 
         var overdueTasks = await taskQuery.CountAsync(
@@ -759,7 +761,7 @@ public class CrmController : ControllerBase
         while (await _context.CrmQuestionnaireLinks
             .AnyAsync(item => item.Token == token, cancellationToken));
 
-        var slugBase = CreateQuestionnaireSlug(owner.UserName ?? owner.FullName);
+        var slugBase = CreateQuestionnaireSlug(!string.IsNullOrWhiteSpace(owner.FullName) ? owner.FullName : owner.UserName?.Split('@')[0]);
         var slug = slugBase;
         if (await _context.CrmQuestionnaireLinks
             .AnyAsync(item => item.Slug == slug, cancellationToken))
@@ -1184,7 +1186,7 @@ public class CrmController : ControllerBase
         if (userId is null)
             return Unauthorized();
 
-        var lead = await AccessibleLeads(userId)
+        var lead = await WritableLeads(userId)
             .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (lead is null)
             return NotFound(new { message = "Lead not found." });
@@ -1259,7 +1261,7 @@ public class CrmController : ControllerBase
         return Ok(ToLeadDetail(updated!));
     }
 
-    [Authorize(Roles = CrmReadRoles)]
+    [Authorize(Roles = CrmManagerRoles)]
     [HttpDelete("leads/{id:int}")]
     public async Task<IActionResult> DeleteLead(
         int id,
@@ -1305,7 +1307,7 @@ public class CrmController : ControllerBase
         if (status == CrmLeadStatus.Lost && string.IsNullOrWhiteSpace(lostReason))
             return BadRequest(new { message = "Please enter the reason for losing the lead." });
 
-        var lead = await AccessibleLeads(userId)
+        var lead = await WritableLeads(userId)
             .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (lead is null)
             return NotFound(new { message = "Lead not found." });
@@ -1358,7 +1360,7 @@ public class CrmController : ControllerBase
         if (userId is null)
             return Unauthorized();
 
-        var lead = await AccessibleLeads(userId)
+        var lead = await WritableLeads(userId)
             .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (lead is null)
             return NotFound(new { message = "Lead not found." });
@@ -1496,7 +1498,7 @@ public class CrmController : ControllerBase
         if (string.IsNullOrWhiteSpace(dto.Body))
             return BadRequest(new { message = "Activity content is required." });
 
-        var lead = await AccessibleLeads(userId)
+        var lead = await WritableLeads(userId)
             .FirstOrDefaultAsync(item => item.Id == leadId, cancellationToken);
         if (lead is null)
             return NotFound(new { message = "Lead not found." });
@@ -1543,7 +1545,7 @@ public class CrmController : ControllerBase
         if (dto.DueAt == default)
             return BadRequest(new { message = "Task dueAt is required." });
 
-        var lead = await AccessibleLeads(userId)
+        var lead = await WritableLeads(userId)
             .Include(item => item.AssignedAgent)
             .FirstOrDefaultAsync(item => item.Id == leadId, cancellationToken);
         if (lead is null)
@@ -1865,6 +1867,23 @@ public class CrmController : ControllerBase
             lead.CreatedByUserId == userId ||
             (lead.Apartment != null &&
              lead.Apartment.UploadedByUserId == userId));
+    }
+
+    /// <summary>
+    /// Leads the current user may change. Seeing a lead (AccessibleLeads) is wider than changing it:
+    /// once a lead is assigned, only that agent and managers can edit it. An agent's own unassigned
+    /// lead stays theirs. Uploaders never change leads.
+    /// </summary>
+    private IQueryable<CrmLead> WritableLeads(string userId)
+    {
+        var query = _context.CrmLeads.AsQueryable();
+        if (HasFullCrmAccess())
+            return query;
+        if (User.IsInRole("Agent"))
+            return query.Where(lead =>
+                lead.AssignedAgentId == userId ||
+                (lead.AssignedAgentId == null && lead.CreatedByUserId == userId));
+        return query.Where(lead => false);
     }
 
     private bool HasFullCrmAccess() =>

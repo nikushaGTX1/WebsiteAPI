@@ -32,7 +32,7 @@ public class OwnerListingsController : ControllerBase
         _workflow = workflow;
     }
 
-    [Authorize(Roles = StaffRoles)]
+    [Authorize(Roles = "Admin,Manager,Agent")]
     [HttpPost("links")]
     public async Task<IActionResult> CreateLink([FromBody] CreateLinkRequest request, CancellationToken cancellationToken)
     {
@@ -155,6 +155,8 @@ public class OwnerListingsController : ControllerBase
         if (request.Status is not null)
         {
             if (!AllowedStatuses.Contains(request.Status)) return BadRequest(new { message = "Invalid status." });
+            if (row.Status == "published" && !request.Status.Equals("published", StringComparison.OrdinalIgnoreCase))
+                return Conflict(new { message = "This submission is already published and cannot be reopened." });
             row.Status = request.Status.ToLowerInvariant();
         }
         if (request.Verification.HasValue) row.VerificationJson = request.Verification.Value.GetRawText();

@@ -12,3 +12,7 @@ WhiteTower.db
 ImageAi/modal/benchmark*
 ImageAi/modal/bench-*
 ImageAi/modal/__pycache__/
+
+# Local-only files
+*.csproj.user
+*.db

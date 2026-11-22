@@ -34,9 +34,13 @@ public class FavoritesController : ControllerBase
             return Unauthorized();
         }
 
+        var staff = IsStaff();
         var favorites = await _context.FavoriteApartments
             .AsNoTracking()
             .Where(favorite => favorite.UserId == userId)
+            // A saved listing that is no longer public (unpublished, pending) is only shown to
+            // staff or to the person who uploaded it, the same rule as the listing page.
+            .Where(favorite => favorite.Apartment.IsApproved || staff || favorite.Apartment.UploadedByUserId == userId)
             .OrderByDescending(favorite => favorite.CreatedAt)
             .Select(favorite => new
             {
@@ -101,10 +105,12 @@ public class FavoritesController : ControllerBase
             return Unauthorized();
         }
 
+        var staff = IsStaff();
         var apartmentExists = await _context.Apartments
             .AsNoTracking()
             .AnyAsync(
-                apartment => apartment.Id == apartmentId,
+                apartment => apartment.Id == apartmentId &&
+                    (apartment.IsApproved || staff || apartment.UploadedByUserId == userId),
                 cancellationToken);
 
         if (!apartmentExists)
@@ -172,4 +178,7 @@ public class FavoritesController : ControllerBase
 
     private string? GetUserId() =>
         User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+    private bool IsStaff() =>
+        User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Agent");
 }

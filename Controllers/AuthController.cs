@@ -86,6 +86,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("Login")]
     public async Task<IActionResult> Login(
         LoginDto dto,
         CancellationToken cancellationToken)
@@ -95,10 +96,18 @@ public class AuthController : ControllerBase
         if (user == null)
             return Unauthorized(new { message = "Invalid email or password" });
 
+        if (!user.LockoutEnabled) await _userManager.SetLockoutEnabledAsync(user, true);
+        if (await _userManager.IsLockedOutAsync(user))
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { message = "Too many wrong passwords. Try again in 15 minutes." });
+
         var passwordOk = await _userManager.CheckPasswordAsync(user, dto.Password);
 
         if (!passwordOk)
+        {
+            await _userManager.AccessFailedAsync(user);
             return Unauthorized(new { message = "Invalid email or password" });
+        }
+        await _userManager.ResetAccessFailedCountAsync(user);
 
         if (!user.EmailConfirmed && await RequiresVerificationAsync(user))
             return StatusCode(StatusCodes.Status403Forbidden, new
@@ -220,7 +229,10 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "The code is incorrect or has expired." });
 
         var result = await SetNewPasswordAsync(user, dto.NewPassword);
-        return result.Succeeded ? Ok(new { message = "Password changed." }) : BadRequest(result.Errors);
+        if (!result.Succeeded) return BadRequest(result.Errors);
+        // The new password ends other sessions; this device gets a fresh login.
+        var refreshed = await _userManager.FindByIdAsync(user.Id);
+        return Ok(new { message = "Password changed.", token = GenerateToken(refreshed!, await _userManager.GetRolesAsync(refreshed!)) });
     }
 
     // ---------- Helpers ----------
@@ -278,13 +290,18 @@ public class AuthController : ControllerBase
         return await _userManager.ResetPasswordAsync(user, resetToken, newPassword);
     }
 
+    public const string SecurityStampClaim = "velven:stamp";
+
     private string GenerateToken(AppUser user, IList<string> roles)
     {
         var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id),
             new Claim(ClaimTypes.Name, user.UserName ?? ""),
-            new Claim(ClaimTypes.Email, user.Email ?? "")
+            new Claim(ClaimTypes.Email, user.Email ?? ""),
+            // Checked on every request: a password reset, role change or agent removal
+            // changes the stamp and ends every older session at once.
+            new Claim(SecurityStampClaim, user.SecurityStamp ?? "")
         };
 
         foreach (var role in roles)

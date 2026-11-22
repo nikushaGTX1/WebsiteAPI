@@ -408,7 +408,7 @@ public sealed class SupabaseStorageService
 
         if (image.Length > maximumSize)
         {
-            throw new InvalidOperationException(
+            throw new Website_API.Services.UserInputException(
                 "Image cannot be larger than 8 MB.");
         }
 
@@ -423,9 +423,28 @@ public sealed class SupabaseStorageService
                 image.ContentType,
                 StringComparer.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException(
-                $"Unsupported image type: {image.ContentType}. " +
+            throw new Website_API.Services.UserInputException(
                 "Only JPG, PNG and WebP images are allowed.");
+        }
+
+        // The label can be anything: check the file's first bytes too.
+        Span<byte> head = stackalloc byte[12];
+        using (var stream = image.OpenReadStream())
+        {
+            var read = 0;
+            while (read < head.Length)
+            {
+                var n = stream.Read(head[read..]);
+                if (n == 0) break;
+                read += n;
+            }
+            var jpeg = read >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF;
+            var png = read >= 8 && head[0] == 0x89 && head[1] == 0x50 && head[2] == 0x4E && head[3] == 0x47 &&
+                head[4] == 0x0D && head[5] == 0x0A && head[6] == 0x1A && head[7] == 0x0A;
+            var webp = read >= 12 && head[0] == (byte)'R' && head[1] == (byte)'I' && head[2] == (byte)'F' && head[3] == (byte)'F' &&
+                head[8] == (byte)'W' && head[9] == (byte)'E' && head[10] == (byte)'B' && head[11] == (byte)'P';
+            if (!(jpeg || png || webp))
+                throw new Website_API.Services.UserInputException("Only JPG, PNG and WebP images are allowed.");
         }
     }
 

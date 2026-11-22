@@ -275,6 +275,7 @@ public class AdminController : ControllerBase
         if (!await _userManager.IsInRoleAsync(user, "Agent"))
         {
             await _userManager.AddToRoleAsync(user, "Agent");
+            await _userManager.UpdateSecurityStampAsync(user);
         }
 
         return Ok(new { message = "User is now an agent" });
@@ -316,7 +317,7 @@ public sealed record TransferApartmentsDto(string? FromUserId, string ToUserId, 
         if (dto.ApartmentId is null)
         {
             var leads = await _context.CrmLeads.Where(l => l.AssignedAgentId == dto.FromUserId && l.ClosedAt == null).ToListAsync(cancellationToken);
-            foreach (var lead in leads) lead.AssignedAgentId = target.Id;
+            foreach (var lead in leads) { lead.AssignedAgentId = target.Id; lead.CreatedByUserId = target.Id; }
             leadsMoved = leads.Count;
             var submissions = await _context.OwnerSubmissions.Where(x => x.AgentUserId == dto.FromUserId && x.Status != "sent" && x.Status != "rejected").ToListAsync(cancellationToken);
             foreach (var submission in submissions) submission.AgentUserId = target.Id;
@@ -375,7 +376,7 @@ public sealed record TransferApartmentsDto(string? FromUserId, string ToUserId, 
             }
             moved = apartments.Count;
             var leads = await _context.CrmLeads.Where(l => l.AssignedAgentId == userId && l.ClosedAt == null).ToListAsync(cancellationToken);
-            foreach (var lead in leads) lead.AssignedAgentId = target.Id;
+            foreach (var lead in leads) { lead.AssignedAgentId = target.Id; lead.CreatedByUserId = target.Id; }
             var submissions = await _context.OwnerSubmissions.Where(x => x.AgentUserId == userId && x.Status != "sent" && x.Status != "rejected").ToListAsync(cancellationToken);
             foreach (var submission in submissions) submission.AgentUserId = target.Id;
             await _context.SaveChangesAsync(cancellationToken);
@@ -393,6 +394,8 @@ public sealed record TransferApartmentsDto(string? FromUserId, string ToUserId, 
         {
             await _userManager.RemoveFromRoleAsync(user, "Agent");
         }
+        // End the removed agent's open sessions now, not when their token expires.
+        await _userManager.UpdateSecurityStampAsync(user);
 
         return Ok(new { message = "User is no longer an agent", movedApartments = moved });
     }
@@ -444,6 +447,8 @@ public sealed record TransferApartmentsDto(string? FromUserId, string ToUserId, 
         var updateResult = await _userManager.UpdateAsync(user);
         if (!updateResult.Succeeded)
             return BadRequest(updateResult.Errors);
+        // New role takes effect at once: older sessions carry the old role and end now.
+        await _userManager.UpdateSecurityStampAsync(user);
 
         return Ok(new
         {
