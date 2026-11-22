@@ -77,6 +77,7 @@ public class ClientRequirements : SavedSearchProfile
                 !Codes(p.Lifestyles, "Athlete RemoteWorker BusinessProfessional Student QuietLifestyle SocialLifestyle HostsGuests FrequentTraveler") ||
                 !Codes(p.Transportation, "Car Metro Walking MultipleMethods") ||
                 !Codes(p.PropertyConditions, ConditionCodes) ||
+                !Codes(p.BuildingTypes ?? [], "Any NewBuilding UnderConstruction OldBuilding") ||
                 !Codes(p.ChildrenAgeGroups, "Age0To3 Age4To6 Age7To12 Age13To17") ||
                 !Codes(p.TopPriorities, "SelectedLocationNearby OfficeNearby MetroNearby SchoolNearby KindergartenNearby GymNearby ParkNearby UniversityNearby SupermarketNearby PharmacyNearby PlaygroundNearby PlaygroundOrSportsFieldNearby ClinicNearby PublicTransportNearby EverydayServicesNearby CafesNearby CafesOrCoworkingNearby CafesAndRestaurantsNearby MeetingPlacesNearby StudySpacesNearby CityCenterNearby EntertainmentNearby Workspace Parking QuietStreet AwayFromNightlife BalconyOrTerrace MultipleBathrooms SecurityOrConcierge ModernMaintainedBuilding IsolatedBedrooms CompanyLeaseAvailable") ||
                 !Code(p.Gender, "Male Female") || !Code(p.HouseholdType, "JustMe Couple FamilyWithChildren Relatives Roommates CorporateHousing") ||

@@ -38,6 +38,8 @@ public class SavedSearchProfile
     public int Children { get; set; }
     public decimal? MinSize { get; set; }
     public List<string> PropertyConditions { get; set; } = [];
+    /// <summary>Buyers: NewBuilding, UnderConstruction, OldBuilding or Any. Missing on older profiles.</summary>
+    public List<string>? BuildingTypes { get; set; }
     public List<int> BedroomChoices { get; set; } = [];
     public string? RentalDuration { get; set; }
     public string? MoveInTiming { get; set; }
@@ -160,7 +162,7 @@ public static class HomeMatchRequirements
         if (!WithinBudgetCeiling(apartment.Price, profile)) return RequirementStatus.Alternative;
         if (profile.MinSize is > 0 && apartment.SizeSquareMeters < (double)profile.MinSize.Value ||
             apartment.MaxOccupants is int occupants && occupants < profile.Adults + profile.Children ||
-            !MatchesCondition(apartment, profile)) return RequirementStatus.Alternative;
+            !MatchesCondition(apartment, profile) || !MatchesBuilding(apartment, profile)) return RequirementStatus.Alternative;
 
         var mismatch = false;
         var confirm = false;
@@ -212,6 +214,23 @@ public static class HomeMatchRequirements
             "BlackFrame" => condition == "black frame",
             "GreenFrame" => condition == "green frame",
             "NeedsRenovation" => condition is "current renovation" or "repairing",
+            _ => false,
+        });
+    }
+
+    // Building status also lives in the listing's upload-form tag ("Status: New building").
+    // A listing without the tag is not excluded.
+    private static bool MatchesBuilding(Apartment apartment, SavedSearchProfile profile)
+    {
+        if (profile.PropertyGoal != "Buy" || profile.BuildingTypes is not { Count: > 0 } || profile.BuildingTypes.Contains("Any")) return true;
+        var status = Regex.Match(apartment.Description ?? "", @"(?:^|[|\r\n])\s*Status:\s*([^|\r\n]+)", RegexOptions.IgnoreCase)
+            .Groups[1].Value.Trim().TrimEnd('.').ToLowerInvariant();
+        if (status.Length == 0) return true;
+        return profile.BuildingTypes.Any(code => code switch
+        {
+            "NewBuilding" => status == "new building",
+            "UnderConstruction" => status == "under construction",
+            "OldBuilding" => status == "old building",
             _ => false,
         });
     }
