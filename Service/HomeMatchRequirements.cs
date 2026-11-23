@@ -37,6 +37,8 @@ public class SavedSearchProfile
     public int Adults { get; set; } = 1;
     public int Children { get; set; }
     public decimal? MinSize { get; set; }
+    /// <summary>Buyers: largest area wanted (m²); empty = no limit.</summary>
+    public decimal? MaxSize { get; set; }
     public List<string> PropertyConditions { get; set; } = [];
     /// <summary>Buyers: NewBuilding, UnderConstruction, OldBuilding or Any. Missing on older profiles.</summary>
     public List<string>? BuildingTypes { get; set; }
@@ -161,6 +163,7 @@ public static class HomeMatchRequirements
         if (!MatchesHomeType(apartment, profile)) return RequirementStatus.Alternative;
         if (!WithinBudgetCeiling(apartment.Price, profile)) return RequirementStatus.Alternative;
         if (profile.MinSize is > 0 && apartment.SizeSquareMeters < (double)profile.MinSize.Value ||
+            profile.MaxSize is > 0 && apartment.SizeSquareMeters > (double)profile.MaxSize.Value ||
             apartment.MaxOccupants is int occupants && occupants < profile.Adults + profile.Children ||
             !MatchesCondition(apartment, profile) || !MatchesBuilding(apartment, profile)) return RequirementStatus.Alternative;
 
@@ -210,7 +213,10 @@ public static class HomeMatchRequirements
         return profile.PropertyConditions.Any(code => code switch
         {
             "MoveInReady" or "Renovated" => condition is "newly renovated" or "old renovated",
-            "WhiteFrame" => condition is "white frame" or "white plus",
+            "NewlyRenovated" => condition == "newly renovated",
+            "OldRenovated" => condition == "old renovated",
+            // The buyer option is "white/green frame".
+            "WhiteFrame" => condition is "white frame" or "white plus" or "green frame",
             "BlackFrame" => condition == "black frame",
             "GreenFrame" => condition == "green frame",
             "NeedsRenovation" => condition is "current renovation" or "repairing",
@@ -243,7 +249,9 @@ public static class HomeMatchRequirements
 ]+)", RegexOptions.IgnoreCase).Groups[1].Value.Trim().ToLowerInvariant();
         var text = type.Length > 0 ? type : (apartment.Title ?? "").ToLowerInvariant();
         if (text.Length == 0) return null;
-        if (Regex.IsMatch(text, "commercial|office|shop|store|plot|land|hotel|კომერციულ|ფართი|მიწ|სასტუმრო|коммерч|участ|гостиниц")) return "Other";
+        // Shops and offices can be matched for buyers who want commercial space; plots and hotels never.
+        if (Regex.IsMatch(text, "commercial|office|shop|store|კომერციულ|ფართი|коммерч")) return "Commercial";
+        if (Regex.IsMatch(text, "plot|land|hotel|მიწ|სასტუმრო|участ|гостиниц")) return "Other";
         if (Regex.IsMatch(text, "house|cottage|villa|სახლი|აგარაკი|дом|коттедж")) return "House";
         if (Regex.IsMatch(text, "apartment|apartament|flat|ბინა|квартир")) return "Apartment";
         return type.Length > 0 ? "Other" : null;
@@ -252,7 +260,9 @@ public static class HomeMatchRequirements
     public static bool MatchesHomeType(Apartment apartment, SavedSearchProfile profile)
     {
         var wanted = profile.HomeTypes.Count > 0
-            ? profile.HomeTypes.Select(t => string.Equals(t, "House", StringComparison.OrdinalIgnoreCase) ? "House" : "Apartment").ToList()
+            ? profile.HomeTypes.Select(t =>
+                string.Equals(t, "House", StringComparison.OrdinalIgnoreCase) ? "House" :
+                string.Equals(t, "Commercial", StringComparison.OrdinalIgnoreCase) ? "Commercial" : "Apartment").ToList()
             : [string.Equals(profile.HomeType, "House", StringComparison.OrdinalIgnoreCase) ? "House" : "Apartment"];
         var actual = ListingHomeType(apartment);
         return actual is null || wanted.Contains(actual);

@@ -31,8 +31,16 @@ public class ClientRequirements : SavedSearchProfile
     public string? CarFuelType { get; set; }
     public string? PurchaseTiming { get; set; }
     public string? ApartmentStyle { get; set; }
-    /** Buyers: acceptable property conditions (WhiteFrame = თეთრი კარკასი, ...). "Any" = no preference. */
-    public const string ConditionCodes = "Any MoveInReady Renovated WhiteFrame BlackFrame GreenFrame NeedsRenovation";
+    /** Buyers: why they buy - Living, Investment (resell later) or RentalIncome. */
+    public string? PurchasePurpose { get; set; }
+    /** Buyers: what changes ahead - GrowingFamily, ExtraWorkspace, NoChanges, NotSure. */
+    public string? FutureNeeds { get; set; }
+    /** Buyers: OwnFunds, Mortgage or Installment. */
+    public string? PaymentMethod { get; set; }
+    /** Buyers: features they want (Balcony, View, Parking, Elevator, SecuredYard, NaturalLight). */
+    public List<string> MustHaveFeatures { get; set; } = [];
+    /** Buyers: acceptable property conditions (WhiteFrame = თეთრი/მწვანე კარკასი, ...). "Any" = no preference. */
+    public const string ConditionCodes = "Any MoveInReady Renovated NewlyRenovated OldRenovated WhiteFrame BlackFrame GreenFrame NeedsRenovation";
     public string? PetOtherType { get; set; }
     public string? ProximityTarget { get; set; }
     public string? ProximityAddress { get; set; }
@@ -64,8 +72,10 @@ public class ClientRequirements : SavedSearchProfile
             // Match-completed badges require a completed questionnaire, not merely
             // well-formed partial JSON. The public projection still shows only three priorities.
             if (p.Gender is not ("Male" or "Female") || p.ApartmentStyle is not ("Modern" or "Vintage" or "Other") ||
-                !request.Profile.TryGetProperty("bedrooms", out _) || p.Transportation is not { Count: > 0 } ||
-                p.Lifestyles is not { Count: > 0 } || p.TopPriorities is not { Count: 5 } ||
+                !request.Profile.TryGetProperty("bedrooms", out _) ||
+                (p.PropertyGoal == "Rent" && p.Transportation is not { Count: > 0 }) ||
+                p.Lifestyles is not { Count: > 0 } ||
+                (p.PropertyGoal == "Rent" ? p.TopPriorities is not { Count: 5 } : p.TopPriorities is not { Count: > 0 }) ||
                 (p.PropertyGoal == "Buy" && string.IsNullOrEmpty(p.PurchaseTiming)) ||
                 (p.PropertyGoal == "Rent" && (string.IsNullOrEmpty(p.HouseholdType) || string.IsNullOrEmpty(p.RentalDuration) ||
                     string.IsNullOrEmpty(p.MoveInTiming) || p.HasPet is null)) ||
@@ -91,7 +101,13 @@ public class ClientRequirements : SavedSearchProfile
                 (p.ProximityTarget?.Length ?? 0) > 80 || p.MetroDistanceMinutes is < 0 or > 120 ||
                 p.ProximityLatitude is < -90 or > 90 || p.ProximityLongitude is < -180 or > 180 ||
                 (p.MoveInTiming == "SpecificDate" && string.IsNullOrEmpty(p.MoveInDate)) ||
-                p.TopPriorities.Count > 5 || p.Lifestyles.Count > 3 ||
+                p.TopPriorities.Count > 6 || p.Lifestyles.Count > 3 ||
+                !Code(p.PurchasePurpose, "Living Investment RentalIncome") ||
+                !Code(p.FutureNeeds, "GrowingFamily ExtraWorkspace NoChanges NotSure") ||
+                !Code(p.PaymentMethod, "OwnFunds Mortgage Installment") ||
+                !Codes(p.MustHaveFeatures, "Balcony View Parking Elevator SecuredYard NaturalLight") ||
+                !Codes(p.HomeTypes, "Apartment House Commercial") ||
+                p.MaxSize is < 0 or > 10000 || (p.MinSize is > 0 && p.MaxSize is > 0 && p.MaxSize < p.MinSize) ||
                 (!string.IsNullOrEmpty(p.MoveInDate) && !DateOnly.TryParseExact(p.MoveInDate, "yyyy-MM-dd", out _))) return "invalid_profile";
             if (p.Children > 0 && p.ChildrenAgeGroups.Count == 0 ||
                 p.HasPet == true && p.PetTypes.Count == 0 && p.PetType is not ("Dog" or "Cat" or "Other") ||
