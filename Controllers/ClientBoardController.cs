@@ -257,9 +257,9 @@ public class ClientBoardController(AppDbContext db, SupabaseStorageService stora
     public static PublicClientCard ToPublic(ClientProfile row, string? agentPhoto)
     {
         var p = ClientRequirements.Read(row.ProfileJson);
-        // Public card: no nationality, children's ages or exact move-in date (personal data);
+        // Public card: nationality (shown as a flag) but no children's ages or exact move-in date;
         // the agent sees those in the CRM.
-        return new(row.Id, row.IdentityVerified, null,
+        return new(row.Id, row.IdentityVerified, row.Nationality,
             new(p.BudgetMin, p.BudgetMax, p.Currency, p.Districts.Where(x => x != "SelectOnMap").ToArray(), p.LocationFlexible,
                 p.Gender, p.HouseholdType, p.Adults, p.Children, Array.Empty<string>(), p.Bedrooms,
                 p.BedroomChoices.ToArray(), p.MinSize, p.RentalDuration, p.MoveInTiming, null,
