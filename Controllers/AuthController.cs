@@ -97,18 +97,12 @@ public class AuthController : ControllerBase
         if (user == null)
             return Unauthorized(new { message = "Invalid email or password" });
 
-        if (!user.LockoutEnabled) await _userManager.SetLockoutEnabledAsync(user, true);
-        if (await _userManager.IsLockedOutAsync(user))
-            return StatusCode(StatusCodes.Status429TooManyRequests, new { message = "Too many wrong passwords. Try again in 15 minutes." });
-
+        // No account lockout: tools that sign in automatically (the Chrome extension) with an old
+        // password kept locking the admin out. Wrong passwords are simply refused.
         var passwordOk = await _userManager.CheckPasswordAsync(user, dto.Password);
 
         if (!passwordOk)
-        {
-            await _userManager.AccessFailedAsync(user);
             return Unauthorized(new { message = "Invalid email or password" });
-        }
-        await _userManager.ResetAccessFailedCountAsync(user);
 
         if (!user.EmailConfirmed && await RequiresVerificationAsync(user))
             return StatusCode(StatusCodes.Status403Forbidden, new
