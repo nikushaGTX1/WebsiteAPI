@@ -86,7 +86,8 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
-    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("Login")]
+    // No per-IP limit here: behind the site proxy every visitor shares one address, so it
+    // blocked everyone at once. The per-account lockout (5 wrong passwords = 15 min) protects accounts.
     public async Task<IActionResult> Login(
         LoginDto dto,
         CancellationToken cancellationToken)
