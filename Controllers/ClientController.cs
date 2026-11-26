@@ -69,7 +69,6 @@ public class RequirePublicAccountAttribute : Attribute, IAsyncAuthorizationFilte
 [Route("api/client")]
 public class ClientController : ControllerBase
 {
-    private const int MaxSearches = 20;
     private const int MaxProfileBytes = 100_000;
 
     private readonly AppDbContext _context;
@@ -147,17 +146,22 @@ public class ClientController : ControllerBase
         if (error is not null) return BadRequest(new { message = error });
 
         var hash = CriteriaHash(profileJson!);
-        var existing = await _context.SavedSearches
-            .FirstOrDefaultAsync(search => search.UserId == UserId && search.CriteriaHash == hash, cancellationToken);
-        if (existing is not null)
+        // A client keeps one Velven Match preference. Running Velven Match again edits it
+        // (the newest one, if older accounts still have several; the rest are removed).
+        var current = await _context.SavedSearches.AsNoTracking()
+            .Where(search => search.UserId == UserId)
+            .OrderByDescending(search => search.UpdatedAt).ThenByDescending(search => search.Id)
+            .Select(search => search.Id)
+            .ToListAsync(cancellationToken);
+        if (current.Count > 0)
         {
-            existing.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync(cancellationToken);
-            return Ok(new { existing.Id, existing.Name, existed = true });
+            var keep = current[0];
+            if (current.Count > 1)
+                await _context.SavedSearches
+                    .Where(search => search.UserId == UserId && search.Id != keep)
+                    .ExecuteDeleteAsync(cancellationToken);
+            return await UpdateSearch(keep, new UpdateSearchDto { Name = dto.Name, Profile = dto.Profile }, cancellationToken);
         }
-
-        if (await _context.SavedSearches.CountAsync(search => search.UserId == UserId, cancellationToken) >= MaxSearches)
-            return BadRequest(new { message = $"You can keep up to {MaxSearches} saved searches. Delete one to save a new search." });
 
         var search = new SavedSearch
         {

@@ -24,8 +24,8 @@ public class PetAndParkingRulesTests
         Assert.Equal("allowed", HomeMatchRequirements.PetPermission(home, ["Dog"], "Medium"));
         Assert.Equal("prohibited", HomeMatchRequirements.PetPermission(home, ["Dog"], "Large"));
         Assert.Equal("prohibited", HomeMatchRequirements.PetPermission(home, ["Cat"], null));
-        // Pet friendly but the dog size is not stated: check with the agent.
-        Assert.Equal("unconfirmed", HomeMatchRequirements.PetPermission(Home(true), ["Dog"], "Medium"));
+        // Pet friendly with no size limit given: every size is welcome.
+        Assert.Equal("allowed", HomeMatchRequirements.PetPermission(Home(true), ["Dog"], "Medium"));
     }
 
     [Fact]

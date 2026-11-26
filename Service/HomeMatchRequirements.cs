@@ -469,12 +469,9 @@ public static class HomeMatchRequirements
         var kinds = ListTag(text, "Pets allowed");
         var sizes = ListTag(text, "Pet sizes");
         if (kinds.Count > 0 && pets.Any(pet => pet is "Dog" or "Cat" && !kinds.Contains(pet))) return "prohibited";
-        if (pets.Contains("Dog") && !string.IsNullOrEmpty(dogSize))
-        {
-            if (sizes.Count > 0 && !sizes.Contains(dogSize, StringComparer.OrdinalIgnoreCase)) return "prohibited";
-            if (sizes.Count == 0) return "unconfirmed";
-        }
-        if (pets.Contains("Other") && kinds.Count == 0) return "unconfirmed";
+        // Pet friendly with no size limit given: every size is welcome.
+        if (pets.Contains("Dog") && !string.IsNullOrEmpty(dogSize) && sizes.Count > 0 &&
+            !sizes.Contains(dogSize, StringComparer.OrdinalIgnoreCase)) return "prohibited";
         return "allowed";
     }
 
