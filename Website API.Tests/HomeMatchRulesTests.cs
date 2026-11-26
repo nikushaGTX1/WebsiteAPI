@@ -7,23 +7,23 @@ namespace Website_API.Tests;
 public sealed class HomeMatchRulesTests
 {
     [Theory]
-    [InlineData(1000, "Rent", 1000)]
-    [InlineData(1001, "Rent", 1251.25)]
-    [InlineData(1400, "Rent", 1750)]
-    [InlineData(2000, "Rent", 2500)]
-    [InlineData(3000, "Rent", 3750)]
-    [InlineData(800, "Rent", 800)]
+    [InlineData(400, "Rent", 500)]
+    [InlineData(600, "Rent", 750)]
+    [InlineData(1000, "Rent", 1200)]
+    [InlineData(1400, "Rent", 1650)]
+    [InlineData(2450, "Rent", 2750)]
+    [InlineData(3000, "Rent", 3300)]
     [InlineData(3000, "Buy", 3000)]
-    public void RentalToleranceOnlyAboveOneThousand(decimal max, string goal, decimal expected)
+    public void RentalToleranceIsFixedDollarsAtMostThreeHundred(decimal max, string goal, decimal expected)
     {
         Assert.Equal(expected, RentalBudgetPolicy.MaxRecommendedPrice(max, goal));
     }
 
     [Theory]
-    [InlineData(1000, 1000, true)]
-    [InlineData(1001, 1000, false)]
-    [InlineData(1750, 1400, true)]
-    [InlineData(1751, 1400, false)]
+    [InlineData(1200, 1000, true)]
+    [InlineData(1201, 1000, false)]
+    [InlineData(2750, 2450, true)]
+    [InlineData(3000, 2450, false)]
     [InlineData(5000, 0, true)]
     public void CeilingFilter(decimal price, decimal max, bool expected)
     {

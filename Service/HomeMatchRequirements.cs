@@ -403,10 +403,12 @@ public static class HomeMatchRequirements
     {
         if (!IsRent(profile)) return Check.Pass;
         if (profile.MoveInTiming == "Flexible") return Check.Pass;
-        if (apartment.AvailableFrom is null) return Check.Pass;
+        // Date field, "Available from:" tag, or a date/month written in the description (same as the website).
+        var freeFrom = ListingAvailability.From(apartment, today);
+        if (freeFrom is null) return Check.Pass;
         var requested = RequestedMoveInDate(profile, today);
         if (requested is null) return Check.Unknown;
-        return apartment.AvailableFrom.Value.Date <= requested.Value ? Check.Pass : Check.Fail;
+        return freeFrom.Value <= requested.Value ? Check.Pass : Check.Fail;
     }
 
     // ---------- Budget ----------

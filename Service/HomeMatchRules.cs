@@ -11,14 +11,18 @@ namespace Website_API.Services;
 /// </summary>
 public static class RentalBudgetPolicy
 {
-    public const decimal ToleranceThreshold = 1000m;
-    public const decimal ToleranceRate = 0.25m;
+    /// <summary>
+    /// Dollars a rental may cost above the maximum, never more than $300 (same as the website's
+    /// rentToleranceUsd): max &lt;= $450: +100 · &lt;= $750: +150 · &lt;= $1,200: +200 · &lt;= $2,000: +250 · above: +300.
+    /// </summary>
+    public static decimal Tolerance(decimal max) =>
+        max <= 450m ? 100m : max <= 750m ? 150m : max <= 1200m ? 200m : max <= 2000m ? 250m : 300m;
 
     public static decimal MaxRecommendedPrice(decimal budgetMax, string? propertyGoal)
     {
         var max = Math.Round(budgetMax, 2);
         var rent = string.Equals(propertyGoal, "Rent", StringComparison.OrdinalIgnoreCase);
-        return !rent || max <= ToleranceThreshold ? max : max * (1 + ToleranceRate);
+        return !rent || max <= 0 ? max : max + Tolerance(max);
     }
 
     /// <summary>A zero maximum means "no limit".</summary>
