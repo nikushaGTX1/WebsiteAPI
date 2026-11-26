@@ -141,8 +141,8 @@ public class HomeMatchRequirementsTests
     public void PetsMustBeExplicitlyAllowed()
     {
         var dog = Profile(p => { p.HasPet = true; p.PetType = "Dog"; });
-        // Not confirmed: never alerted, as required for uncertain mandatory requirements.
-        Assert.Equal(RequirementStatus.Confirm, Evaluate(Listing(a => a.IsPetFriendly = false), dog));
+        // Unticked "Pet friendly" box = pets not allowed (client QA, Nov 2026).
+        Assert.Equal(RequirementStatus.Alternative, Evaluate(Listing(a => a.IsPetFriendly = false), dog));
         Assert.Equal(RequirementStatus.Exact, Evaluate(Listing(), dog));
         Assert.Equal(RequirementStatus.Exact, Evaluate(Listing(a => { a.IsPetFriendly = false; a.Description = "Deal: For Rent | Pets allowed"; }), dog));
 
@@ -152,7 +152,7 @@ public class HomeMatchRequirementsTests
         var largeDog = Profile(p => { p.PetTypes = ["Dog"]; p.DogSize = "Large"; });
         Assert.Equal(RequirementStatus.Alternative, Evaluate(Listing(a => a.Description = "Deal: For Rent | Small dogs only"), largeDog));
         var smallDog = Profile(p => { p.PetTypes = ["Dog"]; p.DogSize = "Small"; });
-        Assert.Equal(RequirementStatus.Exact, Evaluate(Listing(a => a.Description = "Deal: For Rent | Small dogs only"), smallDog));
+        Assert.Equal(RequirementStatus.Exact, Evaluate(Listing(a => a.Description = "Deal: For Rent | Small dogs only | Pet sizes: Small"), smallDog));
 
         var noPets = Profile(p => { p.HasPet = false; p.PetType = "None"; });
         Assert.Equal(RequirementStatus.Exact, Evaluate(Listing(a => a.Description = "Deal: For Rent | No pets"), noPets));

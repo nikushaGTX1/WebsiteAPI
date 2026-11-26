@@ -57,6 +57,8 @@ public class AiHomeMatchController : ControllerBase
         // Only public listings: one still waiting for approval is never a match.
         var apartments = await ApartmentCatalogue.Published(_context.Apartments.AsNoTracking())
             .ToListAsync(cancellationToken);
+        // One parking answer for scoring, the cards and "Why it fits you" (see ListingParking).
+        foreach (var apartment in apartments) apartment.HasParking = ListingParking.Has(apartment);
 
         // Hard filters shared with the website: the budget ceiling (with the rental tolerance)
         // and listings that explicitly refuse the user's pets.
@@ -69,7 +71,8 @@ public class AiHomeMatchController : ControllerBase
         var allMatches = apartments
             .Where(apartment =>
                 RentalBudgetPolicy.IsWithinCeiling(apartment.Price, request.BudgetMax, request.PropertyGoal))
-            .Where(apartment => !rent || !PetPolicy.IsProhibited(apartment, pets, request.DogSize))
+            // Pets: same rule as the website (an unticked "Pet friendly" box or a wrong pet type/size is a no).
+            .Where(apartment => !rent || HomeMatchRequirements.PetPermission(apartment, pets, request.DogSize) != "prohibited")
             .Select(apartment => _scorer.Score(apartment, request))
             .OrderByDescending(match => match.MatchScore)
             .ToList();

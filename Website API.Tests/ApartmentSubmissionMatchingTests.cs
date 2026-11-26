@@ -27,7 +27,7 @@ public class ApartmentSubmissionMatchingTests
     private static readonly DateTime Today = new(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
     private static Apartment Listing(string district = "Vake", int bedrooms = 2, decimal price = 1000, double size = 80) => new()
     {
-        Title = "Apartment for rent", Description = "Deal: Rent | Pet-friendly: yes", District = district, Bedrooms = bedrooms,
+        Title = "Apartment for rent", Description = "Deal: Rent | Pet-friendly: yes | Pets allowed: Dog, Cat | Pet sizes: Small, Medium, Large", District = district, Bedrooms = bedrooms,
         Price = price, SizeSquareMeters = size, IsPetFriendly = true, AvailableFrom = new DateTime(2026, 10, 15, 0, 0, 0, DateTimeKind.Utc),
     };
     private static ClientRequirements Client() => ClientRequirements.Read(ClientBoardTests.Profile().GetRawText());

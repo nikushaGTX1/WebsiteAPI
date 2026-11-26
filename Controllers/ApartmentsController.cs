@@ -1430,7 +1430,7 @@ public class ApartmentsController : ControllerBase
             apartment.TotalFloors,
 
             apartment.HasElevator,
-            apartment.HasParking,
+            HasParking = ListingParking.Has(apartment),
             apartment.HasBalcony,
             apartment.HasBathtub,
             apartment.HasAirConditioning,

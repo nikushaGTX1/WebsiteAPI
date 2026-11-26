@@ -37,6 +37,26 @@ public class ListingInterestController : ControllerBase
     private Task<string?> SignedPhoto(string? path, CancellationToken cancellationToken) =>
         _storage.CreateSignedUrlAsync(path, SupabaseStorageService.ListingPhotoUrlSeconds, cancellationToken);
 
+    public record LikeRequest(int ApartmentId, int SavedSearchId);
+
+    /// <summary>
+    /// A client tapped "Like" on a Velven Discover card: the listing's agent is told at once
+    /// (bell, "Clients for you" and email), through the same review queue as automatic matches.
+    /// </summary>
+    [HttpPost("like")]
+    public async Task<IActionResult> Like(LikeRequest request, CancellationToken cancellationToken)
+    {
+        var search = await _context.SavedSearches
+            .FirstOrDefaultAsync(item => item.Id == request.SavedSearchId && item.UserId == UserId, cancellationToken);
+        if (search is null) return NotFound(new { message = "Search not found." });
+        var apartment = await ApartmentCatalogue.Published(_context.Apartments)
+            .FirstOrDefaultAsync(item => item.Id == request.ApartmentId, cancellationToken);
+        if (apartment is null) return NotFound(new { message = "Listing not found." });
+        await _interests.AddAlertAsync(apartment, search, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+        return Ok(new { notified = true });
+    }
+
     // ---------- Owners ----------
 
     /// <summary>The owner's listings with clients an agent has marked ready.</summary>

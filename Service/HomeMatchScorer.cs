@@ -369,7 +369,7 @@ public class HomeMatchScorer
 
         if (profile.Transportation.Contains("Car"))
         {
-            if (apartment.HasParking)
+            if (ListingParking.Has(apartment))
             {
                 earned += 5;
 
@@ -656,7 +656,7 @@ public class HomeMatchScorer
             return points;
         }
 
-        return IsWithin(apartment.MetroDistanceMinutes, 10) || apartment.HasParking ? 5 : 0;
+        return IsWithin(apartment.MetroDistanceMinutes, 10) || ListingParking.Has(apartment) ? 5 : 0;
     }
 
     /// <summary>Points for straight-line distance to the office: the closer, the higher.</summary>

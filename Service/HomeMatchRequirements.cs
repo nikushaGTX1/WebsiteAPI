@@ -463,6 +463,25 @@ public static class HomeMatchRequirements
         if (pets.Count == 0) return "allowed";
         if (PetPolicy.IsProhibited(apartment, pets, dogSize)) return "prohibited";
         var text = $"{apartment.Title} {apartment.Description}";
-        return apartment.IsPetFriendly || PetsAllowed.IsMatch(text) ? "allowed" : "unconfirmed";
+        // Same rule as the website: an unticked "Pet friendly" box reads "Pets: No" on the listing.
+        if (!apartment.IsPetFriendly && !PetsAllowed.IsMatch(text)) return "prohibited";
+        // The agent states which pets and sizes are welcome ("Pets allowed: Dog, Cat | Pet sizes: Small").
+        var kinds = ListTag(text, "Pets allowed");
+        var sizes = ListTag(text, "Pet sizes");
+        if (kinds.Count > 0 && pets.Any(pet => pet is "Dog" or "Cat" && !kinds.Contains(pet))) return "prohibited";
+        if (pets.Contains("Dog") && !string.IsNullOrEmpty(dogSize))
+        {
+            if (sizes.Count > 0 && !sizes.Contains(dogSize, StringComparer.OrdinalIgnoreCase)) return "prohibited";
+            if (sizes.Count == 0) return "unconfirmed";
+        }
+        if (pets.Contains("Other") && kinds.Count == 0) return "unconfirmed";
+        return "allowed";
+    }
+
+    private static List<string> ListTag(string text, string name)
+    {
+        var value = Regex.Match(text, $@"(?:^|[|\r\n])\s*{Regex.Escape(name)}:\s*([^|\r\n]+)", RegexOptions.IgnoreCase).Groups[1].Value;
+        return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(item => char.ToUpperInvariant(item[0]) + item[1..].ToLowerInvariant()).ToList();
     }
 }

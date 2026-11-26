@@ -423,8 +423,17 @@ public class GoogleNearbyPlacesService
 
         return placesResponse?.Places
             .Where(place => place.Location != null)
+            // Google also types viewpoints, road junctions and traffic triangles as "park"
+            // (#696 "View point", #762 "Triangle junction"): only real parks count.
+            .Where(place => placeType != "park" || !NotARealPark.IsMatch(place.DisplayName?.Text ?? ""))
             .FirstOrDefault();
     }
+
+    private static readonly System.Text.RegularExpressions.Regex NotARealPark = new(
+        @"view\s*-?\s*point|viewpoint|panoram|junction|triangle|roundabout|crossroad|intersection|parking|" +
+        @"გადასახედ|სანახავი წერტილ|გზაჯვარედ|სამკუთხედ|წრიული|ავტოსადგომ|" +
+        @"смотров|перекр[её]ст|развязк|треугольн|парковк",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     private async Task<int?> CalculateWalkingMinutesAsync(
         Coordinates origin,
