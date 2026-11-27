@@ -75,7 +75,10 @@ public class ProfileController : ControllerBase
         if (!string.IsNullOrWhiteSpace(dto.FullName))
             user.FullName = dto.FullName;
 
-        user.Bio = dto.Bio;
+        // Saving only one field (e.g. nationality from Velven Match) must not wipe the bio.
+        // (an emptied bio from the profile page arrives as null and still clears it).
+        if (Request.Form.ContainsKey("Bio"))
+            user.Bio = dto.Bio;
 
         if (dto.Nationality is not null)
             user.Nationality = string.IsNullOrWhiteSpace(dto.Nationality) ? null : dto.Nationality.Trim();
