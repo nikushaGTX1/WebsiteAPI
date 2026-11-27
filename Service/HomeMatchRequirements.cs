@@ -148,6 +148,13 @@ public static class HomeMatchRequirements
         ["ავლაბარი"] = "avlabari",
         ["სოლოლაკი"] = "sololaki",
         ["ვაშლიჯვარი"] = "vashlijvari",
+        ["ლისი"] = "lisi",
+        ["ბაგები"] = "bagebi",
+        ["წყნეთი"] = "tskneti",
+        ["ნუცუბიძე"] = "nutsubidze",
+        ["დიღმის მასივი"] = "digomi massive",
+        ["გლდანულა"] = "gldanula",
+        ["ვარკეთილი"] = "varketili",
     };
 
     /// <summary>
@@ -284,6 +291,8 @@ public static class HomeMatchRequirements
         var raw = (value ?? "").Trim().ToLowerInvariant();
         if (raw == "") return "";
         if (GeorgianDistricts.TryGetValue(raw, out var georgian)) return georgian;
+        // Georgian names not listed stay readable ("ლისი" is another area, not an unknown one).
+        if (Regex.IsMatch(raw, "[Ⴀ-ჿ]")) return "ka:" + raw;
         raw = raw.Replace("dighomi", "digomi");
         return Regex.Replace(raw, "[^a-z0-9]+", " ").Trim();
     }

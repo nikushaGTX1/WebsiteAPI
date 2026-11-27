@@ -31,7 +31,7 @@ public class ClientRequirements : SavedSearchProfile
     public string? CarFuelType { get; set; }
     public string? PurchaseTiming { get; set; }
     public string? ApartmentStyle { get; set; }
-    /** Buyers: why they buy - Living, Investment (resell later) or RentalIncome. */
+    /** Buyers: why they buy - Living, Investment (resell later), RentalIncome or OwnBusiness (commercial space). */
     public string? PurchasePurpose { get; set; }
     /** Buyers: what changes ahead - GrowingFamily, ExtraWorkspace, NoChanges, NotSure. */
     public string? FutureNeeds { get; set; }
@@ -71,14 +71,16 @@ public class ClientRequirements : SavedSearchProfile
             var p = Read(raw);
             // Match-completed badges require a completed questionnaire, not merely
             // well-formed partial JSON. The public projection still shows only three priorities.
-            if (p.Gender is not ("Male" or "Female") || p.ApartmentStyle is not ("Modern" or "Vintage" or "Other") ||
-                !request.Profile.TryGetProperty("bedrooms", out _) ||
+            if (p.Gender is not ("Male" or "Female") ||
+                (!CommercialOnly(p) && p.ApartmentStyle is not ("Modern" or "Vintage" or "Other")) ||
+                (!CommercialOnly(p) && !request.Profile.TryGetProperty("bedrooms", out _)) ||
                 (p.PropertyGoal == "Rent" && p.Transportation is not { Count: > 0 }) ||
-                p.Lifestyles is not { Count: > 0 } ||
-                (p.PropertyGoal == "Rent" ? p.TopPriorities is not { Count: 5 } : p.TopPriorities is not { Count: > 0 }) ||
+                (!CommercialOnly(p) && p.Lifestyles is not { Count: > 0 }) ||
+                p.TopPriorities is not { Count: > 0 and <= 5 } ||
                 (p.PropertyGoal == "Buy" && string.IsNullOrEmpty(p.PurchaseTiming)) ||
-                (p.PropertyGoal == "Rent" && (string.IsNullOrEmpty(p.HouseholdType) || string.IsNullOrEmpty(p.RentalDuration) ||
-                    string.IsNullOrEmpty(p.MoveInTiming) || p.HasPet is null)) ||
+                (p.PropertyGoal == "Rent" && (string.IsNullOrEmpty(p.RentalDuration) || string.IsNullOrEmpty(p.MoveInTiming) ||
+                    // A commercial space only: no household or pet questions are asked.
+                    (!CommercialOnly(p) && (string.IsNullOrEmpty(p.HouseholdType) || p.HasPet is null)))) ||
                 (!p.LocationFlexible && p.Districts.Count == 0 && p.SelectedMapArea is null)) return "invalid_profile";
             if (p.Adults is < 1 or > 7 || p.Children is < 0 or > 6 || p.Adults + p.Children > 7 || p.BudgetMax > 1_000_000_000 ||
                 (p.BudgetConversion is { } conversion && (conversion.UsdGel is < 0.01m or > 1000 || conversion.UsdEur is < 0.01m or > 1000)) ||
@@ -102,7 +104,7 @@ public class ClientRequirements : SavedSearchProfile
                 p.ProximityLatitude is < -90 or > 90 || p.ProximityLongitude is < -180 or > 180 ||
                 (p.MoveInTiming == "SpecificDate" && string.IsNullOrEmpty(p.MoveInDate)) ||
                 p.TopPriorities.Count > 6 || p.Lifestyles.Count > 3 ||
-                !Code(p.PurchasePurpose, "Living Investment RentalIncome") ||
+                !Code(p.PurchasePurpose, "Living Investment RentalIncome OwnBusiness") ||
                 !Code(p.FutureNeeds, "GrowingFamily ExtraWorkspace NoChanges NotSure") ||
                 !Code(p.PaymentMethod, "OwnFunds Mortgage Installment") ||
                 !Codes(p.MustHaveFeatures, "Balcony View Parking Elevator SecuredYard NaturalLight") ||
@@ -118,6 +120,9 @@ public class ClientRequirements : SavedSearchProfile
         catch (JsonException) { return "invalid_profile"; }
         return null;
     }
+
+    /// <summary>Only "Commercial" chosen as the property type (website: commercialOnly).</summary>
+    private static bool CommercialOnly(SavedSearchProfile p) => p.HomeTypes is { Count: > 0 } types && types.All(t => t == "Commercial");
 
     private static bool Code(string? value, string allowed) => string.IsNullOrEmpty(value) || allowed.Split(' ').Contains(value);
     private static bool Codes(List<string>? values, string allowed) => values is not null && values.Count <= 25 && values.Distinct().Count() == values.Count && values.All(x => !string.IsNullOrEmpty(x) && Code(x, allowed));
