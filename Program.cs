@@ -97,8 +97,11 @@ builder.Services.Configure<GzipCompressionProviderOptions>(options =>
 });
 
 builder.Services.AddHttpClient<GoogleNearbyPlacesService>();
-// Fills pet shop / vet walking times once for listings uploaded before they were measured.
-builder.Services.AddHostedService<PetServicesBackfillService>();
+// Walking routes: Google is called only when a listing is created or its location changes
+// (and on an administrator's retry). The startup pet-services backfill is off for that reason.
+builder.Services.AddSingleton<WalkingRouteQueue>();
+builder.Services.AddHttpClient<ApartmentWalkingRouteService>(client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHostedService<WalkingRouteWorker>();
 builder.Services.AddHttpClient<SupabaseStorageService>();
 builder.Services.AddHttpClient<ResendEmailService>();
 builder.Services.AddHttpClient("OpenStreetMap", client =>

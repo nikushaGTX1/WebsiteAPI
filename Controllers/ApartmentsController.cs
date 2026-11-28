@@ -20,6 +20,7 @@ public class ApartmentsController : ControllerBase
     private readonly IOutputCacheStore _outputCache;
     private readonly ILogger<ApartmentsController> _logger;
     private readonly ApartmentMatchQueue _matchQueue;
+    private readonly WalkingRouteQueue _walkingRoutes;
 
     public ApartmentsController(
         AppDbContext context,
@@ -27,10 +28,12 @@ public class ApartmentsController : ControllerBase
         SupabaseStorageService storageService,
         IOutputCacheStore outputCache,
         ILogger<ApartmentsController> logger,
-        ApartmentMatchQueue matchQueue)
+        ApartmentMatchQueue matchQueue,
+        WalkingRouteQueue walkingRoutes)
     {
         _logger = logger;
         _matchQueue = matchQueue;
+        _walkingRoutes = walkingRoutes;
         _context = context;
         _nearbyPlacesService = nearbyPlacesService;
         _storageService = storageService;
@@ -444,26 +447,14 @@ public class ApartmentsController : ControllerBase
                 NoiseLevel = dto.NoiseLevel,
                 Sunlight = dto.Sunlight,
 
-                // Nearby-place walking times
-                MetroDistanceMinutes = dto.MetroDistanceMinutes,
-                GymDistanceMinutes = dto.GymDistanceMinutes,
-                ParkDistanceMinutes = dto.ParkDistanceMinutes,
-                SchoolDistanceMinutes = dto.SchoolDistanceMinutes,
-                KindergartenDistanceMinutes =
-                    dto.KindergartenDistanceMinutes,
-                UniversityDistanceMinutes =
-                    dto.UniversityDistanceMinutes,
-                GroceryDistanceMinutes = dto.GroceryDistanceMinutes,
-                PharmacyDistanceMinutes = dto.PharmacyDistanceMinutes,
-                CafeDistanceMinutes = dto.CafeDistanceMinutes,
-                EvChargerDistanceMinutes = dto.EvChargerDistanceMinutes,
-                PetStoreDistanceMinutes = dto.PetStoreDistanceMinutes,
-                VeterinaryDistanceMinutes = dto.VeterinaryDistanceMinutes,
-                NearbyPlaceNames = dto.NearbyPlaceNames
+                // Walking times are not taken from the browser: the server measures them
+                // (ApartmentWalkingRouteService) right after the listing is saved.
             };
+            ApartmentWalkingRouteService.MarkIfLocationChanged(apartment);
 
             _context.Apartments.Add(apartment);
             await _context.SaveChangesAsync(cancellationToken);
+            _walkingRoutes.Enqueue(apartment.Id);
 
             if (ownerSubmission is not null)
             {
@@ -598,6 +589,9 @@ public class ApartmentsController : ControllerBase
         {
             return BadRequest(new { message = "Property latitude and longitude must be supplied together and be valid." });
         }
+
+        // Where the walking times were measured from, before this edit changes anything.
+        var previousWalkingOrigin = ApartmentWalkingRouteService.OriginKey(apartment);
 
         if (Request.Form.ContainsKey("MyHomeId")) {
  var myHomeId = string.IsNullOrWhiteSpace(dto.MyHomeId) ? null : dto.MyHomeId.Trim();
@@ -734,43 +728,8 @@ public class ApartmentsController : ControllerBase
             dto.Sunlight ?? apartment.Sunlight;
 
         // Nearby-place walking times
-        apartment.MetroDistanceMinutes =
-            dto.MetroDistanceMinutes ??
-            apartment.MetroDistanceMinutes;
-
-        apartment.GymDistanceMinutes =
-            dto.GymDistanceMinutes ??
-            apartment.GymDistanceMinutes;
-
-        apartment.ParkDistanceMinutes =
-            dto.ParkDistanceMinutes ??
-            apartment.ParkDistanceMinutes;
-
-        apartment.SchoolDistanceMinutes =
-            dto.SchoolDistanceMinutes ??
-            apartment.SchoolDistanceMinutes;
-
-        apartment.KindergartenDistanceMinutes =
-            dto.KindergartenDistanceMinutes ??
-            apartment.KindergartenDistanceMinutes;
-
-        apartment.UniversityDistanceMinutes =
-            dto.UniversityDistanceMinutes ??
-            apartment.UniversityDistanceMinutes;
-        apartment.GroceryDistanceMinutes =
-            dto.GroceryDistanceMinutes ?? apartment.GroceryDistanceMinutes;
-        apartment.PharmacyDistanceMinutes =
-            dto.PharmacyDistanceMinutes ?? apartment.PharmacyDistanceMinutes;
-        apartment.CafeDistanceMinutes =
-            dto.CafeDistanceMinutes ?? apartment.CafeDistanceMinutes;
-        apartment.EvChargerDistanceMinutes =
-            dto.EvChargerDistanceMinutes ?? apartment.EvChargerDistanceMinutes;
-        apartment.PetStoreDistanceMinutes =
-            dto.PetStoreDistanceMinutes ?? apartment.PetStoreDistanceMinutes;
-        apartment.VeterinaryDistanceMinutes =
-            dto.VeterinaryDistanceMinutes ?? apartment.VeterinaryDistanceMinutes;
-        apartment.NearbyPlaceNames =
-            dto.NearbyPlaceNames ?? apartment.NearbyPlaceNames;
+        // Walking times are the server's: unchanged unless the location changed (then recalculated).
+        var walkingLocationChanged = ApartmentWalkingRouteService.MarkIfLocationChanged(apartment, previousWalkingOrigin);
 
         List<string> newImagePaths = [];
         List<string> removedImagePaths = [];
@@ -891,6 +850,7 @@ public class ApartmentsController : ControllerBase
             else apartment.LastConfirmedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync(cancellationToken);
+            if (walkingLocationChanged) _walkingRoutes.Enqueue(apartment.Id);
             await InvalidateApartmentCacheAsync(cancellationToken);
             // An edit can make a listing match a saved search, or stop matching one.
             if (apartment.IsApproved) _matchQueue.Enqueue(apartment.Id);
@@ -919,41 +879,61 @@ public class ApartmentsController : ControllerBase
         catch { await CleanupUploadPathsAsync(newImagePaths); throw; }
     }
 
+    /// <summary>
+    /// Administrator retry: recalculate one listing's walking routes (Google is called in the
+    /// background). Velven Match never triggers this.
+    /// </summary>
     [Authorize(Roles = "Admin")]
     [HttpPost("{id:int}/refresh-nearby-places")]
+    [HttpPost("{id:int}/walking-routes/recalculate")]
     public async Task<IActionResult> RefreshNearbyPlaces(
         int id,
         CancellationToken cancellationToken)
     {
-        var apartment = await _context.Apartments
-            .Include(apartment => apartment.Images)
-            .FirstOrDefaultAsync(
-                apartment => apartment.Id == id,
-                cancellationToken);
-
-        if (apartment is null)
-        {
-            return NotFound(new
-            {
-                message = "Apartment not found"
-            });
-        }
-
-        await _nearbyPlacesService.EnrichApartmentAsync(
-            apartment,
-            cancellationToken);
-
+        var apartment = await _context.Apartments.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (apartment is null) return NotFound(new { message = "Apartment not found" });
+        apartment.WalkingRoutesStatus = WalkingRouteStatus.Pending;
+        apartment.WalkingRoutesError = null;
         await _context.SaveChangesAsync(cancellationToken);
-        await InvalidateApartmentCacheAsync(cancellationToken);
+        _walkingRoutes.Enqueue(apartment.Id);
+        return Accepted(new { message = "Walking routes will be recalculated.", apartment.Id, apartment.WalkingRoutesStatus });
+    }
 
-        return Ok(new
-        {
-            message = "Nearby-place walking times refreshed successfully",
-            apartment = await ToResponseAsync(
-                apartment,
-                includeGallery: true,
-                cancellationToken)
-        });
+    /// <summary>
+    /// Administrator retry for every listing without complete walking routes (never measured,
+    /// failed, partial or left pending by a restart). Listings are measured one at a time.
+    /// </summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPost("walking-routes/recalculate-missing")]
+    public async Task<IActionResult> RecalculateMissingWalkingRoutes(CancellationToken cancellationToken)
+    {
+        var ids = await _context.Apartments
+            .Where(item => item.WalkingRoutesStatus != WalkingRouteStatus.Completed)
+            .OrderBy(item => item.Id)
+            .Select(item => item.Id)
+            .ToListAsync(cancellationToken);
+        if (ids.Count > 0)
+            await _context.Apartments.Where(item => ids.Contains(item.Id))
+                .ExecuteUpdateAsync(set => set.SetProperty(item => item.WalkingRoutesStatus, WalkingRouteStatus.Pending), cancellationToken);
+        foreach (var id in ids) _walkingRoutes.Enqueue(id);
+        return Accepted(new { queued = ids.Count });
+    }
+
+    /// <summary>Saved walking routes of one listing (status, destinations, minutes, metres).</summary>
+    [Authorize(Roles = "Admin,Manager")]
+    [HttpGet("{id:int}/walking-routes")]
+    public async Task<IActionResult> GetWalkingRoutes(int id, CancellationToken cancellationToken)
+    {
+        var apartment = await _context.Apartments.AsNoTracking()
+            .Where(item => item.Id == id)
+            .Select(item => new { item.Id, item.WalkingRoutesStatus, item.WalkingRoutesCalculatedAt, item.WalkingRoutesError })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (apartment is null) return NotFound(new { message = "Apartment not found" });
+        var routes = await _context.ApartmentWalkingRoutes.AsNoTracking()
+            .Where(route => route.ApartmentId == id)
+            .OrderBy(route => route.Category).ThenBy(route => route.DurationSeconds)
+            .ToListAsync(cancellationToken);
+        return Ok(new { apartment, routes });
     }
 
     [Authorize(Roles = "Admin,Manager")]
@@ -1457,7 +1437,10 @@ public class ApartmentsController : ControllerBase
             apartment.EvChargerDistanceMinutes,
             apartment.PetStoreDistanceMinutes,
             apartment.VeterinaryDistanceMinutes,
-            apartment.NearbyPlaceNames
+            apartment.NearbyPlaceNames,
+            // Saved walks to listed universities and the centre (Velven Match, listing page).
+            apartment.DestinationWalkingMinutes,
+            apartment.WalkingRoutesStatus
         };
     }
 

@@ -24,6 +24,12 @@ public class HomeMatchProfileRequest
     public double? OfficeLatitude { get; set; }
     public double? OfficeLongitude { get; set; }
 
+    /// <summary>Follow-up to "Student": NearUniversity, NearMetro or NoPreference.</summary>
+    public string? StudentUniversityMode { get; set; }
+
+    /// <summary>Chosen university id (website list, e.g. "iliauni").</summary>
+    public string? StudentUniversityId { get; set; }
+
     public decimal BudgetMin { get; set; }
     public decimal BudgetMax { get; set; }
     public string Currency { get; set; } = "USD";

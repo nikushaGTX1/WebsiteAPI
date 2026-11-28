@@ -13,7 +13,7 @@ namespace Website_API.Controllers;
 
 [ApiController]
 [Route("api/owner-listings")]
-public sealed class ApartmentSubmissionsController(AppDbContext db, SupabaseStorageService storage, ApartmentSubmissionService workflow, IOutputCacheStore cache) : ControllerBase
+public sealed class ApartmentSubmissionsController(AppDbContext db, SupabaseStorageService storage, ApartmentSubmissionService workflow, IOutputCacheStore cache, WalkingRouteQueue walkingRoutes) : ControllerBase
 {
     private const string ReviewRoles = "Admin,Manager,Agent";
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
@@ -55,11 +55,13 @@ public sealed class ApartmentSubmissionsController(AppDbContext db, SupabaseStor
             data.Apply(apartment, form.OwnerName, form.OwnerPhone);
             apartment.ImageUrl = paths[0];
             apartment.Images = paths.Select((p, i) => new ApartmentImage { StoragePath = p, SortOrder = i, IsCover = i == 0 }).ToList();
+            ApartmentWalkingRouteService.MarkIfLocationChanged(apartment);
             db.Apartments.Add(apartment); await db.SaveChangesAsync(ct);
             var row = new OwnerSubmission { IsGeneralSubmission = true, SubmissionKey = key, AgentUserId = reviewer,
                 DealType = data.DealType == "For Rent" ? "Rent" : "Sale", OwnerName = form.OwnerName.Trim(), OwnerPhone = form.OwnerPhone.Trim(), OwnerEmail = form.OwnerEmail?.Trim(),
                 DataJson = JsonSerializer.Serialize(data, SubmissionProperty.Json), PhotoPathsJson = JsonSerializer.Serialize(paths), PublishedApartmentId = apartment.Id };
             db.OwnerSubmissions.Add(row); workflow.History(row, "submitted"); await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+            walkingRoutes.Enqueue(apartment.Id);
             return Ok(new { row.Id, row.Status });
         }
         catch

@@ -25,12 +25,30 @@ public class BusinessProfessionalMatchTests
     };
 
     [Fact]
-    public void CloserToTheOfficeScoresHigher()
+    public void OfficeDistanceIsNotEstimatedFromAStraightLine()
     {
+        // No saved walking route to a client's own office: Velven Match neither calls Google
+        // nor guesses from the straight line, so both homes get the same (no) office points.
         var near = Lifestyle(Flat(41.7010, 44.7950), NearOffice());
         var far = Lifestyle(Flat(41.7800, 44.8000), NearOffice());
-        Assert.Equal(10, near);
-        Assert.True(near > far);
+        Assert.Equal(0, near);
+        Assert.Equal(near, far);
+    }
+
+    [Fact]
+    public void StudentScoresOnlyTheSavedWalkToTheChosenUniversity()
+    {
+        var student = new HomeMatchProfileRequest { Lifestyles = ["Student"], StudentUniversityMode = "NearUniversity", StudentUniversityId = "iliauni" };
+        var nearIlia = Flat(41.7, 44.8);
+        nearIlia.DestinationWalkingMinutes = "{\"university:iliauni\":9,\"university:gtu\":40}";
+        var nextToGtuOnly = Flat(41.7, 44.8);
+        nextToGtuOnly.UniversityDistanceMinutes = 3;
+        nextToGtuOnly.DestinationWalkingMinutes = "{\"university:iliauni\":38,\"university:gtu\":3}";
+        var notMeasured = Flat(41.7, 44.8);
+        notMeasured.UniversityDistanceMinutes = 3;
+        Assert.Equal(5, Lifestyle(nearIlia, student));
+        Assert.Equal(0, Lifestyle(nextToGtuOnly, student));
+        Assert.Equal(0, Lifestyle(notMeasured, student));
     }
 
     [Theory]

@@ -187,6 +187,29 @@ public class Apartment
     [MaxLength(4000)]
     public string? NearbyPlaceNames { get; set; }
 
+    // Walking routes (ApartmentWalkingRoute rows) are calculated in the background after the
+    // listing is created or its location changes. Velven Match never calls Google itself.
+
+    /// <summary>NotCalculated, Pending, Completed, Partial, Failed or NoLocation.</summary>
+    [MaxLength(20)]
+    public string WalkingRoutesStatus { get; set; } = Models.WalkingRouteStatus.NotCalculated;
+
+    public DateTime? WalkingRoutesCalculatedAt { get; set; }
+
+    /// <summary>The location the routes were measured from; a different one means recalculate.</summary>
+    [MaxLength(300)]
+    public string? WalkingRoutesOriginKey { get; set; }
+
+    [MaxLength(500)]
+    public string? WalkingRoutesError { get; set; }
+
+    /// <summary>
+    /// Saved walking minutes to fixed destinations, for Velven Match:
+    /// {"university:iliauni":31,"city_center":22,...}. Copied from ApartmentWalkingRoute rows.
+    /// </summary>
+    [MaxLength(4000)]
+    public string? DestinationWalkingMinutes { get; set; }
+
     [JsonIgnore]
     public List<FavoriteApartment> FavoritedBy { get; set; } = [];
 

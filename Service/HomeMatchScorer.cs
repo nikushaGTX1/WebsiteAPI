@@ -318,8 +318,8 @@ public class HomeMatchScorer
         if (profile.Lifestyles.Contains("QuietLifestyle") && IsQuiet(apartment))
             earned += 6;
 
-        if (profile.Lifestyles.Contains("Student") && IsWithin(apartment.UniversityDistanceMinutes, 15))
-            earned += 5;
+        if (profile.Lifestyles.Contains("Student"))
+            earned += ScoreStudent(apartment, profile);
 
         if (profile.Lifestyles.Contains("BusinessProfessional"))
             earned += ScoreBusiness(apartment, profile, result);
@@ -641,22 +641,49 @@ public class HomeMatchScorer
             return 6;
         }
 
-        if (string.Equals(profile.BusinessMode, "NearOffice", StringComparison.OrdinalIgnoreCase) &&
-            profile.OfficeLatitude is double officeLat && profile.OfficeLongitude is double officeLng)
+        if (string.Equals(profile.BusinessMode, "NearOffice", StringComparison.OrdinalIgnoreCase))
         {
-            var lat = apartment.PropertyLatitude ?? apartment.Latitude;
-            var lng = apartment.PropertyLongitude ?? apartment.Longitude;
-            if (lat is null || lng is null) return 0;
-            var km = DistanceKm(lat.Value, lng.Value, officeLat, officeLng);
-            var points = OfficeDistancePoints(km);
-            if (points > 0)
-                AddReason(result, "Close to your office", $"About {km:0.#} km from your office.", points, 10);
-            else
-                AddTradeOff(result, "Office distance", $"About {km:0.#} km from your office.", "Medium", 10);
-            return points;
+            // The office is the client's own point: no walking route to it is saved, and Velven
+            // Match does not call Google or estimate a straight line. Shown as not available.
+            AddTradeOff(result, "Office distance", "Walking time to your office is not available.", "Low", 0);
+            return 0;
         }
 
         return IsWithin(apartment.MetroDistanceMinutes, 10) || ListingParking.Has(apartment) ? 5 : 0;
+    }
+
+    /// <summary>
+    /// Student: the saved walk to the chosen university (never another one), the metro for
+    /// "metro flexibility", nothing for "does not matter", else the nearest listed university.
+    /// </summary>
+    private static int ScoreStudent(Apartment apartment, HomeMatchProfileRequest profile)
+    {
+        switch (profile.StudentUniversityMode)
+        {
+            case "NearUniversity":
+                return IsWithin(SavedDestinationMinutes(apartment, "university:" + profile.StudentUniversityId), 15) ? 5 : 0;
+            case "NearMetro":
+                return IsWithin(apartment.MetroDistanceMinutes, 10) ? 5 : 0;
+            case "NoPreference":
+                return 0;
+            default:
+                return IsWithin(apartment.UniversityDistanceMinutes, 15) ? 5 : 0;
+        }
+    }
+
+    /// <summary>Saved walking minutes to a fixed destination ("university:iliauni", "city_center"); null when not measured.</summary>
+    internal static int? SavedDestinationMinutes(Apartment apartment, string key)
+    {
+        if (string.IsNullOrWhiteSpace(apartment.DestinationWalkingMinutes)) return null;
+        try
+        {
+            var saved = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, int>>(apartment.DestinationWalkingMinutes);
+            return saved is not null && saved.TryGetValue(key, out var minutes) ? minutes : null;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Points for straight-line distance to the office: the closer, the higher.</summary>

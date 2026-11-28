@@ -16,6 +16,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<MyHomeJob> MyHomeJobs => Set<MyHomeJob>();
     public DbSet<MyHomeCheck> MyHomeChecks => Set<MyHomeCheck>();
     public DbSet<Apartment> Apartments => Set<Apartment>();
+    public DbSet<ApartmentWalkingRoute> ApartmentWalkingRoutes => Set<ApartmentWalkingRoute>();
     public DbSet<ApartmentImage> ApartmentImages => Set<ApartmentImage>();
     public DbSet<ListingUpload> ListingUploads => Set<ListingUpload>();
     public DbSet<ImageProcessingJob> ImageProcessingJobs =>
@@ -99,6 +100,14 @@ public class AppDbContext : IdentityDbContext<AppUser>
         });
  builder.Entity<Apartment>().Property(a => a.MyHomeId).HasMaxLength(8);
  builder.Entity<Apartment>().HasIndex(a => a.MyHomeId);
+ builder.Entity<Apartment>().Property(a => a.WalkingRoutesStatus).HasDefaultValue(WalkingRouteStatus.NotCalculated);
+ builder.Entity<Apartment>().HasIndex(a => a.WalkingRoutesStatus);
+ builder.Entity<ApartmentWalkingRoute>(route =>
+ {
+     // One row per destination per listing; recalculation updates it in place.
+     route.HasIndex(r => new { r.ApartmentId, r.DestinationKey }).IsUnique();
+     route.HasOne<Apartment>().WithMany().HasForeignKey(r => r.ApartmentId).OnDelete(DeleteBehavior.Cascade);
+ });
  builder.Entity<MyHomeJob>().HasIndex(j => j.State).IsUnique().HasFilter("\"State\" = 'RUNNING'");
  builder.Entity<MyHomeJob>().Property(j => j.Mode).HasDefaultValue("SERVER");
  builder.Entity<MyHomeCheck>().HasIndex(c => new { c.JobId, c.ApartmentId }).IsUnique();

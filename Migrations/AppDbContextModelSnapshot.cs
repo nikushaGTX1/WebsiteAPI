@@ -326,6 +326,10 @@ namespace Website_API.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("DestinationWalkingMinutes")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
                     b.Property<string>("District")
                         .IsRequired()
                         .HasColumnType("text");
@@ -514,6 +518,24 @@ namespace Website_API.Migrations
                     b.Property<string>("ViewType")
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("WalkingRoutesCalculatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("WalkingRoutesError")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("WalkingRoutesOriginKey")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("WalkingRoutesStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("NotCalculated");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
@@ -525,6 +547,8 @@ namespace Website_API.Migrations
                     b.HasIndex("StreetId");
 
                     b.HasIndex("UploadedByUserId");
+
+                    b.HasIndex("WalkingRoutesStatus");
 
                     b.HasIndex("City", "Region", "District", "Street");
 
@@ -658,6 +682,65 @@ namespace Website_API.Migrations
                         .IsUnique();
 
                     b.ToTable("ApartmentOfferMatches");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ApartmentWalkingRoute", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ApartmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CalculatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("DestinationKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<double?>("DestinationLatitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("DestinationLongitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("DestinationName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("DistanceMeters")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("DrivingMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("DurationMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("DurationSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApartmentId", "DestinationKey")
+                        .IsUnique();
+
+                    b.ToTable("ApartmentWalkingRoutes");
                 });
 
             modelBuilder.Entity("Website_API.Models.AppUser", b =>
@@ -2412,6 +2495,15 @@ namespace Website_API.Migrations
                     b.Navigation("ClientProfile");
 
                     b.Navigation("Offer");
+                });
+
+            modelBuilder.Entity("Website_API.Models.ApartmentWalkingRoute", b =>
+                {
+                    b.HasOne("Website_API.Models.Apartment", null)
+                        .WithMany()
+                        .HasForeignKey("ApartmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Website_API.Models.CanonicalStreet", b =>
